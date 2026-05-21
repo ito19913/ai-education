@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# テンプレートだけは git 管理する
+!.env.local.example
+!.env.example
 
 # vercel
 .vercel
