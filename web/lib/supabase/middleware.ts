@@ -1,9 +1,7 @@
 /**
- * middleware からセッションを更新する用のヘルパー。
- * Next.js middleware は edge runtime で動くので、リクエスト/レスポンスのクッキーを介して
- * セッションを最新化する。
- *
- * 使い方: ルートの middleware.ts から呼ぶ。
+ * Next.js proxy（旧 middleware）からセッションを更新する用のヘルパー。
+ * 同時にルート保護も担う：未ログインなら /login にリダイレクト、
+ * ログイン済みで /login にアクセスしたらトップにリダイレクト。
  */
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
@@ -34,7 +32,27 @@ export async function updateSession(request: NextRequest) {
 
   // 重要: createServerClient と supabase.auth.getUser() の間に処理を挟まない。
   // セッションのリフレッシュタイミングがズレてバグの原因になる。
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // ルート保護
+  const path = request.nextUrl.pathname;
+  const isPublicPath = path === "/login" || path.startsWith("/auth/");
+
+  if (!user && !isPublicPath) {
+    // 未ログインで保護対象のページなら /login へ
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
+
+  if (user && path === "/login") {
+    // ログイン済みで /login にアクセスしたらトップへ
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url);
+  }
 
   return supabaseResponse;
 }
