@@ -86,11 +86,40 @@
 
 **月額ランニング目安**: 3,000〜5,000 円程度（Claude API + OpenAI TTS、利用頻度次第）
 
+## 起動方法（開発）
+
+### 前提
+- Node.js / npm
+- Supabase アカウント + ai-education プロジェクト
+- Resend アカウント（メール送信用、無料枠で十分）
+- `web/.env.local` に Supabase / Resend のキーが設定されていること
+
+### 手順
+```bash
+cd web
+npm install        # 初回のみ
+npm run dev        # 開発サーバー起動
+```
+
+- PC ブラウザ: http://localhost:3000
+- 同一 LAN のタブレット: http://192.168.x.x:3000（IP は `npm run dev` の出力で確認）
+- 未ログインなら自動で `/login` へリダイレクト
+- マジックリンクログインで認証
+
+### 認証アカウント
+Supabase ダッシュボード → Authentication → Users で手動作成済み：
+- `ito19913@gmail.com` → role: `admin`
+- `hanaemao.ito@gmail.com` → role: `learner`
+
+公開サインアップは無効化済み（新規追加は ito19 さんが Add user で作成する）。
+
 ## ステータス
 
-- 2026-05-20: grill-me セッションで企画・哲学・技術スタックを確定。PHILOSOPHY/README 作成、フェーズ 2 のテストフィードバック機能設計追加
-- 次のステップ: `workspace-ui-kit` を `web/` にリネーム → Supabase 連携を追加 → サンプル UI を AI-Education 用に書き換え
-
-## 関連リソース
-
-- `./workspace-ui-kit/` — Next.js + shadcn UI の雛形。**`web/` にリネームして本プロジェクトの本体として育てる方針で確定**。
+- **2026-05-20**: grill-me で企画・哲学・技術スタック・テストフィードバック機能（フェーズ 2）の設計を確定。PHILOSOPHY/README 作成
+- **2026-05-21**: 実装フェーズ着手。完了したもの:
+  - `workspace-ui-kit` を `web/` にリネーム、新規 git 履歴で開始（commit `3f1acea`）
+  - Supabase 連携初期セットアップ + Next.js 16 proxy 規約への移行（commit `9cd6d0b`）
+  - マジックリンク認証 + `profiles` テーブル + RLS + ルート保護（commit `1d5b97b`）
+  - Resend SMTP 設定（Supabase の 1 時間 3 通制限を回避）
+  - 動作確認: PC ブラウザでログイン成功まで一気通貫で動作
+- **次のステップ**: テーブル設計（体系図 / ツールカード / 学習セッション）→ サンプル UI を AI-Education 用に置き換え → Claude / OpenAI TTS / Web Speech API 連携
