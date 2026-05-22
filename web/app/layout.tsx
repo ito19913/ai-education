@@ -12,8 +12,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "採用管理ワークスペース",
-  description: "tweakcn テーマ + 日本語タイポ検証用プロトタイプ",
+  title: {
+    default: "AI-Education",
+    template: "%s — AI-Education",
+  },
+  description:
+    "暗記からツール化へ。知識を整理して使える状態にする学習ツール",
 };
 
 export const viewport: Viewport = {

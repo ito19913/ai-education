@@ -26,15 +26,21 @@ import { cn } from "@/lib/utils";
 type Props = {
   subjects: Subject[];
   existingNodes: KnowledgeNode[];
+  /** URL クエリ等から渡される、初期選択する科目 ID */
+  initialSubjectId?: string;
 };
 
 const STEP_LABELS = ["メタ情報・PDF", "AI 抽出", "監修", "保存"];
 
-export function MaterialEditWizard({ subjects, existingNodes }: Props) {
+export function MaterialEditWizard({
+  subjects,
+  existingNodes,
+  initialSubjectId,
+}: Props) {
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<MaterialDraft>({
     name: "",
-    subjectId: subjects[0]?.id ?? "",
+    subjectId: initialSubjectId ?? subjects[0]?.id ?? "",
     label: "テキスト",
     gradeLevel: "中2",
     fileName: null,

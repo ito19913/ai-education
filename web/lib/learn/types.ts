@@ -59,6 +59,8 @@ export type Material = {
   gradeLevel?: string;
   /** この教材が扱う体系図ノードの ID 群（教材ビュー表示用） */
   coveredNodeIds: string[];
+  /** 論理削除日時 (ISO)。undefined = アクティブ、値あり = ゴミ箱に入っている */
+  deletedAt?: string;
 };
 
 /** 科目（英語、数学など） */

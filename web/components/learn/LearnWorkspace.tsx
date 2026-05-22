@@ -27,7 +27,9 @@ import { SidebarResizeHandle } from "@/components/learn/SidebarResizeHandle";
 import { MindMapPane } from "@/components/learn/MindMapPane";
 import { DialogPane } from "@/components/learn/DialogPane";
 import { NotePane } from "@/components/learn/NotePane";
-import { LocationCeremony } from "@/components/learn/LocationCeremony";
+import { TrashSheet } from "@/components/learn/TrashSheet";
+import { MaterialEditDialog } from "@/components/learn/MaterialEditDialog";
+import { MindMapReconstructionTest } from "@/components/learn/MindMapReconstructionTest";
 import type {
   ChatMessage,
   CurrentUser,
@@ -55,19 +57,25 @@ export function LearnWorkspace({
   user,
   subject,
   subjects,
-  materials,
+  materials: initialMaterials,
   nodes,
   initialMessages,
   initialNotes,
   initialMemos,
   initialCurrentNodeId,
 }: Props) {
+  // 教材は state 管理（mock の論理削除 / 復元用）。後で Supabase 連携時に置き換え。
+  const [materialState, setMaterialState] =
+    useState<Material[]>(initialMaterials);
+  // 表示用は deletedAt が無いものだけ
+  const materials = useMemo(
+    () => materialState.filter((m) => !m.deletedAt),
+    [materialState],
+  );
   const [currentNodeId, setCurrentNodeId] = useState(initialCurrentNodeId);
   const [messages] = useState<ChatMessage[]>(initialMessages);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [memos, setMemos] = useState<Memo[]>(initialMemos);
-  // セッション開始時の「位置確認の儀式」表示フラグ。
-  const [ceremonyDone, setCeremonyDone] = useState(false);
   // サイドバー幅（px）。SidebarResizeHandle のドラッグで変更。
   const [sidebarWidthPx, setSidebarWidthPx] = useState(256);
   // 体系の地図 (Pane2) の collapse 状態 + Panel ハンドル
@@ -87,6 +95,50 @@ export function LearnWorkspace({
   const [currentMaterialId, setCurrentMaterialId] = useState<string | null>(
     null,
   );
+
+  // 教材の論理削除（ゴミ箱に入れる）
+  const handleSoftDeleteMaterial = (id: string) => {
+    setMaterialState((prev) =>
+      prev.map((m) =>
+        m.id === id ? { ...m, deletedAt: new Date().toISOString() } : m,
+      ),
+    );
+    // 削除した教材が currentMaterialId だったら全体ビューに戻す
+    setCurrentMaterialId((cur) => (cur === id ? null : cur));
+  };
+  // ゴミ箱から復元
+  const handleRestoreMaterial = (id: string) => {
+    setMaterialState((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, deletedAt: undefined } : m)),
+    );
+  };
+  // 完全削除（mock では state から削除）
+  const handlePermanentDeleteMaterial = (id: string) => {
+    setMaterialState((prev) => prev.filter((m) => m.id !== id));
+  };
+  // ゴミ箱 Sheet
+  const [trashOpen, setTrashOpen] = useState(false);
+  const deletedMaterials = useMemo(
+    () => materialState.filter((m) => !!m.deletedAt),
+    [materialState],
+  );
+
+  // 体系図 復元テスト（学習開始時に出す、スキップ可）
+  const [reconstructionDone, setReconstructionDone] = useState(false);
+
+  // 教材編集ダイアログ
+  const [editingMaterialId, setEditingMaterialId] = useState<string | null>(
+    null,
+  );
+  const editingMaterial = useMemo(
+    () => materialState.find((m) => m.id === editingMaterialId) ?? null,
+    [materialState, editingMaterialId],
+  );
+  const handleSaveMaterial = (id: string, patch: Partial<Material>) => {
+    setMaterialState((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    );
+  };
 
   // MindMapPane に渡すノードを、ビューに応じてフィルタ
   const visibleNodes = useMemo(() => {
@@ -181,12 +233,17 @@ export function LearnWorkspace({
       style={{ "--sidebar-width": `${sidebarWidthPx}px` } as React.CSSProperties}
       className="h-screen w-full overflow-hidden bg-background text-foreground"
     >
-      {!ceremonyDone && (
-        <LocationCeremony
-          subject={subject}
+      {!reconstructionDone && (
+        <MindMapReconstructionTest
           allNodes={nodes}
-          pathToCurrent={breadcrumb}
-          onComplete={() => setCeremonyDone(true)}
+          scopeNodeIds={
+            currentMaterialId
+              ? materialState.find((m) => m.id === currentMaterialId)
+                  ?.coveredNodeIds
+              : undefined
+          }
+          onComplete={() => setReconstructionDone(true)}
+          onSkip={() => setReconstructionDone(true)}
         />
       )}
       <LearnSidebar
@@ -200,6 +257,23 @@ export function LearnWorkspace({
         onSelectNode={setCurrentNodeId}
         onSelectSubject={() => setCurrentMaterialId(null)}
         onSelectMaterial={(id) => setCurrentMaterialId(id)}
+        onEditMaterial={(id) => setEditingMaterialId(id)}
+        trashCount={deletedMaterials.length}
+        onOpenTrash={() => setTrashOpen(true)}
+      />
+      <TrashSheet
+        open={trashOpen}
+        onOpenChange={setTrashOpen}
+        deletedMaterials={deletedMaterials}
+        onRestore={handleRestoreMaterial}
+        onPermanentDelete={handlePermanentDeleteMaterial}
+      />
+      <MaterialEditDialog
+        open={editingMaterialId !== null}
+        onOpenChange={(open) => !open && setEditingMaterialId(null)}
+        material={editingMaterial}
+        onSave={handleSaveMaterial}
+        onDelete={handleSoftDeleteMaterial}
       />
       <SidebarInset className="relative flex min-w-0 flex-col bg-background">
         <SidebarResizeHandle onResize={setSidebarWidthPx} />

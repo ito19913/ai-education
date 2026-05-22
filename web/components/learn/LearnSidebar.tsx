@@ -43,10 +43,14 @@ import {
   Book,
   BookOpenCheck,
   ChevronRight,
+  Compass,
   FileText,
   Folder,
   LogOut,
+  Pencil,
+  Plus,
   Settings,
+  Trash2,
   Upload,
   User,
 } from "lucide-react";
@@ -69,6 +73,9 @@ type Props = {
   onSelectNode: (id: string) => void;
   onSelectSubject: (subjectId: string) => void;
   onSelectMaterial: (materialId: string) => void;
+  onEditMaterial: (materialId: string) => void;
+  trashCount: number;
+  onOpenTrash: () => void;
 };
 
 export function LearnSidebar({
@@ -82,6 +89,9 @@ export function LearnSidebar({
   onSelectNode,
   onSelectSubject,
   onSelectMaterial,
+  onEditMaterial,
+  trashCount,
+  onOpenTrash,
 }: Props) {
   const nameOf = (nodeId: string) =>
     nodes.find((n) => n.id === nodeId)?.name ?? nodeId;
@@ -98,6 +108,35 @@ export function LearnSidebar({
       </SidebarHeader>
 
       <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <Link href="/philosophy">
+                  <SidebarMenuButton tooltip="AI-Education の憲法">
+                    <Compass />
+                    <span>AI-Education の憲法</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="ゴミ箱"
+                  onClick={onOpenTrash}
+                >
+                  <Trash2 />
+                  <span className="flex-1">ゴミ箱</span>
+                  {trashCount > 0 && (
+                    <Badge variant="secondary" className="ml-auto text-[10px]">
+                      {trashCount}
+                    </Badge>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
         <SidebarGroup>
           <SidebarGroupLabel>学習</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -118,13 +157,21 @@ export function LearnSidebar({
                       <SidebarMenuButton
                         onClick={() => onSelectSubject(subject.id)}
                         isActive={isSubjectActive}
-                        className="pr-8"
+                        className="pr-16"
                       >
                         <Folder />
                         <span className="flex-1 text-left">
                           {subject.name}
                         </span>
                       </SidebarMenuButton>
+                      <Link
+                        href={`/admin/materials/new?subjectId=${subject.id}`}
+                        className="absolute right-7 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                        aria-label="教材を追加"
+                        title="教材を追加"
+                      >
+                        <Plus className="size-3.5" />
+                      </Link>
                       <CollapsibleTrigger
                         render={
                           <button
@@ -143,11 +190,10 @@ export function LearnSidebar({
                               key={material.id}
                               material={material}
                               nameOf={nameOf}
-                              hasNote={hasNote}
                               currentNodeId={currentNodeId}
                               currentMaterialId={currentMaterialId}
-                              onSelectNode={onSelectNode}
                               onSelectMaterial={onSelectMaterial}
+                              onEditMaterial={onEditMaterial}
                             />
                           ))}
                         </SidebarMenuSub>
@@ -208,33 +254,42 @@ export function LearnSidebar({
   );
 }
 
+/**
+ * MaterialItem - 教材を 1 行で表示 + 現在ノードを動的に下に出す。
+ *
+ * ノードの階層展開はしない。マインドマップでノードを選んだ瞬間に、
+ * その教材の下にそのノード 1 つだけが表示される（折りたたみ不要、複雑さ最小）。
+ */
 function MaterialItem({
   material,
   nameOf,
-  hasNote,
   currentNodeId,
   currentMaterialId,
-  onSelectNode,
   onSelectMaterial,
+  onEditMaterial,
 }: {
   material: Material;
   nameOf: (id: string) => string;
-  hasNote: (id: string) => boolean;
   currentNodeId: string;
   currentMaterialId: string | null;
-  onSelectNode: (id: string) => void;
   onSelectMaterial: (id: string) => void;
+  onEditMaterial: (id: string) => void;
 }) {
   const isMaterialActive = currentMaterialId === material.id;
+  const showCurrentNode =
+    isMaterialActive &&
+    currentNodeId &&
+    material.coveredNodeIds.includes(currentNodeId);
+
   return (
-    <Collapsible defaultOpen className="group/material">
+    <>
       <SidebarMenuSubItem className="relative">
         <SidebarMenuSubButton
           onClick={() => onSelectMaterial(material.id)}
           isActive={isMaterialActive}
-          className="pr-8"
+          className="pr-7"
         >
-          <Book className="size-3.5" />
+          <Book className="size-3.5 shrink-0" />
           <span className="flex-1 truncate text-left">{material.name}</span>
           <Badge
             variant="outline"
@@ -243,33 +298,31 @@ function MaterialItem({
             {material.label}
           </Badge>
         </SidebarMenuSubButton>
-        <CollapsibleTrigger
-          render={
-            <button
-              type="button"
-              aria-label="教材の折りたたみ"
-              className="absolute right-1 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
-            />
-          }
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditMaterial(material.id);
+          }}
+          aria-label="教材を編集"
+          title="教材を編集"
+          className="absolute right-1 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
         >
-          <ChevronRight className="size-3 transition-transform duration-200 group-data-[state=open]/material:rotate-90" />
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <SidebarMenuSub>
-            {material.coveredNodeIds.filter(hasNote).map((nodeId) => (
-              <SidebarMenuSubItem key={nodeId}>
-                <SidebarMenuSubButton
-                  isActive={nodeId === currentNodeId}
-                  onClick={() => onSelectNode(nodeId)}
-                >
-                  <FileText className="size-3.5" />
-                  <span className="truncate">{nameOf(nodeId)}</span>
-                </SidebarMenuSubButton>
-              </SidebarMenuSubItem>
-            ))}
-          </SidebarMenuSub>
-        </CollapsibleContent>
+          <Pencil className="size-3" />
+        </button>
       </SidebarMenuSubItem>
-    </Collapsible>
+      {showCurrentNode && (
+        <SidebarMenuSubItem>
+          <SidebarMenuSubButton
+            isActive
+            className="pl-7"
+            aria-current="page"
+          >
+            <FileText className="size-3.5 shrink-0" />
+            <span className="truncate">{nameOf(currentNodeId)}</span>
+          </SidebarMenuSubButton>
+        </SidebarMenuSubItem>
+      )}
+    </>
   );
 }
