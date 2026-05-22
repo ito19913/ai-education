@@ -13,7 +13,8 @@
  * Pane2 でノードを切り替えると、Pane3 と Pane4 が連動する。
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { PanelImperativeHandle } from "react-resizable-panels";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import {
   ResizableHandle,
@@ -22,6 +23,7 @@ import {
 } from "@/components/ui/resizable";
 import { LearnSidebar } from "@/components/learn/LearnSidebar";
 import { LearnHeader } from "@/components/learn/LearnHeader";
+import { SidebarResizeHandle } from "@/components/learn/SidebarResizeHandle";
 import { MindMapPane } from "@/components/learn/MindMapPane";
 import { DialogPane } from "@/components/learn/DialogPane";
 import { NotePane } from "@/components/learn/NotePane";
@@ -66,6 +68,43 @@ export function LearnWorkspace({
   const [memos, setMemos] = useState<Memo[]>(initialMemos);
   // セッション開始時の「位置確認の儀式」表示フラグ。
   const [ceremonyDone, setCeremonyDone] = useState(false);
+  // サイドバー幅（px）。SidebarResizeHandle のドラッグで変更。
+  const [sidebarWidthPx, setSidebarWidthPx] = useState(256);
+  // 体系の地図 (Pane2) の collapse 状態 + Panel ハンドル
+  const mindmapPanelRef = useRef<PanelImperativeHandle>(null);
+  const [mindmapCollapsed, setMindmapCollapsed] = useState(false);
+  const toggleMindmap = () => {
+    const panel = mindmapPanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) {
+      panel.expand();
+    } else {
+      panel.collapse();
+    }
+  };
+
+  // 体系図のビュー: null = 全体ビュー（Subject 全部）、id = 教材ビュー
+  const [currentMaterialId, setCurrentMaterialId] = useState<string | null>(
+    null,
+  );
+
+  // MindMapPane に渡すノードを、ビューに応じてフィルタ
+  const visibleNodes = useMemo(() => {
+    if (currentMaterialId === null) return nodes;
+    const material = materials.find((m) => m.id === currentMaterialId);
+    if (!material) return nodes;
+    const idSet = new Set(material.coveredNodeIds);
+    return nodes.filter((n) => idSet.has(n.id));
+  }, [nodes, materials, currentMaterialId]);
+
+  const viewTitle = useMemo(() => {
+    if (currentMaterialId === null) {
+      const subj = subjects[0];
+      return subj ? `${subj.name}（全体）` : "全体";
+    }
+    const material = materials.find((m) => m.id === currentMaterialId);
+    return material ? `${material.name}（${material.label}）` : "教材";
+  }, [currentMaterialId, subjects, materials]);
 
   // 現在ノードまでのパス（ルート → 現在）
   const breadcrumb = useMemo(() => {
@@ -139,6 +178,7 @@ export function LearnWorkspace({
   return (
     <SidebarProvider
       defaultOpen
+      style={{ "--sidebar-width": `${sidebarWidthPx}px` } as React.CSSProperties}
       className="h-screen w-full overflow-hidden bg-background text-foreground"
     >
       {!ceremonyDone && (
@@ -155,20 +195,40 @@ export function LearnWorkspace({
         materials={materials}
         notes={notes}
         nodes={nodes}
-        onSelectNode={setCurrentNodeId}
         currentNodeId={currentNodeId}
+        currentMaterialId={currentMaterialId}
+        onSelectNode={setCurrentNodeId}
+        onSelectSubject={() => setCurrentMaterialId(null)}
+        onSelectMaterial={(id) => setCurrentMaterialId(id)}
       />
-      <SidebarInset className="flex min-w-0 flex-col bg-background">
-        <LearnHeader subject={subject} breadcrumb={breadcrumb} />
+      <SidebarInset className="relative flex min-w-0 flex-col bg-background">
+        <SidebarResizeHandle onResize={setSidebarWidthPx} />
+        <LearnHeader
+          subject={subject}
+          breadcrumb={breadcrumb}
+          mindmapCollapsed={mindmapCollapsed}
+          onToggleMindmap={toggleMindmap}
+        />
         <ResizablePanelGroup
           orientation="horizontal"
           className="flex min-h-0 flex-1"
         >
-          <ResizablePanel defaultSize={50} minSize={25}>
+          <ResizablePanel
+            panelRef={mindmapPanelRef}
+            defaultSize={50}
+            minSize={15}
+            collapsible
+            collapsedSize={0}
+            onResize={(size) =>
+              setMindmapCollapsed(size.asPercentage === 0)
+            }
+          >
             <MindMapPane
-              nodes={nodes}
+              nodes={visibleNodes}
               currentNodeId={currentNodeId}
               onSelectNode={setCurrentNodeId}
+              viewTitle={viewTitle}
+              visibleNodeCount={visibleNodes.length}
             />
           </ResizablePanel>
           <ResizableHandle withHandle />

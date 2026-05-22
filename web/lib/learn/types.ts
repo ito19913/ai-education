@@ -55,8 +55,10 @@ export type Material = {
   subjectId: string;
   name: string;
   label: MaterialLabel;
-  /** この教材に紐づくノートが存在するノード ID 群 */
-  noteNodeIds: string[];
+  /** 学年（'中1' | '中2' | '中3' | '高1' ... など、任意） */
+  gradeLevel?: string;
+  /** この教材が扱う体系図ノードの ID 群（教材ビュー表示用） */
+  coveredNodeIds: string[];
 };
 
 /** 科目（英語、数学など） */
@@ -102,6 +104,39 @@ export type Question = {
 
 /** 自己評価: 答えを思い出した？ それともツールを使った？ */
 export type SelfEvaluationResult = "recalled" | "tool-used";
+
+// ============================================================================
+// 教材登録（admin）の型
+// ============================================================================
+
+/** AI が PDF から抽出したノード候補（監修前） */
+export type AiExtractedNode = {
+  tempId: string;
+  /** AI が提案する名前 */
+  name: string;
+  /** 親候補（tempId or 既存ノード ID） */
+  parentRef: string | null;
+  /** AI が生成した説明 */
+  description: string;
+  /** 教材内の該当ページ範囲（例: "p.42-45"） */
+  pageRange: string;
+  /** 既存体系図ノードに合致した場合の ID（null なら新規候補） */
+  matchedNodeId: string | null;
+  /** 信頼度（0-1、mock では固定） */
+  confidence: number;
+  /** 監修ステータス */
+  reviewStatus: "pending" | "approved" | "rejected" | "edited";
+};
+
+/** 教材登録ウィザードの入力データ */
+export type MaterialDraft = {
+  name: string;
+  subjectId: string;
+  label: MaterialLabel;
+  gradeLevel: string;
+  fileName: string | null;
+  fileSize: number | null;
+};
 
 // 後方互換: 古い名前を残す（既存コードを徐々に移行する間に使う）
 export type DialogMessage = ChatMessage;

@@ -6,10 +6,15 @@
  * Claude desktop アプリ風: collapsible="offcanvas" で完全に非表示にできる。
  * Cmd+B (Ctrl+B) でトグル、または LearnHeader の SidebarTrigger でトグル。
  *
- * 階層:
- *   科目（折りたたみ）
- *     └ 教材（ラベル付き、折りたたみ）
- *         └ ノート（ノードリスト、クリックで Pane2/3/4 連動）
+ * 階層 & クリック挙動:
+ *   科目（Folder アイコン）
+ *     - ラベルクリック: 全体ビュー (onSelectSubject)
+ *     - chevron: 折りたたみ
+ *     └ 教材（Book アイコン、ラベル付き）
+ *           - ラベルクリック: 教材ビュー (onSelectMaterial)
+ *           - chevron: 折りたたみ
+ *           └ ノード（File アイコン）
+ *                 - クリック: そのノードを current に (onSelectNode)
  */
 
 import {
@@ -33,6 +38,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import {
   Book,
   BookOpenCheck,
@@ -41,6 +47,7 @@ import {
   Folder,
   LogOut,
   Settings,
+  Upload,
   User,
 } from "lucide-react";
 import type {
@@ -58,7 +65,10 @@ type Props = {
   notes: Note[];
   nodes: KnowledgeNode[];
   currentNodeId: string;
+  currentMaterialId: string | null;
   onSelectNode: (id: string) => void;
+  onSelectSubject: (subjectId: string) => void;
+  onSelectMaterial: (materialId: string) => void;
 };
 
 export function LearnSidebar({
@@ -68,7 +78,10 @@ export function LearnSidebar({
   notes,
   nodes,
   currentNodeId,
+  currentMaterialId,
   onSelectNode,
+  onSelectSubject,
+  onSelectMaterial,
 }: Props) {
   const nameOf = (nodeId: string) =>
     nodes.find((n) => n.id === nodeId)?.name ?? nodeId;
@@ -85,7 +98,6 @@ export function LearnSidebar({
       </SidebarHeader>
 
       <SidebarContent>
-        {/* 科目 → 教材 → ノート の階層 */}
         <SidebarGroup>
           <SidebarGroupLabel>学習</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -94,19 +106,35 @@ export function LearnSidebar({
                 const subjMaterials = materials.filter(
                   (m) => m.subjectId === subject.id,
                 );
+                // 科目のアクティブ判定: 教材未選択かつ Subject が一致
+                const isSubjectActive = currentMaterialId === null;
                 return (
                   <Collapsible
                     key={subject.id}
                     defaultOpen
                     className="group/subject"
                   >
-                    <SidebarMenuItem>
-                      <CollapsibleTrigger render={<SidebarMenuButton />}>
+                    <SidebarMenuItem className="relative">
+                      <SidebarMenuButton
+                        onClick={() => onSelectSubject(subject.id)}
+                        isActive={isSubjectActive}
+                        className="pr-8"
+                      >
                         <Folder />
                         <span className="flex-1 text-left">
                           {subject.name}
                         </span>
-                        <ChevronRight className="ml-auto size-3 transition-transform duration-200 group-data-[state=open]/subject:rotate-90" />
+                      </SidebarMenuButton>
+                      <CollapsibleTrigger
+                        render={
+                          <button
+                            type="button"
+                            aria-label="科目の折りたたみ"
+                            className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                          />
+                        }
+                      >
+                        <ChevronRight className="size-3 transition-transform duration-200 group-data-[state=open]/subject:rotate-90" />
                       </CollapsibleTrigger>
                       <CollapsibleContent>
                         <SidebarMenuSub>
@@ -117,7 +145,9 @@ export function LearnSidebar({
                               nameOf={nameOf}
                               hasNote={hasNote}
                               currentNodeId={currentNodeId}
+                              currentMaterialId={currentMaterialId}
                               onSelectNode={onSelectNode}
+                              onSelectMaterial={onSelectMaterial}
                             />
                           ))}
                         </SidebarMenuSub>
@@ -135,6 +165,14 @@ export function LearnSidebar({
             <SidebarGroupLabel>管理</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
+                <SidebarMenuItem>
+                  <Link href="/admin/materials">
+                    <SidebarMenuButton tooltip="教材登録">
+                      <Upload />
+                      <span>教材登録</span>
+                    </SidebarMenuButton>
+                  </Link>
+                </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton tooltip="設定">
                     <Settings />
@@ -175,18 +213,27 @@ function MaterialItem({
   nameOf,
   hasNote,
   currentNodeId,
+  currentMaterialId,
   onSelectNode,
+  onSelectMaterial,
 }: {
   material: Material;
   nameOf: (id: string) => string;
   hasNote: (id: string) => boolean;
   currentNodeId: string;
+  currentMaterialId: string | null;
   onSelectNode: (id: string) => void;
+  onSelectMaterial: (id: string) => void;
 }) {
+  const isMaterialActive = currentMaterialId === material.id;
   return (
     <Collapsible defaultOpen className="group/material">
-      <SidebarMenuSubItem>
-        <CollapsibleTrigger render={<SidebarMenuSubButton />}>
+      <SidebarMenuSubItem className="relative">
+        <SidebarMenuSubButton
+          onClick={() => onSelectMaterial(material.id)}
+          isActive={isMaterialActive}
+          className="pr-8"
+        >
           <Book className="size-3.5" />
           <span className="flex-1 truncate text-left">{material.name}</span>
           <Badge
@@ -195,11 +242,21 @@ function MaterialItem({
           >
             {material.label}
           </Badge>
-          <ChevronRight className="ml-1 size-3 transition-transform duration-200 group-data-[state=open]/material:rotate-90" />
+        </SidebarMenuSubButton>
+        <CollapsibleTrigger
+          render={
+            <button
+              type="button"
+              aria-label="教材の折りたたみ"
+              className="absolute right-1 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+            />
+          }
+        >
+          <ChevronRight className="size-3 transition-transform duration-200 group-data-[state=open]/material:rotate-90" />
         </CollapsibleTrigger>
         <CollapsibleContent>
           <SidebarMenuSub>
-            {material.noteNodeIds.filter(hasNote).map((nodeId) => (
+            {material.coveredNodeIds.filter(hasNote).map((nodeId) => (
               <SidebarMenuSubItem key={nodeId}>
                 <SidebarMenuSubButton
                   isActive={nodeId === currentNodeId}

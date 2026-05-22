@@ -36,6 +36,10 @@ type Props = {
   nodes: KnowledgeNode[];
   currentNodeId: string;
   onSelectNode: (id: string) => void;
+  /** ビューのタイトル（全体ビュー or 教材名） */
+  viewTitle: string;
+  /** 表示中のノード数（ヘッダー表示用） */
+  visibleNodeCount: number;
 };
 
 function MindMapNode({ data }: NodeProps<Node<MindMapNodeData>>) {
@@ -78,7 +82,11 @@ function MindMapNode({ data }: NodeProps<Node<MindMapNodeData>>) {
 
 const nodeTypes = { mindmap: MindMapNode };
 
-function MindMapInner({ nodes, currentNodeId, onSelectNode }: Props) {
+function MindMapInner({
+  nodes,
+  currentNodeId,
+  onSelectNode,
+}: Pick<Props, "nodes" | "currentNodeId" | "onSelectNode">) {
   const { fitView } = useReactFlow();
 
   const { nodes: rfNodes, edges: rfEdges } = useMemo(
@@ -113,14 +121,20 @@ function MindMapInner({ nodes, currentNodeId, onSelectNode }: Props) {
   );
 }
 
-export function MindMapPane({ nodes, currentNodeId, onSelectNode }: Props) {
+export function MindMapPane({
+  nodes,
+  currentNodeId,
+  onSelectNode,
+  viewTitle,
+  visibleNodeCount,
+}: Props) {
   return (
     <div className="flex h-full w-full flex-col border-r border-border bg-background">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
         <Network className="size-4 text-muted-foreground" />
         <h2 className="text-sm font-medium">体系の地図</h2>
-        <span className="ml-auto text-xs text-muted-foreground">
-          中2 英語文法 全体
+        <span className="ml-auto truncate text-xs text-muted-foreground">
+          {viewTitle} ({visibleNodeCount} ノード)
         </span>
       </div>
       <div className="min-h-0 flex-1">
