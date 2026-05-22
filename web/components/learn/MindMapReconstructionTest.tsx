@@ -6,15 +6,17 @@
  * - 体系図のノードを空欄カードで表示（構造線は見える）
  * - 画面下部にノード名のラベル候補がランダム順で並ぶ
  * - ドラッグ&ドロップで空欄にラベルを配置
- * - 「答え合わせ」で正誤一括判定、不正解は赤で示す
+ * - **正解した瞬間にカードが緑で確定、間違えた瞬間に赤 × でフィードバック
+ *   して 1 秒後にラベルが下に戻る**（一括 答え合わせ方式は廃止）
  * - スキップ可
  *
  * ito19 さんの哲学:
  *   「勉強は記憶だけじゃなく、思い出す練習が重要」
  *   「体系図を能動的に組み立て直すことで、知識の整理が訓練される」
+ *   「ミスは学びが起きた瞬間」→ 即時フィードバックで気づきを早める
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -47,23 +49,28 @@ type Props = {
   onSkip: () => void;
 };
 
-// placements: ノード ID → そこに配置されたラベル（= 正解のノード ID）
-// 正解時は placements[nodeId] === nodeId
-type Placements = Record<string, string | null>;
+// placements: 正解として配置された labelId（= slotId）のみが入る。
+// 不正解は記録されず、ラベルは下のトレイに戻る。
+type Placements = Record<string, string>;
+
+/** スロットを赤 × でフラッシュさせる時のデータ */
+type WrongFlash = { slotId: string; labelName: string };
 
 type NodeData = {
   nodeId: string;
-  placedLabelId: string | null;
-  showResults: boolean;
-  isCorrect: boolean;
-  correctName: string;
-  labelName: string | null;
+  /** 正解として配置されているか */
+  isPlaced: boolean;
+  /** 配置済みなら正解ラベル名（= ノード名そのもの）*/
+  placedName: string | null;
+  /** 赤 × フラッシュ中なら、その間違ったラベル名 */
+  wrongFlashLabel: string | null;
 };
 
 function DroppableMindMapNode({ data, id }: NodeProps<Node<NodeData>>) {
   const { setNodeRef, isOver } = useDroppable({ id });
-  const { placedLabelId, showResults, isCorrect, correctName, labelName } =
-    data;
+  const { isPlaced, placedName, wrongFlashLabel } = data;
+
+  const isWrongFlash = !!wrongFlashLabel;
 
   return (
     <>
@@ -77,26 +84,30 @@ function DroppableMindMapNode({ data, id }: NodeProps<Node<NodeData>>) {
         ref={setNodeRef}
         className={cn(
           "min-w-[160px] max-w-[220px] rounded-lg border-2 px-4 py-2.5 text-sm shadow-sm transition-all",
-          // 状態ごとの色
-          showResults
-            ? isCorrect
+          isWrongFlash
+            ? "animate-pulse border-destructive bg-destructive/15 text-destructive"
+            : isPlaced
               ? "border-primary bg-primary/10 text-primary"
-              : "border-destructive bg-destructive/10 text-destructive"
-            : placedLabelId
-              ? "border-foreground bg-card text-card-foreground"
               : isOver
                 ? "border-primary border-dashed bg-primary/5"
                 : "border-dashed border-muted-foreground/40 bg-muted/30 text-muted-foreground",
         )}
       >
-        <div className="flex flex-col items-center gap-0.5">
-          <span className="font-medium leading-tight">
-            {labelName ?? "?"}
-          </span>
-          {showResults && !isCorrect && (
-            <span className="text-[10px] text-muted-foreground">
-              正解: {correctName}
-            </span>
+        <div className="flex items-center justify-center gap-1">
+          {isWrongFlash ? (
+            <>
+              <X className="size-4 shrink-0" strokeWidth={3} />
+              <span className="font-medium leading-tight line-through">
+                {wrongFlashLabel}
+              </span>
+            </>
+          ) : isPlaced ? (
+            <>
+              <Check className="size-3.5 shrink-0" strokeWidth={3} />
+              <span className="font-medium leading-tight">{placedName}</span>
+            </>
+          ) : (
+            <span className="font-medium leading-tight">?</span>
           )}
         </div>
       </div>
@@ -156,30 +167,43 @@ export function MindMapReconstructionTest({
   }, [allNodes, scopeNodeIds]);
 
   // ラベル候補（シャッフル）
-  const shuffledLabels = useMemo(() => {
+  // useState の lazy initializer は mount 時に 1 回だけ実行されるので
+  // 不純な Math.random をそこに閉じ込めて純粋性を保つ。
+  // 一度マウントされた後 scope を切り替える用途は今のところないので、
+  // 再シャッフルは不要。
+  const [shuffledLabels] = useState<KnowledgeNode[]>(() => {
     const arr = [...targetNodes];
-    // 決定論的シャッフル（mount 時 1 回）
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;
-  }, [targetNodes]);
+  });
 
+  // 正解として配置済みのもの
   const [placements, setPlacements] = useState<Placements>({});
-  const [showResults, setShowResults] = useState(false);
+  // 赤 × フラッシュの transient state
+  const [wrongFlash, setWrongFlash] = useState<WrongFlash | null>(null);
+  // ミス回数（学習の振り返り用）
+  const [wrongAttempts, setWrongAttempts] = useState(0);
+  // ドラッグ中のラベル ID（DragOverlay 用）
   const [draggingLabelId, setDraggingLabelId] = useState<string | null>(null);
 
-  // 配置済みラベル ID 集合
+  const wrongFlashTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (wrongFlashTimerRef.current !== null) {
+        window.clearTimeout(wrongFlashTimerRef.current);
+      }
+    };
+  }, []);
+
   const placedLabelIds = useMemo(
-    () => new Set(Object.values(placements).filter((v): v is string => !!v)),
+    () => new Set(Object.values(placements)),
     [placements],
   );
 
-  // 全配置済み
-  const allPlaced =
-    Object.keys(placements).length === targetNodes.length &&
-    Object.values(placements).every((v) => v !== null);
+  const allPlaced = placedLabelIds.size === targetNodes.length;
 
   const nameOf = (id: string | null) =>
     id ? (targetNodes.find((n) => n.id === id)?.name ?? null) : null;
@@ -188,23 +212,24 @@ export function MindMapReconstructionTest({
   const { nodes: rfNodes, edges: rfEdges } = useMemo(() => {
     const layout = buildMindMapLayout(targetNodes, "");
     const mapped = layout.nodes.map((node) => {
-      const placedLabelId = placements[node.id] ?? null;
-      const isCorrect = placedLabelId === node.id;
+      const isPlaced = !!placements[node.id];
+      const placedName = isPlaced ? node.data.label : null;
+      const wrongFlashLabel =
+        wrongFlash && wrongFlash.slotId === node.id
+          ? wrongFlash.labelName
+          : null;
       return {
         ...node,
         data: {
           nodeId: node.id,
-          placedLabelId,
-          showResults,
-          isCorrect,
-          correctName: node.data.label,
-          labelName: nameOf(placedLabelId),
+          isPlaced,
+          placedName,
+          wrongFlashLabel,
         },
       };
     });
     return { nodes: mapped, edges: layout.edges };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetNodes, placements, showResults]);
+  }, [targetNodes, placements, wrongFlash]);
 
   const handleDragStart = (event: DragStartEvent) => {
     setDraggingLabelId(event.active.id as string);
@@ -214,28 +239,45 @@ export function MindMapReconstructionTest({
     setDraggingLabelId(null);
     const { active, over } = event;
     if (!over) return;
-    const targetNodeId = over.id as string;
+    const slotId = over.id as string;
     const labelId = active.id as string;
-    setPlacements((prev) => {
-      const next: Placements = { ...prev };
-      // この labelId が既に別ノードに配置されていたら外す
-      for (const k of Object.keys(next)) {
-        if (next[k] === labelId) next[k] = null;
+
+    if (labelId === slotId) {
+      // 正解 → 永続配置
+      setPlacements((prev) => ({ ...prev, [slotId]: labelId }));
+      // 赤フラッシュ中だったら消す（同スロットで再挑戦して正解した場合）
+      if (wrongFlash && wrongFlash.slotId === slotId) {
+        setWrongFlash(null);
+        if (wrongFlashTimerRef.current !== null) {
+          window.clearTimeout(wrongFlashTimerRef.current);
+          wrongFlashTimerRef.current = null;
+        }
       }
-      next[targetNodeId] = labelId;
-      return next;
-    });
-    setShowResults(false);
+    } else {
+      // 不正解 → 即フラッシュ、ラベルは置かれず下に戻る
+      const wrongLabelName = nameOf(labelId);
+      if (!wrongLabelName) return;
+      setWrongFlash({ slotId, labelName: wrongLabelName });
+      setWrongAttempts((n) => n + 1);
+      if (wrongFlashTimerRef.current !== null) {
+        window.clearTimeout(wrongFlashTimerRef.current);
+      }
+      wrongFlashTimerRef.current = window.setTimeout(() => {
+        setWrongFlash(null);
+        wrongFlashTimerRef.current = null;
+      }, 1000);
+    }
   };
 
   const handleReset = () => {
     setPlacements({});
-    setShowResults(false);
+    setWrongFlash(null);
+    setWrongAttempts(0);
+    if (wrongFlashTimerRef.current !== null) {
+      window.clearTimeout(wrongFlashTimerRef.current);
+      wrongFlashTimerRef.current = null;
+    }
   };
-
-  const correctCount = Object.entries(placements).filter(
-    ([nodeId, labelId]) => nodeId === labelId,
-  ).length;
 
   return (
     <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -246,17 +288,25 @@ export function MindMapReconstructionTest({
             体系の地図 — 復元テスト
           </span>
           <span className="text-xs text-muted-foreground">
-            配置: {placedLabelIds.size} / {targetNodes.length}
+            配置:{" "}
+            <span className="font-semibold text-primary">
+              {placedLabelIds.size}
+            </span>{" "}
+            / {targetNodes.length}
           </span>
-          {showResults && (
-            <span className="text-xs">
-              <span className="font-semibold text-primary">
-                正解 {correctCount}
+          {wrongAttempts > 0 && (
+            <span className="text-xs text-muted-foreground">
+              ミス:{" "}
+              <span className="font-semibold text-destructive">
+                {wrongAttempts}
               </span>{" "}
-              /{" "}
-              <span className="text-destructive">
-                不正解 {targetNodes.length - correctCount}
-              </span>
+              回
+            </span>
+          )}
+          {allPlaced && (
+            <span className="flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
+              <Check className="size-3" strokeWidth={3} />
+              全部正解！
             </span>
           )}
           <div className="ml-auto flex gap-2">
@@ -265,24 +315,20 @@ export function MindMapReconstructionTest({
               size="sm"
               onClick={handleReset}
               className="gap-1.5"
+              disabled={placedLabelIds.size === 0 && wrongAttempts === 0}
             >
               <RotateCcw className="size-3" />
               <span>リセット</span>
             </Button>
             <Button
               size="sm"
-              onClick={() => setShowResults(true)}
-              disabled={!allPlaced}
+              onClick={onComplete}
               className="gap-1.5"
+              variant={allPlaced ? "default" : "outline"}
             >
               <Check className="size-3" />
-              <span>答え合わせ</span>
+              <span>学習を始める</span>
             </Button>
-            {showResults && (
-              <Button size="sm" variant="default" onClick={onComplete}>
-                学習を始める
-              </Button>
-            )}
             <Button
               variant="ghost"
               size="sm"
@@ -319,6 +365,9 @@ export function MindMapReconstructionTest({
         <div className="shrink-0 border-t border-border bg-background p-4">
           <p className="mb-2 text-xs text-muted-foreground">
             下のラベルをドラッグして、上の空欄カードに配置してください
+            <span className="ml-2 text-muted-foreground/70">
+              （正解は <Check className="inline size-3 text-primary" strokeWidth={3} /> で確定、間違いは <X className="inline size-3 text-destructive" strokeWidth={3} /> が出てラベルが戻ります）
+            </span>
           </p>
           <div className="flex flex-wrap gap-2">
             {shuffledLabels.map((node) => (
@@ -329,9 +378,9 @@ export function MindMapReconstructionTest({
                 placed={placedLabelIds.has(node.id)}
               />
             ))}
-            {placedLabelIds.size === shuffledLabels.length && (
-              <p className="text-sm text-muted-foreground">
-                全てのラベルが配置されました。「答え合わせ」を押してください。
+            {allPlaced && (
+              <p className="text-sm text-primary">
+                全てのラベルを正解で配置できました！「学習を始める」をどうぞ。
               </p>
             )}
           </div>

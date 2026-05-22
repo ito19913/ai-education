@@ -9,17 +9,38 @@
 import { LearnWorkspace } from "@/components/learn/LearnWorkspace";
 import {
   MOCK_CURRENT_NODE_ID,
+  MOCK_ISSUES,
   MOCK_MATERIALS,
-  MOCK_MEMOS,
   MOCK_MESSAGES,
   MOCK_NOTES,
+  MOCK_SESSION_ISSUE_CANDIDATES,
   MOCK_SUBJECT,
   MOCK_SUBJECTS,
   MOCK_TREE,
   MOCK_USER,
 } from "@/lib/learn/mock-data";
 
-export default function LearnPage() {
+type Props = {
+  searchParams: Promise<{ node?: string; startDay?: string }>;
+};
+
+export default async function LearnPage({ searchParams }: Props) {
+  const params = await searchParams;
+  // URL クエリ ?node=xxx で指定されていて、かつ実在するノードならそれを初期 current に
+  const requestedNodeId =
+    params.node && MOCK_TREE.some((n) => n.id === params.node)
+      ? params.node
+      : null;
+  const initialNodeId = requestedNodeId ?? MOCK_CURRENT_NODE_ID;
+  // 体系図 復元テストは「1 日の学習の始め」の儀式。担任 chat の
+  // 「今日の学習を始める」（/tutor → StartStudyCard）から ?startDay=1
+  // で明示的にトリガーされた時のみ表示する。/learn に直接訪れた時
+  // （リロード / 履歴 / 直リンク）は表示しない。
+  // 注: 担任 chat は ?node=xxx と一緒に ?startDay=1 を渡してくるので、
+  // node の有無では判定しない。
+  const startDay = params.startDay === "1";
+  const skipReconstruction = !startDay;
+
   return (
     <LearnWorkspace
       user={MOCK_USER}
@@ -29,8 +50,10 @@ export default function LearnPage() {
       nodes={MOCK_TREE}
       initialMessages={MOCK_MESSAGES}
       initialNotes={MOCK_NOTES}
-      initialMemos={MOCK_MEMOS}
-      initialCurrentNodeId={MOCK_CURRENT_NODE_ID}
+      initialIssues={MOCK_ISSUES}
+      initialCurrentNodeId={initialNodeId}
+      skipReconstruction={skipReconstruction}
+      sessionIssueCandidates={MOCK_SESSION_ISSUE_CANDIDATES}
     />
   );
 }

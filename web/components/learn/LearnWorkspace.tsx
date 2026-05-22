@@ -13,7 +13,7 @@
  * Pane2 でノードを切り替えると、Pane3 と Pane4 が連動する。
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import {
@@ -30,13 +30,20 @@ import { NotePane } from "@/components/learn/NotePane";
 import { TrashSheet } from "@/components/learn/TrashSheet";
 import { MaterialEditDialog } from "@/components/learn/MaterialEditDialog";
 import { MindMapReconstructionTest } from "@/components/learn/MindMapReconstructionTest";
+import {
+  SessionEndDialog,
+  type CandidateDecisions,
+} from "@/components/learn/SessionEndDialog";
+import { useLearningSession } from "@/lib/learn/use-learning-session";
 import type {
   ChatMessage,
   CurrentUser,
+  Issue,
+  IssueCandidate,
+  IssueOccurrence,
   KnowledgeNode,
   LearnSubject,
   Material,
-  Memo,
   Note,
   Subject,
 } from "@/lib/learn/types";
@@ -49,8 +56,14 @@ type Props = {
   nodes: KnowledgeNode[];
   initialMessages: ChatMessage[];
   initialNotes: Note[];
-  initialMemos: Memo[];
+  /** 課題（本人発・AI 発 統合）。旧 Memo は本人発として包含。 */
+  initialIssues: Issue[];
   initialCurrentNodeId: string;
+  /** 復元テストをスキップして直接本編へ（履歴からチャットを開いた時など） */
+  skipReconstruction?: boolean;
+  /** AI がこのセッションで会話の中から検知した課題候補（mock）。
+   * セッション終了時に SessionEndDialog で本人がチェックして採用判定。 */
+  sessionIssueCandidates?: IssueCandidate[];
 };
 
 export function LearnWorkspace({
@@ -61,8 +74,10 @@ export function LearnWorkspace({
   nodes,
   initialMessages,
   initialNotes,
-  initialMemos,
+  initialIssues,
   initialCurrentNodeId,
+  skipReconstruction = false,
+  sessionIssueCandidates = [],
 }: Props) {
   // 教材は state 管理（mock の論理削除 / 復元用）。後で Supabase 連携時に置き換え。
   const [materialState, setMaterialState] =
@@ -75,7 +90,7 @@ export function LearnWorkspace({
   const [currentNodeId, setCurrentNodeId] = useState(initialCurrentNodeId);
   const [messages] = useState<ChatMessage[]>(initialMessages);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
-  const [memos, setMemos] = useState<Memo[]>(initialMemos);
+  const [issues, setIssues] = useState<Issue[]>(initialIssues);
   // サイドバー幅（px）。SidebarResizeHandle のドラッグで変更。
   const [sidebarWidthPx, setSidebarWidthPx] = useState(256);
   // 体系の地図 (Pane2) の collapse 状態 + Panel ハンドル
@@ -124,7 +139,28 @@ export function LearnWorkspace({
   );
 
   // 体系図 復元テスト（学習開始時に出す、スキップ可）
-  const [reconstructionDone, setReconstructionDone] = useState(false);
+  // skipReconstruction = true なら最初から完了扱い（履歴からチャットへ飛んだ時など）
+  const [reconstructionDone, setReconstructionDone] =
+    useState(skipReconstruction);
+
+  // 学習セッション（自動開始、終了ボタン + idle 15 分で自動終了）
+  const session = useLearningSession({ idleTimeoutMs: 15 * 60 * 1000 });
+  const [sessionEndDialogOpen, setSessionEndDialogOpen] = useState(false);
+  // 訪れたノードを追跡
+  const visitedNodesRef = useRef<Set<string>>(new Set([initialCurrentNodeId]));
+  useEffect(() => {
+    visitedNodesRef.current.add(currentNodeId);
+    session.markActivity();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentNodeId]);
+  // セッション終了したらダイアログ自動表示
+  useEffect(() => {
+    if (!session.isActive && session.endedAt) {
+      setSessionEndDialogOpen(true);
+    }
+  }, [session.isActive, session.endedAt]);
+  // 学習活動マーキング: ノート編集 / メモトグル時にマーク
+  // （ハンドラ実体は下で wrap）
 
   // 教材編集ダイアログ
   const [editingMaterialId, setEditingMaterialId] = useState<string | null>(
@@ -175,7 +211,7 @@ export function LearnWorkspace({
     [currentNodeId, nodes],
   );
 
-  // 選択ノードに紐づくチャット履歴・ノート・メモ
+  // 選択ノードに紐づくチャット履歴・ノート・課題
   const currentMessages = useMemo(
     () => messages.filter((m) => m.nodeId === currentNodeId),
     [messages, currentNodeId],
@@ -184,9 +220,15 @@ export function LearnWorkspace({
     () => notes.find((n) => n.nodeId === currentNodeId) ?? null,
     [notes, currentNodeId],
   );
-  const currentMemos = useMemo(
-    () => memos.filter((m) => m.nodeId === currentNodeId),
-    [memos, currentNodeId],
+  const currentIssues = useMemo(
+    () => issues.filter((i) => i.nodeId === currentNodeId),
+    [issues, currentNodeId],
+  );
+
+  // サイドバーバッジ用: 未クリア課題数
+  const openIssueCount = useMemo(
+    () => issues.filter((i) => i.status === "open").length,
+    [issues],
   );
 
   // ノート編集
@@ -211,11 +253,100 @@ export function LearnWorkspace({
     });
   };
 
-  // メモの解決 / 取り消し
-  const handleToggleMemoResolved = (id: string) => {
-    setMemos((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, resolved: !m.resolved } : m)),
+  // 課題（本人発）の追加: NotePane の入力欄から
+  const handleAddIssue = (title: string) => {
+    setIssues((prev) => [
+      ...prev,
+      {
+        id: `issue-self-${Date.now()}`,
+        nodeId: currentNodeId,
+        source: "self",
+        title,
+        status: "open",
+        createdAt: new Date().toISOString(),
+        occurrences: [
+          {
+            id: `occ-${Date.now()}`,
+            detectedAt: new Date().toISOString(),
+            description: "本人が登録。",
+            source: "self",
+          },
+        ],
+      },
+    ]);
+    session.markActivity();
+  };
+
+  // 課題のクリア / 取り消し
+  const handleResolveIssue = (id: string) => {
+    setIssues((prev) =>
+      prev.map((i) =>
+        i.id === id
+          ? {
+              ...i,
+              status: "resolved",
+              resolvedAt: new Date().toISOString(),
+              aiSuggestedClear: false,
+              aiSuggestedClearReason: undefined,
+            }
+          : i,
+      ),
     );
+    session.markActivity();
+  };
+  const handleReopenIssue = (id: string) => {
+    setIssues((prev) =>
+      prev.map((i) =>
+        i.id === id ? { ...i, status: "open", resolvedAt: undefined } : i,
+      ),
+    );
+  };
+
+  // セッション終了時の AI 候補の採用: 既存と統合 or 新規登録
+  const handleAdoptCandidates = (decisions: CandidateDecisions) => {
+    setIssues((prev) => {
+      const next = [...prev];
+      for (const c of sessionIssueCandidates) {
+        const decision = decisions[c.id];
+        if (!decision || decision.kind === "skip") continue;
+
+        const occurrence: IssueOccurrence = {
+          id: `occ-cand-${c.id}-${Date.now()}`,
+          detectedAt: new Date().toISOString(),
+          sessionId: session.startedAt, // mock では sessionId 代わりに startedAt
+          triggerMessageId: c.triggerMessageId,
+          description: c.detail ?? c.title,
+          source: "ai-detected",
+        };
+
+        if (decision.kind === "link") {
+          // 既存課題に発生履歴を追加
+          const idx = next.findIndex((i) => i.id === decision.issueId);
+          if (idx >= 0) {
+            const target = next[idx];
+            next[idx] = {
+              ...target,
+              status: "open", // 統合時は open に戻す
+              resolvedAt: undefined,
+              occurrences: [...(target.occurrences ?? []), occurrence],
+            };
+          }
+        } else {
+          // 新規登録
+          next.push({
+            id: `issue-ai-${c.id}-${Date.now()}`,
+            nodeId: c.nodeId,
+            source: "ai-detected",
+            title: c.title,
+            detail: c.detail,
+            status: "open",
+            createdAt: new Date().toISOString(),
+            occurrences: [occurrence],
+          });
+        }
+      }
+      return next;
+    });
   };
 
   // 「もっと詳しく」「もっと簡単に」: MVP モックは console 出力のみ。
@@ -260,6 +391,7 @@ export function LearnWorkspace({
         onEditMaterial={(id) => setEditingMaterialId(id)}
         trashCount={deletedMaterials.length}
         onOpenTrash={() => setTrashOpen(true)}
+        openIssueCount={openIssueCount}
       />
       <TrashSheet
         open={trashOpen}
@@ -275,6 +407,19 @@ export function LearnWorkspace({
         onSave={handleSaveMaterial}
         onDelete={handleSoftDeleteMaterial}
       />
+      <SessionEndDialog
+        open={sessionEndDialogOpen}
+        onOpenChange={setSessionEndDialogOpen}
+        elapsedSec={session.elapsedSec}
+        endReason={session.endReason}
+        messageCount={currentMessages.length}
+        noteEditCount={0}
+        visitedNodeCount={visitedNodesRef.current.size}
+        candidates={sessionIssueCandidates}
+        existingIssues={issues}
+        nodes={nodes}
+        onAdoptCandidates={handleAdoptCandidates}
+      />
       <SidebarInset className="relative flex min-w-0 flex-col bg-background">
         <SidebarResizeHandle onResize={setSidebarWidthPx} />
         <LearnHeader
@@ -282,6 +427,9 @@ export function LearnWorkspace({
           breadcrumb={breadcrumb}
           mindmapCollapsed={mindmapCollapsed}
           onToggleMindmap={toggleMindmap}
+          sessionActive={session.isActive}
+          elapsedSec={session.elapsedSec}
+          onEndSession={() => session.endSession("manual")}
         />
         <ResizablePanelGroup
           orientation="horizontal"
@@ -319,9 +467,11 @@ export function LearnWorkspace({
             <NotePane
               currentNode={currentNode}
               note={currentNote}
-              memos={currentMemos}
+              issues={currentIssues}
               onChangeNote={handleChangeNote}
-              onToggleMemoResolved={handleToggleMemoResolved}
+              onAddIssue={handleAddIssue}
+              onResolveIssue={handleResolveIssue}
+              onReopenIssue={handleReopenIssue}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

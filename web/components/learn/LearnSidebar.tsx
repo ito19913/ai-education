@@ -42,14 +42,18 @@ import Link from "next/link";
 import {
   Book,
   BookOpenCheck,
+  CalendarClock,
   ChevronRight,
   Compass,
   FileText,
   Folder,
+  GraduationCap,
+  History,
   LogOut,
   Pencil,
   Plus,
   Settings,
+  Target,
   Trash2,
   Upload,
   User,
@@ -76,6 +80,8 @@ type Props = {
   onEditMaterial: (materialId: string) => void;
   trashCount: number;
   onOpenTrash: () => void;
+  /** 未クリア課題の件数（サイドバーバッジ用） */
+  openIssueCount: number;
 };
 
 export function LearnSidebar({
@@ -92,6 +98,7 @@ export function LearnSidebar({
   onEditMaterial,
   trashCount,
   onOpenTrash,
+  openIssueCount,
 }: Props) {
   const nameOf = (nodeId: string) =>
     nodes.find((n) => n.id === nodeId)?.name ?? nodeId;
@@ -112,10 +119,50 @@ export function LearnSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
+                <Link href="/tutor">
+                  <SidebarMenuButton tooltip="ゆい先生（担任）">
+                    <GraduationCap />
+                    <span>ゆい先生（担任）</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link href="/schedule">
+                  <SidebarMenuButton tooltip="学習スケジュール">
+                    <CalendarClock />
+                    <span>学習スケジュール</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
                 <Link href="/philosophy">
                   <SidebarMenuButton tooltip="AI-Education の憲法">
                     <Compass />
                     <span>AI-Education の憲法</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link href="/issues">
+                  <SidebarMenuButton tooltip="課題一覧">
+                    <Target />
+                    <span className="flex-1">課題一覧</span>
+                    {openIssueCount > 0 && (
+                      <Badge
+                        variant="secondary"
+                        className="ml-auto text-[10px]"
+                      >
+                        {openIssueCount}
+                      </Badge>
+                    )}
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link href="/history">
+                  <SidebarMenuButton tooltip="学習履歴">
+                    <History />
+                    <span>学習履歴</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

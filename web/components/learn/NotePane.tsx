@@ -1,36 +1,50 @@
 "use client";
 
 /**
- * NotePane - Pane 4。AI が自動生成するノート（マークダウンプレビュー）+ メモ。
+ * NotePane - Pane 4。AI が自動生成するノート（マークダウンプレビュー）+ 課題（本人発）。
  *
- * - ノートは react-markdown でレンダリング（生マークダウンではなくプレビュー表示）
+ * - ノートは react-markdown でレンダリング（プレビュー表示）
  * - 編集は MVP では行わない（AI が会話の流れから更新する想定）
- * - メモ（分からなかった所）は別カード。チェックで「解決」にできる。
+ * - 「課題」セクション: 本人が「これ分からない」と立てる場所。
+ *   旧 メモ機能と統合。立てた瞬間に /issues の一覧にも入る。
  */
 
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import {
-  AlertCircle,
   BookOpen,
+  Bot,
   Check,
   ChevronRight,
   Notebook,
+  Plus,
   Quote,
   Sparkles,
+  Target,
+  User as UserIcon,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { KnowledgeNode, Memo, Note } from "@/lib/learn/types";
+import type { Issue, KnowledgeNode, Note } from "@/lib/learn/types";
 import { cn } from "@/lib/utils";
 
 type Props = {
   currentNode: KnowledgeNode | null;
   note: Note | null;
-  memos: Memo[];
+  /** このノードに紐づく課題 */
+  issues: Issue[];
   onChangeNote: (content: string) => void; // 将来 AI が更新する用
-  onToggleMemoResolved: (id: string) => void;
+  /** 本人発の課題を追加 */
+  onAddIssue: (title: string) => void;
+  /** 課題をクリア */
+  onResolveIssue: (id: string) => void;
+  /** クリア取り消し */
+  onReopenIssue: (id: string) => void;
 };
 
 const mdComponents = {
@@ -68,7 +82,6 @@ const mdComponents = {
     </ol>
   ),
   li: ({ children }: { children?: React.ReactNode }) => (
-    // ul の中の li にはチェックアイコン。ol の中ではアイコン非表示（CSS で）。
     <li className="flex items-start gap-2 leading-relaxed [ol_&]:list-decimal [ol_&]:gap-0">
       <Check className="mt-0.5 size-3.5 shrink-0 text-primary [ol_&]:hidden" />
       <span className="flex-1">{children}</span>
@@ -110,8 +123,10 @@ const mdComponents = {
 export function NotePane({
   currentNode,
   note,
-  memos,
-  onToggleMemoResolved,
+  issues,
+  onAddIssue,
+  onResolveIssue,
+  onReopenIssue,
 }: Props) {
   return (
     <div className="flex h-full w-full flex-col border-l border-border bg-background">
@@ -151,46 +166,209 @@ export function NotePane({
             </Card>
           )}
 
-          {memos.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <AlertCircle className="size-4 text-muted-foreground" />
-                  メモ（分からなかった所）
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                {memos.map((memo) => (
-                  <div
-                    key={memo.id}
-                    className="flex items-start gap-2 rounded-md border border-border bg-card p-3"
-                  >
-                    <Button
-                      size="icon"
-                      variant={memo.resolved ? "default" : "outline"}
-                      className="mt-0.5 size-6 shrink-0"
-                      onClick={() => onToggleMemoResolved(memo.id)}
-                      aria-label={
-                        memo.resolved ? "解決済みを取り消す" : "解決にする"
-                      }
-                    >
-                      {memo.resolved && <Check className="size-3" />}
-                    </Button>
-                    <p
-                      className={cn(
-                        "text-sm leading-relaxed",
-                        memo.resolved && "text-muted-foreground line-through",
-                      )}
-                    >
-                      {memo.content}
-                    </p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          <IssuesSection
+            issues={issues}
+            onAdd={onAddIssue}
+            onResolve={onResolveIssue}
+            onReopen={onReopenIssue}
+          />
         </div>
       </ScrollArea>
     </div>
+  );
+}
+
+/**
+ * このノードに紐づく課題のセクション。
+ * 本人が「これ分からない」を入力して立てる + 既存の課題（本人発・AI 発両方）を表示。
+ */
+function IssuesSection({
+  issues,
+  onAdd,
+  onResolve,
+  onReopen,
+}: {
+  issues: Issue[];
+  onAdd: (title: string) => void;
+  onResolve: (id: string) => void;
+  onReopen: (id: string) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [composing, setComposing] = useState(false);
+
+  const openIssues = issues.filter((i) => i.status === "open");
+  const resolvedIssues = issues.filter((i) => i.status === "resolved");
+
+  const submit = () => {
+    const t = draft.trim();
+    if (!t) return;
+    onAdd(t);
+    setDraft("");
+    setComposing(false);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Target className="size-4 text-muted-foreground" />
+          <span className="flex-1">課題</span>
+          <Link
+            href="/issues"
+            className="text-[11px] font-normal text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            一覧へ
+          </Link>
+        </CardTitle>
+        <p className="text-[11px] text-muted-foreground">
+          「分からない」「曖昧」と思った瞬間に立てる。後で潰す。
+        </p>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        {openIssues.map((issue) => (
+          <IssueRow
+            key={issue.id}
+            issue={issue}
+            onResolve={() => onResolve(issue.id)}
+            onReopen={() => onReopen(issue.id)}
+          />
+        ))}
+
+        {composing ? (
+          <div className="flex flex-col gap-2 rounded-md border border-primary/40 bg-card p-2.5">
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="例：動名詞との使い分けが分からない"
+              className="min-h-[64px] resize-none text-sm"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setComposing(false);
+                  setDraft("");
+                }}
+              >
+                やめる
+              </Button>
+              <Button size="sm" onClick={submit} disabled={!draft.trim()}>
+                課題に追加
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-center gap-1.5 border-dashed text-muted-foreground hover:text-foreground"
+            onClick={() => setComposing(true)}
+          >
+            <Plus className="size-3.5" />
+            <span>課題を立てる（本人発）</span>
+          </Button>
+        )}
+
+        {resolvedIssues.length > 0 && (
+          <details className="mt-1">
+            <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
+              クリア済み {resolvedIssues.length} 件
+            </summary>
+            <div className="mt-2 flex flex-col gap-2">
+              {resolvedIssues.map((issue) => (
+                <IssueRow
+                  key={issue.id}
+                  issue={issue}
+                  onResolve={() => onResolve(issue.id)}
+                  onReopen={() => onReopen(issue.id)}
+                />
+              ))}
+            </div>
+          </details>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function IssueRow({
+  issue,
+  onResolve,
+  onReopen,
+}: {
+  issue: Issue;
+  onResolve: () => void;
+  onReopen: () => void;
+}) {
+  const isResolved = issue.status === "resolved";
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-2 rounded-md border border-border bg-card p-2.5",
+        issue.aiSuggestedClear && !isResolved && "border-emerald-300/60",
+      )}
+    >
+      <Button
+        size="icon"
+        variant={isResolved ? "default" : "outline"}
+        className="mt-0.5 size-6 shrink-0"
+        onClick={isResolved ? onReopen : onResolve}
+        aria-label={isResolved ? "未クリアに戻す" : "クリア（分かった！）"}
+        title={isResolved ? "未クリアに戻す" : "クリア（分かった！）"}
+      >
+        {isResolved && <Check className="size-3" />}
+      </Button>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex items-start gap-1.5">
+          <SourceMiniBadge source={issue.source} />
+          <p
+            className={cn(
+              "flex-1 text-sm leading-snug",
+              isResolved && "text-muted-foreground line-through",
+            )}
+          >
+            {issue.title}
+          </p>
+        </div>
+        {issue.detail && !isResolved && (
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            {issue.detail}
+          </p>
+        )}
+        {issue.aiSuggestedClear && !isResolved && (
+          <p className="flex items-start gap-1 text-[11px] text-emerald-700">
+            <Sparkles className="mt-0.5 size-3 shrink-0" />
+            <span>AI: もうクリアして良さそう</span>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SourceMiniBadge({ source }: { source: Issue["source"] }) {
+  if (source === "self") {
+    return (
+      <Badge
+        variant="outline"
+        className="h-4 shrink-0 gap-0.5 border-blue-300/60 bg-blue-50 px-1 text-[9px] text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300"
+        title="本人発"
+      >
+        <UserIcon className="size-2" />
+        本人
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="h-4 shrink-0 gap-0.5 border-purple-300/60 bg-purple-50 px-1 text-[9px] text-purple-700 dark:border-purple-900/60 dark:bg-purple-950/40 dark:text-purple-300"
+      title="AI 発"
+    >
+      <Bot className="size-2" />
+      AI
+    </Badge>
   );
 }

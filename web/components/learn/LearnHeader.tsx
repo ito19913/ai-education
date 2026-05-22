@@ -9,14 +9,21 @@
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, Network } from "lucide-react";
+import { ChevronRight, Clock, Network, StopCircle } from "lucide-react";
 import type { KnowledgeNode, LearnSubject } from "@/lib/learn/types";
+import { formatElapsed } from "@/lib/learn/use-learning-session";
 
 type Props = {
   subject: LearnSubject;
   breadcrumb: KnowledgeNode[]; // 現在ノードまでのパス（ルート → 現在）
   mindmapCollapsed: boolean;
   onToggleMindmap: () => void;
+  /** 学習セッションが active か */
+  sessionActive: boolean;
+  /** 経過秒数 */
+  elapsedSec: number;
+  /** 終了ボタン押下時 */
+  onEndSession: () => void;
 };
 
 export function LearnHeader({
@@ -24,6 +31,9 @@ export function LearnHeader({
   breadcrumb,
   mindmapCollapsed,
   onToggleMindmap,
+  sessionActive,
+  elapsedSec,
+  onEndSession,
 }: Props) {
   const lastId = breadcrumb[breadcrumb.length - 1]?.id;
 
@@ -66,9 +76,32 @@ export function LearnHeader({
         ))}
       </div>
 
-      <span className="ml-auto text-xs text-muted-foreground">
-        {subject.pageRange}
-      </span>
+      <div className="ml-auto flex items-center gap-3">
+        <span className="text-xs text-muted-foreground">
+          {subject.pageRange}
+        </span>
+        {sessionActive && (
+          <>
+            <Separator orientation="vertical" className="h-5" />
+            <div className="flex items-center gap-1.5 text-xs">
+              <Clock className="size-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">学習中</span>
+              <span className="font-mono font-medium text-foreground tabular-nums">
+                {formatElapsed(elapsedSec)}
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onEndSession}
+              className="h-7 gap-1.5"
+            >
+              <StopCircle className="size-3.5" />
+              <span>学習を終了</span>
+            </Button>
+          </>
+        )}
+      </div>
     </header>
   );
 }
