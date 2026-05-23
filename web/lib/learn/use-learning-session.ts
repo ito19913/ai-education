@@ -1,17 +1,18 @@
 "use client";
 
 /**
- * useLearningSession - 学習セッションを管理する hook（pause/resume 対応版）。
+ * useLearningSession - 学習セッションを管理する hook（pause/resume + 永続化対応版）。
  *
  * 状態モデル: "active" | "paused" | "ended"
  *
  * 自動振る舞い:
- *   - mount: active で開始
- *   - 一定時間（idleTimeoutMs）操作なし → **自動 pause**（旧版は終了だった）
- *   - 任意の操作（mouse / keyboard / click / scroll / touch）で **自動 resume**
- *     （throttle 1 秒）
- *   - 明示的に endSession() を呼ぶ → ended（ゆいに報告して終了するフロー用）
- *   - ブラウザ閉じる時（beforeunload）に確認
+ *   - mount: 同日内に未終了セッションが localStorage にあれば **復元 (paused 状態)**、
+ *     なければ active で新規開始
+ *   - 一定時間（idleTimeoutMs）操作なし → **自動 pause**
+ *   - 任意の操作（mouse / keyboard / click / scroll / touch）で **自動 resume**（throttle 1 秒）
+ *   - 明示的に endSession() を呼ぶ → ended（ゆいに報告して終了するフロー用） + localStorage clear
+ *   - ブラウザ閉じる時（beforeunload）に snapshot を localStorage に保存
+ *   - **別日に来た場合は前日以前のセッションを静かに破棄**（ito19 さん指示 2026-05-24）
  *
  * 経過時間（elapsedSec）:
  *   - active の累積秒数のみカウント
@@ -21,6 +22,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionEndReason } from "./types";
+import {
+  clearPersistedSession,
+  formatLocalDate,
+  isSameLocalDate,
+  loadPersistedSession,
+  savePersistedSession,
+  type PersistedSession,
+} from "./session-storage";
 
 export type SessionStatus = "active" | "paused" | "ended";
 
@@ -52,21 +61,52 @@ type Options = {
 export function useLearningSession({
   idleTimeoutMs = 15 * 60 * 1000,
 }: Options = {}): UseLearningSessionResult {
-  const [startedAt] = useState(() => new Date().toISOString());
-  // Date.now() は impure なので useState の lazy initializer に閉じ込めて
-  // mount 時 1 回だけ実行 → そこから ref を初期化（react-hooks/purity 対応）。
-  const [mountTimeMs] = useState(() => Date.now());
+  // mount 時に localStorage チェック + 初期化情報をまとめて 1 回だけ計算。
+  // 同日内の persisted session があれば復元（paused 起動）、なければ新規。
+  // Date.now() / localStorage アクセスは lazy init に閉じ込める。
+  const [init] = useState(() => {
+    const persisted = loadPersistedSession();
+    const now = Date.now();
+    if (persisted && isSameLocalDate(persisted.date)) {
+      // 同日内の継続セッション → 復元（paused 起動）
+      return {
+        startedAt: persisted.startedAt,
+        mountTimeMs: now,
+        initialAccumSec: persisted.activeAccumSec,
+        restored: true as const,
+      };
+    }
+    // 別日 or 未保存 → 新規（古いものは破棄）
+    if (persisted) clearPersistedSession();
+    return {
+      startedAt: new Date(now).toISOString(),
+      mountTimeMs: now,
+      initialAccumSec: 0,
+      restored: false as const,
+    };
+  });
+
+  const [startedAt] = useState(init.startedAt);
   const [endedAt, setEndedAt] = useState<string | null>(null);
-  const [pausedAt, setPausedAt] = useState<string | null>(null);
+  // 復元時は paused 起動（活動で resume）。新規は null。
+  // lazy initializer 形にして lint 上もクリーンに（render 中の純粋性確保）。
+  const [pausedAt, setPausedAt] = useState<string | null>(() =>
+    init.restored ? new Date(init.mountTimeMs).toISOString() : null,
+  );
   const [endReason, setEndReason] = useState<SessionEndReason | null>(null);
-  const [elapsedSec, setElapsedSec] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(
+    Math.floor(init.initialAccumSec),
+  );
 
   // active 区間の累積秒数（pause/end 時に確定加算）
-  const activeAccumSecRef = useRef(0);
+  const activeAccumSecRef = useRef(init.initialAccumSec);
   // 現在の active 区間の開始時刻 (paused/ended 中は null)
-  const lastActiveStartRef = useRef<number | null>(mountTimeMs);
+  // 復元時は paused なので null から始まる。
+  const lastActiveStartRef = useRef<number | null>(
+    init.restored ? null : init.mountTimeMs,
+  );
   // 最終活動時刻 (idle 検知用)
-  const lastActivityRef = useRef(mountTimeMs);
+  const lastActivityRef = useRef(init.mountTimeMs);
   // 終了済みフラグ (idempotent な endSession のため)
   const endedRef = useRef(false);
 
@@ -81,6 +121,24 @@ export function useLearningSession({
     }
     return Math.floor(accum);
   };
+
+  /**
+   * 現在 state を localStorage 永続化用にスナップショット。
+   * useCallback で安定化（useEffect の deps 警告回避 + 不要な再生成防止）。
+   */
+  const buildSnapshot = useCallback((): PersistedSession => {
+    const isPaused = lastActiveStartRef.current === null;
+    const additional = isPaused
+      ? 0
+      : (Date.now() - (lastActiveStartRef.current ?? Date.now())) / 1000;
+    return {
+      startedAt,
+      activeAccumSec: activeAccumSecRef.current + additional,
+      status: isPaused ? "paused" : "active",
+      savedAt: new Date().toISOString(),
+      date: formatLocalDate(),
+    };
+  }, [startedAt]);
 
   const pause = useCallback(() => {
     if (endedRef.current) return;
@@ -124,14 +182,17 @@ export function useLearningSession({
     setEndedAt(new Date().toISOString());
     setEndReason(reason);
     setElapsedSec(Math.floor(activeAccumSecRef.current));
-    // 後で Supabase に書き込み or LocalStorage 保存。MVP は console.log。
+    // 明示終了 → localStorage を破棄（次回はクリーンスタート）
+    clearPersistedSession();
     console.log("[session-end]", { reason });
   }, []);
 
-  // tick + idle 検知 (毎秒)
+  // tick + idle 検知 (毎秒) + 永続化 (5 秒に 1 回)
   useEffect(() => {
     if (endedAt) return;
+    let tickCount = 0;
     const interval = window.setInterval(() => {
+      tickCount++;
       // elapsed を更新（active なら進行中の区間を含めて再計算）
       setElapsedSec(computeElapsed());
       // idle 検知: active かつ最終活動から idleTimeoutMs 経過 → auto-pause
@@ -141,9 +202,13 @@ export function useLearningSession({
       ) {
         pause();
       }
+      // 5 秒に 1 回、localStorage に save（writes を減らす）
+      if (tickCount % 5 === 0) {
+        savePersistedSession(buildSnapshot());
+      }
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [endedAt, idleTimeoutMs, pause]);
+  }, [endedAt, idleTimeoutMs, pause, buildSnapshot]);
 
   // global 活動リスナー (throttle 1 秒)
   useEffect(() => {
@@ -169,16 +234,19 @@ export function useLearningSession({
     };
   }, [endedAt, markActivity]);
 
-  // beforeunload: ブラウザ閉じる時に確認
+  // beforeunload: ブラウザ閉じる時に snapshot を保存（終了扱いにはしない）
+  // ito19 さん指示: ブラウザ閉じ ≠ 学習終了。
+  // 翌日以降は init lazy で別日判定 → 静かに破棄されるので、ここで触れない。
   useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
+    const handler = () => {
       if (endedRef.current) return;
-      e.preventDefault();
-      e.returnValue = "";
+      // 明示終了してない → snapshot を保存（次回 mount で同日なら復元）
+      savePersistedSession(buildSnapshot());
+      // 警告ダイアログは出さない（事故閉じも自然に復帰できるので不要）
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, []);
+  }, [buildSnapshot]);
 
   return {
     startedAt,
