@@ -83,6 +83,48 @@ export type Issue = {
   aiSuggestedClearReason?: string;
   /** 発生履歴。複数回発生した時に蓄積される */
   occurrences?: IssueOccurrence[];
+  /** AI 発の場合の検知元 ChatMessage ID（初手の trigger-message-quote カードに使う）*/
+  triggerMessageId?: string;
+  /** 課題ごとに独立した chat スレッド（Phase 3）。クリア後も readonly で残す */
+  chatThread?: IssueChatMessage[];
+  /** 科目の先生 → ゆい先生 への引継ぎサマリー（Phase 6 で自動生成、Phase 3 は手書き mock）*/
+  summary?: string;
+};
+
+// 課題 chat（Phase 3）
+// ノード対話とは別に、Issue 1 件ごとに独立した chat スレッドを持つ。
+// 担当 AI は科目の先生（既存 DialogPane と同 persona）。
+// 1 本の長いスレッドが日をまたいで蓄積し、クリアまで継続する。
+
+export type IssueChatRole = "teacher" | "learner";
+
+/** 課題 chat メッセージに埋め込めるリッチカード */
+export type IssueChatCard =
+  | {
+      kind: "trigger-message-quote";
+      /** 引用元 ChatMessage の ID */
+      sourceMessageId: string;
+      sourceNodeId: string;
+      /** メッセージ本文（コピーで保持。元が消えても表示可）*/
+      quote: string;
+      sourceCreatedAt: string;
+    }
+  | {
+      kind: "resolve-suggestion";
+      /** 「もうクリアして良さそう」の理由 */
+      reason?: string;
+    };
+
+/** 課題 chat の 1 メッセージ（TutorMessage を雛形にした新型）*/
+export type IssueChatMessage = {
+  id: string;
+  issueId: string;
+  role: IssueChatRole;
+  text?: string;
+  card?: IssueChatCard;
+  /** AI 側が提示するクイック返信チップ候補 */
+  quickReplies?: string[];
+  createdAt: string;
 };
 
 /**
@@ -210,8 +252,7 @@ export type TutorRole = "tutor" | "learner";
 /**
  * 担任メッセージに埋め込まれるリッチ UI 部品。
  * Phase 2 mock では subject-picker / material-picker / range-preview /
- * start-study の 4 種類。今後 issue-list / today-tasks / homework-progress
- * など足していく想定。
+ * start-study の 4 種類。Phase 3 で issue-list / today-schedule を追加。
  */
 export type TutorCard =
   | {
@@ -246,7 +287,35 @@ export type TutorCard =
       withReconstruction: boolean;
       /** ボタンのラベル */
       label: string;
+    }
+  | {
+      kind: "issue-list";
+      /** カードに並べる未クリア課題の ID（最大 5 件想定）*/
+      issueIds: string[];
+      /** 「全部見る」CTA のラベル */
+      seeAllLabel: string;
+    }
+  | {
+      kind: "today-schedule";
+      /** 今日のタスクの ScheduleItem ID（時刻順）*/
+      scheduleItemIds: string[];
+      /** 「全部見る」CTA のラベル */
+      seeAllLabel: string;
     };
+
+/**
+ * 担任メッセージから右ペインを切り替えるアクション（Phase 3）。
+ * カードの button click や quickReplies のクリックで発火し、
+ * TutorWorkspace 側で URL を /tutor?view=... に push する。
+ */
+export type TutorRightPaneAction =
+  | { kind: "open-issues" }
+  | { kind: "open-issue"; issueId: string }
+  | { kind: "open-schedule" }
+  | { kind: "open-history" }
+  | { kind: "open-material-new" }
+  | { kind: "open-subject-history"; subjectId: string }
+  | { kind: "close" };
 
 /** 担任 chat の 1 メッセージ */
 export type TutorMessage = {
@@ -258,8 +327,29 @@ export type TutorMessage = {
   card?: TutorCard;
   /** AI 側が提示する「クイック返信チップ」候補 */
   quickReplies?: string[];
+  /** このメッセージ送信時に右ペインを切り替えるアクション（Phase 3）*/
+  rightPaneAction?: TutorRightPaneAction;
   createdAt: string;
 };
+
+/**
+ * /tutor 右ペインの表示状態（URL `?view=` のパース・構築で再利用）。
+ * - default: 空 or 今日のサマリー
+ * - issues: 課題一覧（コア IssueListView）
+ * - issue: 単一課題の chat（IssueChat、id クエリで指定）
+ * - schedule: 今日のスケジュール（コア ScheduleDashboard）
+ * - history: 学習履歴（コア HistoryView）
+ * - material-new: 新規教材登録ウィザード（コア MaterialEditWizard）
+ * - subject-history: 科目の先生との対話履歴ビュー（SubjectHistoryView、subjectId クエリで指定）
+ */
+export type RightPaneView =
+  | "default"
+  | "issues"
+  | "issue"
+  | "schedule"
+  | "history"
+  | "material-new"
+  | "subject-history";
 
 /** 担任 chat スレッド全体 */
 export type TutorThread = {
@@ -301,6 +391,23 @@ export type Material = {
 export type Subject = {
   id: string;
   name: string;
+  /** その科目を担当する「科目の先生」persona（Phase 3 追加）*/
+  teacher?: SubjectTeacher;
+};
+
+/**
+ * 科目の先生 persona。ゆい先生（担任）の TUTOR_PERSONA と同じ構造。
+ * /tutor 右ペインの IssueChat ヘッダや SubjectHistoryView の見出しで使う。
+ */
+export type SubjectTeacher = {
+  /** 名前（呼び捨て、例: "あおい"）*/
+  name: string;
+  /** 「○○先生」表記の完成形（例: "あおい先生"）*/
+  displayName: string;
+  /** アバターに表示する 1 文字（例: "あ"）*/
+  avatarLetter: string;
+  /** ヘッダ等で使うサブタイトル（例: "英語の先生"）*/
+  subtitle: string;
 };
 
 // ============================================================================

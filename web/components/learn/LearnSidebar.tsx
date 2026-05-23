@@ -42,20 +42,15 @@ import Link from "next/link";
 import {
   Book,
   BookOpenCheck,
-  CalendarClock,
   ChevronRight,
-  Compass,
   FileText,
   Folder,
   GraduationCap,
-  History,
   LogOut,
   Pencil,
   Plus,
   Settings,
-  Target,
   Trash2,
-  Upload,
   User,
 } from "lucide-react";
 import type {
@@ -80,8 +75,6 @@ type Props = {
   onEditMaterial: (materialId: string) => void;
   trashCount: number;
   onOpenTrash: () => void;
-  /** 未クリア課題の件数（サイドバーバッジ用） */
-  openIssueCount: number;
 };
 
 export function LearnSidebar({
@@ -98,7 +91,6 @@ export function LearnSidebar({
   onEditMaterial,
   trashCount,
   onOpenTrash,
-  openIssueCount,
 }: Props) {
   const nameOf = (nodeId: string) =>
     nodes.find((n) => n.id === nodeId)?.name ?? nodeId;
@@ -126,60 +118,37 @@ export function LearnSidebar({
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link href="/schedule">
-                  <SidebarMenuButton tooltip="学習スケジュール">
-                    <CalendarClock />
-                    <span>学習スケジュール</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link href="/philosophy">
-                  <SidebarMenuButton tooltip="AI-Education の憲法">
-                    <Compass />
-                    <span>AI-Education の憲法</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link href="/issues">
-                  <SidebarMenuButton tooltip="課題一覧">
-                    <Target />
-                    <span className="flex-1">課題一覧</span>
-                    {openIssueCount > 0 && (
-                      <Badge
-                        variant="secondary"
-                        className="ml-auto text-[10px]"
+              {/*
+                科目の先生（あおい先生 等）はゆい先生の直下に並列で並べる。
+                クリックで /tutor?view=subject-history&subjectId=xxx に飛ぶ
+                = その先生との対話履歴ビュー（ARCHITECTURE §科目の先生 履歴ビュー 参照）。
+              */}
+              {subjects.map((subject) =>
+                subject.teacher ? (
+                  <SidebarMenuItem key={`teacher-${subject.id}`}>
+                    <Link
+                      href={`/tutor?view=subject-history&subjectId=${encodeURIComponent(
+                        subject.id,
+                      )}`}
+                    >
+                      <SidebarMenuButton
+                        tooltip={`${subject.teacher.displayName}（${subject.teacher.subtitle}）`}
                       >
-                        {openIssueCount}
-                      </Badge>
-                    )}
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link href="/history">
-                  <SidebarMenuButton tooltip="学習履歴">
-                    <History />
-                    <span>学習履歴</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip="ゴミ箱"
-                  onClick={onOpenTrash}
-                >
-                  <Trash2 />
-                  <span className="flex-1">ゴミ箱</span>
-                  {trashCount > 0 && (
-                    <Badge variant="secondary" className="ml-auto text-[10px]">
-                      {trashCount}
-                    </Badge>
-                  )}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+                        <GraduationCap />
+                        <span>
+                          {subject.teacher.displayName}（{subject.name}）
+                        </span>
+                      </SidebarMenuButton>
+                    </Link>
+                  </SidebarMenuItem>
+                ) : null,
+              )}
+              {/*
+                スケジュール / 憲法 / 課題一覧 / 学習履歴 は ゆい chat 経由に一本化（2026-05-23）。
+                サイドバーから直接リンクを撤去。緊急時は URL バーから /schedule, /issues, /history,
+                /philosophy にアクセス可能（ARCHITECTURE §バックアップ動線 参照）。
+                ゴミ箱は SidebarContent の末尾に移動。
+              */}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -211,6 +180,10 @@ export function LearnSidebar({
                           {subject.name}
                         </span>
                       </SidebarMenuButton>
+                      {/*
+                        履歴アイコンはサイドバー上部「先生」セクションに統合した（2026-05-23）。
+                        ここからは撤去（重複動線回避）。
+                      */}
                       <Link
                         href={`/admin/materials/new?subjectId=${subject.id}`}
                         className="absolute right-7 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -258,14 +231,11 @@ export function LearnSidebar({
             <SidebarGroupLabel>管理</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                <SidebarMenuItem>
-                  <Link href="/admin/materials">
-                    <SidebarMenuButton tooltip="教材登録">
-                      <Upload />
-                      <span>教材登録</span>
-                    </SidebarMenuButton>
-                  </Link>
-                </SidebarMenuItem>
+                {/*
+                  教材登録は ゆい chat 経由（/tutor の「教材を追加」メニュー）に一本化（2026-05-23）。
+                  サイドバーから直接リンクを撤去。緊急時は URL バーから /admin/materials,
+                  /admin/materials/new にアクセス可能（ARCHITECTURE §バックアップ動線 参照）。
+                */}
                 <SidebarMenuItem>
                   <SidebarMenuButton tooltip="設定">
                     <Settings />
@@ -276,6 +246,25 @@ export function LearnSidebar({
             </SidebarGroupContent>
           </SidebarGroup>
         )}
+
+        {/* ゴミ箱: サイドバー最下部に独立 Group として配置 */}
+        <SidebarGroup className="mt-auto">
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="ゴミ箱" onClick={onOpenTrash}>
+                  <Trash2 />
+                  <span className="flex-1">ゴミ箱</span>
+                  {trashCount > 0 && (
+                    <Badge variant="secondary" className="ml-auto text-[10px]">
+                      {trashCount}
+                    </Badge>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter>

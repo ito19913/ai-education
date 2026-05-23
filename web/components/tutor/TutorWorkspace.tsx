@@ -1,0 +1,350 @@
+"use client";
+
+/**
+ * TutorWorkspace - /tutor の 2 ペイン司令室（Phase 3）。
+ *
+ * 構造:
+ *   - 左ペイン: TutorChat（ゆい先生との会話）
+ *   - 右ペイン: RightPaneRouter（?view= に応じて IssueListView / IssueChat / ScheduleDashboard / HistoryView を切替）
+ *
+ * 状態:
+ *   - URL ?view=...&id=... を権威として保持
+ *   - ゆい chat の rightPaneAction → router.push で URL を変える
+ *   - 既存の issues / today schedule の state（resolve / chatThread 追加）も一元管理
+ *
+ * 入力欄の振る舞い（ARCHITECTURE §「入力欄の振る舞い」）:
+ *   - 右ペインが view=issue（課題 chat）の時のみ、左ゆい入力欄が disabled
+ *   - 「もどる」で右ペインを閉じると、フォーカスは左ゆいに戻る
+ */
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { TutorChat } from "./TutorChat";
+import { RightPaneRouter } from "./RightPaneRouter";
+import {
+  buildInitialTutorThread,
+  buildNextTutorReply,
+  type TutorStep,
+} from "@/lib/learn/tutor-mock";
+import type {
+  ChatMessage,
+  ExamPrep,
+  Homework,
+  Issue,
+  IssueChatMessage,
+  KnowledgeNode,
+  LearningSession,
+  LessonReview,
+  RightPaneView,
+  ScheduleItem,
+  Subject,
+  TutorMessage,
+  TutorRightPaneAction,
+} from "@/lib/learn/types";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+
+type Props = {
+  nodes: KnowledgeNode[];
+  initialIssues: Issue[];
+  initialScheduleToday: ScheduleItem[];
+  scheduleUpcoming: ScheduleItem[];
+  exams: ExamPrep[];
+  homeworks: Homework[];
+  lessonReviews: LessonReview[];
+  subjects: Subject[];
+  sessions: LearningSession[];
+  chatMessages: ChatMessage[];
+};
+
+function viewFromParam(raw: string | null): RightPaneView {
+  if (
+    raw === "issues" ||
+    raw === "issue" ||
+    raw === "schedule" ||
+    raw === "history" ||
+    raw === "material-new" ||
+    raw === "subject-history"
+  ) {
+    return raw;
+  }
+  return "default";
+}
+
+export function TutorWorkspace({
+  nodes,
+  initialIssues,
+  initialScheduleToday,
+  scheduleUpcoming,
+  exams,
+  homeworks,
+  lessonReviews,
+  subjects,
+  sessions,
+  chatMessages,
+}: Props) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const view = viewFromParam(searchParams.get("view"));
+  const selectedIssueId = searchParams.get("id");
+  const selectedSubjectId = searchParams.get("subjectId");
+
+  // ----- ゆい chat の state -----
+  const [tutorMessages, setTutorMessages] = useState<TutorMessage[]>(
+    () => buildInitialTutorThread().messages,
+  );
+  const tutorStepRef = useRef<TutorStep>({ state: "opening" });
+
+  // ----- Issue state（resolve / chatThread 追加を一元管理） -----
+  const [issues, setIssues] = useState<Issue[]>(initialIssues);
+  // Today schedule（done トグル等は ScheduleDashboard 内で完結するが、
+  // /tutor 右ペインでも同じ初期データを使う）
+  const [scheduleToday] = useState<ScheduleItem[]>(initialScheduleToday);
+
+  const selectedIssue = useMemo(
+    () => issues.find((i) => i.id === selectedIssueId) ?? null,
+    [issues, selectedIssueId],
+  );
+
+  // ----- URL 操作 -----
+  const navigate = useCallback(
+    (
+      next: RightPaneView,
+      params?: { issueId?: string; subjectId?: string },
+    ) => {
+      const url = new URLSearchParams();
+      if (next !== "default") url.set("view", next);
+      if (next === "issue" && params?.issueId) url.set("id", params.issueId);
+      if (next === "subject-history" && params?.subjectId)
+        url.set("subjectId", params.subjectId);
+      const q = url.toString();
+      router.push(q ? `/tutor?${q}` : "/tutor");
+    },
+    [router],
+  );
+
+  const applyRightPaneAction = useCallback(
+    (action: TutorRightPaneAction) => {
+      switch (action.kind) {
+        case "open-issues":
+          navigate("issues");
+          break;
+        case "open-issue":
+          navigate("issue", { issueId: action.issueId });
+          break;
+        case "open-schedule":
+          navigate("schedule");
+          break;
+        case "open-history":
+          navigate("history");
+          break;
+        case "open-material-new":
+          navigate("material-new");
+          break;
+        case "open-subject-history":
+          navigate("subject-history", { subjectId: action.subjectId });
+          break;
+        case "close":
+          navigate("default");
+          break;
+      }
+    },
+    [navigate],
+  );
+
+  // ----- 教材追加完了時のゆい発話追加 + 右ペインクローズ -----
+  const handleMaterialAdded = useCallback(
+    (materialName: string, approvedNodeCount: number) => {
+      const reply: TutorMessage = {
+        id: `t-mat-${Date.now()}`,
+        role: "tutor",
+        text:
+          approvedNodeCount > 0
+            ? `「${materialName}」、登録できたよ！\n体系図に ${approvedNodeCount} 個のノードが追加されたよ。`
+            : `「${materialName}」、登録できたよ！\n（承認ノードは 0 件だったから、体系図には追加されてないよ）`,
+        createdAt: new Date().toISOString(),
+      };
+      setTutorMessages((prev) => [...prev, reply]);
+      navigate("default");
+    },
+    [navigate],
+  );
+
+  // ----- ゆい chat: 返信生成（mock + rightPaneAction 適用） -----
+  const generateReply = useCallback(
+    ({ userInput }: { userInput: string; history: TutorMessage[] }): TutorMessage => {
+      const result = buildNextTutorReply({
+        state: tutorStepRef.current,
+        userInput,
+      });
+      tutorStepRef.current = result.nextState;
+      if (result.reply.rightPaneAction) {
+        applyRightPaneAction(result.reply.rightPaneAction);
+      }
+      return result.reply;
+    },
+    [applyRightPaneAction],
+  );
+
+  const onPickSubject = useCallback(
+    (subjectId: string): TutorMessage => {
+      tutorStepRef.current = {
+        ...tutorStepRef.current,
+        state: "subject-picked",
+        proposedSubjectId: subjectId,
+      };
+      const result = buildNextTutorReply({
+        state: tutorStepRef.current,
+        userInput: "",
+      });
+      tutorStepRef.current = result.nextState;
+      if (result.reply.rightPaneAction) {
+        applyRightPaneAction(result.reply.rightPaneAction);
+      }
+      return result.reply;
+    },
+    [applyRightPaneAction],
+  );
+
+  const onPickMaterial = useCallback(
+    (materialId: string): TutorMessage => {
+      tutorStepRef.current = {
+        ...tutorStepRef.current,
+        state: "material-picked",
+        proposedMaterialId: materialId,
+      };
+      const result = buildNextTutorReply({
+        state: tutorStepRef.current,
+        userInput: "",
+      });
+      tutorStepRef.current = result.nextState;
+      if (result.reply.rightPaneAction) {
+        applyRightPaneAction(result.reply.rightPaneAction);
+      }
+      return result.reply;
+    },
+    [applyRightPaneAction],
+  );
+
+  // ----- Issue 操作 -----
+  const handleResolveIssue = useCallback((issueId: string) => {
+    setIssues((prev) =>
+      prev.map((i) =>
+        i.id === issueId
+          ? {
+              ...i,
+              status: "resolved",
+              resolvedAt: new Date().toISOString(),
+              aiSuggestedClear: false,
+              aiSuggestedClearReason: undefined,
+            }
+          : i,
+      ),
+    );
+  }, []);
+
+  const handleReopenIssue = useCallback((issueId: string) => {
+    setIssues((prev) =>
+      prev.map((i) =>
+        i.id === issueId
+          ? { ...i, status: "open", resolvedAt: undefined }
+          : i,
+      ),
+    );
+  }, []);
+
+  const handleAppendChatMessages = useCallback(
+    (issueId: string, msgs: IssueChatMessage[]) => {
+      setIssues((prev) =>
+        prev.map((i) =>
+          i.id === issueId
+            ? { ...i, chatThread: [...(i.chatThread ?? []), ...msgs] }
+            : i,
+        ),
+      );
+    },
+    [],
+  );
+
+  // 右ペインに課題 chat が出ている時、左ゆい入力欄を無効化する
+  const tutorLocked = view === "issue";
+
+  // 「科目の先生のドメイン」に入った時はゆい先生ペインを完全に隠す。
+  // 現状: subject-history（科目の先生との対話履歴の集約タイムライン）
+  // 戻り導線は右ペインヘッダの「ゆい先生に戻る」ボタン（onBack → /tutor）。
+  const hideTutorPane = view === "subject-history";
+
+  const rightPane = (
+    <RightPaneRouter
+      view={view}
+      selectedIssue={selectedIssue}
+      selectedSubjectId={selectedSubjectId}
+      issues={issues}
+      nodes={nodes}
+      chatMessages={chatMessages}
+      scheduleToday={scheduleToday}
+      scheduleUpcoming={scheduleUpcoming}
+      exams={exams}
+      homeworks={homeworks}
+      lessonReviews={lessonReviews}
+      subjects={subjects}
+      sessions={sessions}
+      onResolveIssue={handleResolveIssue}
+      onReopenIssue={handleReopenIssue}
+      onAppendChatMessages={handleAppendChatMessages}
+      onSelectIssue={(id) => navigate("issue", { issueId: id })}
+      onSelectIssueItem={(id) => navigate("issue", { issueId: id })}
+      onBack={() => navigate("default")}
+      onMaterialAdded={handleMaterialAdded}
+    />
+  );
+
+  return (
+    <div className="flex h-screen w-full flex-col bg-background">
+      {hideTutorPane ? (
+        // 1 ペイン: 科目の先生のドメイン（ゆい先生は引っ込む）
+        <div className="flex min-h-0 flex-1">{rightPane}</div>
+      ) : (
+        // 2 ペイン: 左ゆい + 右動的
+        <ResizablePanelGroup
+          orientation="horizontal"
+          className="flex min-h-0 flex-1"
+        >
+          {/* 左: ゆい chat */}
+          <ResizablePanel defaultSize={40} minSize={25}>
+            <TutorChat
+              initialMessages={tutorMessages}
+              messages={tutorMessages}
+              setMessages={setTutorMessages}
+              nodes={nodes}
+              issues={issues}
+              scheduleItems={scheduleToday}
+              generateReply={generateReply}
+              onPickSubject={onPickSubject}
+              onPickMaterial={onPickMaterial}
+              externallyLocked={tutorLocked}
+              externalLockMessage={
+                tutorLocked
+                  ? "課題の対話中… 右で科目の先生と話してね"
+                  : undefined
+              }
+              onSelectIssue={(id) => navigate("issue", { issueId: id })}
+              onSeeAllIssues={() => navigate("issues")}
+              onSelectIssueItem={(id) => navigate("issue", { issueId: id })}
+              onSeeAllSchedule={() => navigate("schedule")}
+            />
+          </ResizablePanel>
+
+          <ResizableHandle withHandle />
+
+          {/* 右: 動的展開エリア */}
+          <ResizablePanel defaultSize={60} minSize={30}>
+            {rightPane}
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      )}
+    </div>
+  );
+}

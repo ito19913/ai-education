@@ -21,6 +21,7 @@ import {
   Bot,
   Check,
   ChevronRight,
+  MessageSquare,
   Notebook,
   Plus,
   Quote,
@@ -214,7 +215,7 @@ function IssuesSection({
           <Target className="size-4 text-muted-foreground" />
           <span className="flex-1">課題</span>
           <Link
-            href="/issues"
+            href="/tutor?view=issues"
             className="text-[11px] font-normal text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           >
             一覧へ
@@ -342,6 +343,15 @@ function IssueRow({
             <Sparkles className="mt-0.5 size-3 shrink-0" />
             <span>AI: もうクリアして良さそう</span>
           </p>
+        )}
+        {!isResolved && (
+          <Link
+            href={`/tutor?view=issue&id=${encodeURIComponent(issue.id)}`}
+            className="inline-flex items-center gap-1 self-start rounded-md border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+          >
+            <MessageSquare className="size-2.5" />
+            <span>AI と話す</span>
+          </Link>
         )}
       </div>
     </div>

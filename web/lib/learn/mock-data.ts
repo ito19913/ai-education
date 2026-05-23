@@ -31,7 +31,7 @@ export const MOCK_SUBJECT: LearnSubject = {
 };
 
 export const MOCK_USER: CurrentUser = {
-  displayName: "娘さん",
+  displayName: "伊藤華英",
   role: "learner",
 };
 
@@ -264,6 +264,31 @@ export const MOCK_ISSUES: Issue[] = [
         source: "self",
       },
     ],
+    chatThread: [
+      {
+        id: "ic-self-1-1",
+        issueId: "issue-self-1",
+        role: "teacher",
+        text: "これ、自分でメモしてくれてたやつだね。\n動名詞 -ing と不定詞の名詞的用法、両方「〜すること」って訳すから、確かに見分けつきにくいよね。\nどんな時に「あれ、どっちだろ?」って思った?",
+        quickReplies: ["どっちでもいい気がする", "例で考えたい", "違いを教えて"],
+        createdAt: "2026-05-22T19:05:00.000Z",
+      },
+      {
+        id: "ic-self-1-2",
+        issueId: "issue-self-1",
+        role: "learner",
+        text: "違いを教えて",
+        createdAt: "2026-05-22T19:05:15.000Z",
+      },
+      {
+        id: "ic-self-1-3",
+        issueId: "issue-self-1",
+        role: "teacher",
+        text: "OK！じゃあ 1 つだけ核を渡すね。\n\n**不定詞**は「これからやる感じ」、**動名詞**は「もう動詞そのもの / すでにある行為」のイメージ。\n\n例: I like to swim.（これから泳ぐのが好き＝具体場面）\n   I like swimming.（泳ぐこと自体が好き＝動詞そのもの）\n\nどう、しっくりくる?",
+        quickReplies: ["なるほど", "もう少し例ほしい", "まだピンとこない"],
+        createdAt: "2026-05-22T19:05:45.000Z",
+      },
+    ],
   },
   {
     id: "issue-self-2",
@@ -294,6 +319,7 @@ export const MOCK_ISSUES: Issue[] = [
       "「To play soccer is fun.」を本人に説明してもらった時、主語に来る感覚を自分の言葉で言えなかった。例文を見て理解しているが、自発的に組み立てる段で詰まる可能性。",
     status: "open",
     createdAt: "2026-05-20T19:30:00.000Z",
+    triggerMessageId: "m-noun-2",
     occurrences: [
       {
         id: "occ-ai-1-1",
@@ -303,6 +329,30 @@ export const MOCK_ISSUES: Issue[] = [
         description:
           "AI: 「自分の言葉で『名詞的用法』を説明してみて」→ 本人:「動詞を名詞っぽく使えるやつ…？」（短い、曖昧）",
         source: "ai-detected",
+      },
+    ],
+    chatThread: [
+      {
+        id: "ic-ai-1-1",
+        issueId: "issue-ai-1",
+        role: "teacher",
+        card: {
+          kind: "trigger-message-quote",
+          sourceMessageId: "m-noun-2",
+          sourceNodeId: "inf-noun",
+          quote:
+            "動詞を名詞っぽく使えるやつ…？",
+          sourceCreatedAt: "2026-05-20T19:30:00.000Z",
+        },
+        createdAt: "2026-05-22T19:00:00.000Z",
+      },
+      {
+        id: "ic-ai-1-2",
+        issueId: "issue-ai-1",
+        role: "teacher",
+        text: "5/20 の会話でこう言ってたよね。\nあの時「主語に置く感覚」がフワッとしてそうだったから、今もう一度だけ確認してみる?\n\nたとえば「To play soccer is fun.」、これ訳せる?",
+        quickReplies: ["訳してみる", "ヒントほしい", "もう大丈夫"],
+        createdAt: "2026-05-22T19:00:05.000Z",
       },
     ],
   },
@@ -380,6 +430,8 @@ export const MOCK_ISSUES: Issue[] = [
     status: "resolved",
     createdAt: "2026-04-22T19:25:00.000Z",
     resolvedAt: "2026-04-29T19:55:00.000Z",
+    summary:
+      "will = その場で決めた未来 / be going to = 前から決まってる未来、で本人が自発的に整理。例文を 5 つ作って全部正しく使い分けできた。",
     occurrences: [
       {
         id: "occ-self-3-1",
@@ -387,6 +439,62 @@ export const MOCK_ISSUES: Issue[] = [
         sessionId: "sess-2026-04-22",
         description: "メモを書いた時点。",
         source: "self",
+      },
+    ],
+    chatThread: [
+      {
+        id: "ic-self-3-1",
+        issueId: "issue-self-3",
+        role: "teacher",
+        text: "will と be going to の違い、自分でメモしてくれたんだね。\nまずどんな違いをイメージしてる?",
+        createdAt: "2026-04-29T19:30:00.000Z",
+      },
+      {
+        id: "ic-self-3-2",
+        issueId: "issue-self-3",
+        role: "learner",
+        text: "どっちも「〜するつもり」って訳すから、違いがよく分からない。",
+        createdAt: "2026-04-29T19:30:45.000Z",
+      },
+      {
+        id: "ic-self-3-3",
+        issueId: "issue-self-3",
+        role: "teacher",
+        text: "うん、訳は似てるよね。核は「いつ決めたか」だよ。\n- will: 今その場で決めた\n- be going to: 前から決まってた\n\n例: 電話が鳴った → I'll get it!（今決めた）\n   I'm going to study tonight.（前から決めてた）",
+        createdAt: "2026-04-29T19:31:30.000Z",
+      },
+      {
+        id: "ic-self-3-4",
+        issueId: "issue-self-3",
+        role: "learner",
+        text: "あ、なるほど。じゃあ「明日テストだから勉強する」は be going to の方が自然?",
+        createdAt: "2026-04-29T19:32:30.000Z",
+      },
+      {
+        id: "ic-self-3-5",
+        issueId: "issue-self-3",
+        role: "teacher",
+        text: "そうそう、その通り。「明日テストある」は前から知ってる事だから be going to。\nクリアして OK そう?",
+        card: {
+          kind: "resolve-suggestion",
+          reason: "本人から「明日テストだから〜」の例を正しく使い分けて出せた。",
+        },
+        quickReplies: ["クリアして", "もう少し練習したい"],
+        createdAt: "2026-04-29T19:33:00.000Z",
+      },
+      {
+        id: "ic-self-3-6",
+        issueId: "issue-self-3",
+        role: "learner",
+        text: "クリアして",
+        createdAt: "2026-04-29T19:55:00.000Z",
+      },
+      {
+        id: "ic-self-3-7",
+        issueId: "issue-self-3",
+        role: "teacher",
+        text: "OK、クリアしておくね。お疲れさま！",
+        createdAt: "2026-04-29T19:55:05.000Z",
       },
     ],
   },
@@ -431,8 +539,26 @@ export const MOCK_TOOL_CARDS = [] as const;
 // ====== サイドバー用: 科目 / 教材 ======
 
 export const MOCK_SUBJECTS: Subject[] = [
-  { id: "subj-english", name: "英語" },
+  {
+    id: "subj-english",
+    name: "英語",
+    teacher: {
+      name: "あおい",
+      displayName: "あおい先生",
+      avatarLetter: "あ",
+      subtitle: "英語の先生",
+    },
+  },
 ];
+
+/**
+ * MOCK_TREE の root ノード ID → subject ID 対応（Phase 3 追加）。
+ * 履歴集約などで `resolveSubjectIdForNode` が使う。
+ * 将来 subjects 複数化された際はここに数学・国語等の root を追加していく。
+ */
+export const ROOT_NODE_TO_SUBJECT: Record<string, string> = {
+  grammar: "subj-english",
+};
 
 // ====== 学習セッション履歴 (mock) ======
 

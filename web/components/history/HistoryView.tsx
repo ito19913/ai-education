@@ -37,6 +37,11 @@ type Props = {
   sessions: LearningSession[];
   nodes: KnowledgeNode[];
   subjects: Subject[];
+  /**
+   * true の時、ヘッダと min-h-screen を出さずに右ペイン埋め込み用の表示にする。
+   * Phase 3 で /tutor 右ペイン (?view=history) で使う。
+   */
+  embedded?: boolean;
 };
 
 type ViewMode = "cards" | "calendar";
@@ -48,7 +53,7 @@ const REASON_LABELS: Record<SessionEndReason, string> = {
   "browser-close": "ブラウザ閉じ",
 };
 
-export function HistoryView({ sessions, nodes, subjects }: Props) {
+export function HistoryView({ sessions, nodes, subjects, embedded = false }: Props) {
   const [mode, setMode] = useState<ViewMode>("cards");
   const nameOf = (id: string) =>
     nodes.find((n) => n.id === id)?.name ?? id;
@@ -58,28 +63,9 @@ export function HistoryView({ sessions, nodes, subjects }: Props) {
     b.startedAt.localeCompare(a.startedAt),
   );
 
-  return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-4xl items-center gap-3 px-6 py-4">
-          <History className="size-5 text-primary" />
-          <div className="flex-1">
-            <h1 className="text-base font-semibold">学習履歴</h1>
-            <p className="text-xs text-muted-foreground">
-              これまでの学習セッションの記録 ({sorted.length} 件)
-            </p>
-          </div>
-          <Link href="/learn">
-            <Button variant="outline" size="sm" className="gap-2">
-              <Home className="size-4" />
-              <span>学習画面に戻る</span>
-            </Button>
-          </Link>
-        </div>
-      </header>
-
-      <main className="mx-auto flex max-w-4xl flex-col gap-4 px-6 py-6">
-        {/* 集計サマリー（週/月/科目別） */}
+  const body = (
+    <>
+      {/* 集計サマリー（週/月/科目別） */}
         <HistorySummary sessions={sessions} subjects={subjects} />
 
         {/* 表示モード切替 */}
@@ -266,7 +252,38 @@ export function HistoryView({ sessions, nodes, subjects }: Props) {
             </Card>
           );
         })}
-      </main>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="flex h-full w-full flex-col gap-4 overflow-y-auto p-6">
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
+        <div className="mx-auto flex max-w-4xl items-center gap-3 px-6 py-4">
+          <History className="size-5 text-primary" />
+          <div className="flex-1">
+            <h1 className="text-base font-semibold">学習履歴</h1>
+            <p className="text-xs text-muted-foreground">
+              これまでの学習セッションの記録 ({sorted.length} 件)
+            </p>
+          </div>
+          <Link href="/learn">
+            <Button variant="outline" size="sm" className="gap-2">
+              <Home className="size-4" />
+              <span>学習画面に戻る</span>
+            </Button>
+          </Link>
+        </div>
+      </header>
+
+      <main className="mx-auto flex max-w-4xl flex-col gap-4 px-6 py-6">{body}</main>
     </div>
   );
 }

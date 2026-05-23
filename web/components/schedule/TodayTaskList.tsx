@@ -34,9 +34,19 @@ type Props = {
   onToggleStatus: (id: string) => void;
   /** 「AI と相談する（朝の儀式）」ボタンの押下 */
   onPlanWithAi: () => void;
+  /**
+   * issue 型タスクの「始める」リンクで通常リンク (/issues) の代わりに呼ぶ。
+   * Phase 3 で /tutor?view=issue&id=xxx 遷移用に使う。
+   */
+  onSelectIssueItem?: (issueId: string) => void;
 };
 
-export function TodayTaskList({ items, onToggleStatus, onPlanWithAi }: Props) {
+export function TodayTaskList({
+  items,
+  onToggleStatus,
+  onPlanWithAi,
+  onSelectIssueItem,
+}: Props) {
   const doneCount = items.filter((i) => i.status === "done").length;
   const totalEstimate = items
     .filter((i) => i.status !== "skipped")
@@ -95,6 +105,7 @@ export function TodayTaskList({ items, onToggleStatus, onPlanWithAi }: Props) {
             key={item.id}
             item={item}
             onToggleStatus={() => onToggleStatus(item.id)}
+            onSelectIssueItem={onSelectIssueItem}
           />
         ))}
 
@@ -120,20 +131,32 @@ export function TodayTaskList({ items, onToggleStatus, onPlanWithAi }: Props) {
 function TaskRow({
   item,
   onToggleStatus,
+  onSelectIssueItem,
 }: {
   item: ScheduleItem;
   onToggleStatus: () => void;
+  onSelectIssueItem?: (issueId: string) => void;
 }) {
   const isDone = item.status === "done";
   const tone = TASK_TYPE_TONE[item.type];
 
-  // クリック遷移先: 課題 → /issues、それ以外（mock）→ /learn ノード
+  // クリック遷移先（Phase 3）:
+  //   - issue: /tutor?view=issue&id=xxx（ゆい先生司令室の右ペインで開く）
+  //   - それ以外: /learn?node=xxx
   const href =
     item.type === "issue"
-      ? `/issues`
+      ? `/tutor?view=issue&id=${encodeURIComponent(item.sourceId)}`
       : item.nodeId
         ? `/learn?node=${encodeURIComponent(item.nodeId)}`
         : "/learn";
+
+  const handleClick = (e: React.MouseEvent) => {
+    // /tutor 内（onSelectIssueItem 提供時）なら router.push を親に委ねる
+    if (item.type === "issue" && onSelectIssueItem) {
+      e.preventDefault();
+      onSelectIssueItem(item.sourceId);
+    }
+  };
 
   return (
     <div
@@ -207,6 +230,7 @@ function TaskRow({
           <div className="mt-1 flex items-center gap-2">
             <Link
               href={href}
+              onClick={handleClick}
               className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground transition-colors hover:border-primary hover:text-primary"
             >
               <MessageSquare className="size-2.5" />

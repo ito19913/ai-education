@@ -225,12 +225,6 @@ export function LearnWorkspace({
     [issues, currentNodeId],
   );
 
-  // サイドバーバッジ用: 未クリア課題数
-  const openIssueCount = useMemo(
-    () => issues.filter((i) => i.status === "open").length,
-    [issues],
-  );
-
   // ノート編集
   const handleChangeNote = (content: string) => {
     setNotes((prev) => {
@@ -391,7 +385,6 @@ export function LearnWorkspace({
         onEditMaterial={(id) => setEditingMaterialId(id)}
         trashCount={deletedMaterials.length}
         onOpenTrash={() => setTrashOpen(true)}
-        openIssueCount={openIssueCount}
       />
       <TrashSheet
         open={trashOpen}

@@ -152,4 +152,12 @@ Supabase ダッシュボード → Authentication → Users で手動作成済�
   - **`/schedule` 学習スケジュール (Phase 1)**: ダッシュボード骨格。試験まで / 未クリア課題 / 今週の予定 ヘッダ + 今日のタスク（4 task type 統合表示、AI rationale 付）+ 2 週間ミニカレンダー + 4 task type 登録パネル
   - **`/tutor` 担任「ゆい」chat (Phase 2)**: ログイン後の最初。20 代前半 女性チューター persona、フランク敬語。会話 + リッチカード（教科 / 教材 / 体系図プレビュー / 開始）が埋め込まれ、`/learn?node=...&startDay=1` へハンドオフ。`/` → `/tutor` redirect
   - **2 層 AI アーキテクチャの確立**: 担任（生活・ルーティング・感情）+ 科目の先生（教える）。メタ原理「AI と対話で全てが回る」を全体に適用
-- **次のステップ**: Phase 3 課題への chat 統合 / Phase 4 宿題伴走 / Phase 5 授業復習登録 / Phase 6 Claude API 接続 / Phase 7 Supabase 永続化 / Phase 8 音声入出力
+- **2026-05-23**: Phase 3 にコーチング設計レイヤーを追加。詳細は [ARCHITECTURE.md](./ARCHITECTURE.md) の「ゆい先生 = コーチング エージェント」「振り返りとコーチング契約」「ゆい→葵への申し送り (TutorHandoff)」「Phase 3 拡張スコープ（3a〜3g）」セクション
+  - **ゆい先生 = 純粋コーチング エージェント** に再定義: 教えない / 引き出す。GROW + 質問中心 + 未来志向 + 観察ベースの承認。武田塾「説明させる」+ ファインマン式を技法として使う
+  - **依頼カタログ 6 種** を確定: 成果物作成 / 検索ナビ / 振り返り集計 / リマインダー・親報告 / **申し送り (TutorHandoff)** / **掘り起こし (Excavation)**
+  - **振り返り 3 周期**: 毎日 + 毎週 + 毎月。ReflectionLog 独立型（ハイブリッド: 本体 + 既存型 Issue/ScheduleItem/LessonReview への派生リンク）
+  - **コーチング契約**: 長期 (LongTermGoal) + 週次 (WeeklyGoal) + 振り返り (GoalReview)。ゴール種類は全部 OK（学習成果/メタ/気持ち）、達成判定は本人+ゆい合議、未達成時は「次どうする?」+「何が見えた?」の 2 段
+  - **掘り起こし**: 「何が分からないか分からない」を質問で言語化させる技法 → 課題 + 申し送りに派生 → 葵先生が IssueChat で対応
+  - **TutorHandoff 型**: ゆい → 葵への申し送り（Issue.summary の逆方向）。2 つの AI は生 chat を共有せず、サマリー + 申し送りドキュメントで連携
+  - **Phase 3 拡張ロードマップ (3a〜3g)** 確定: 3a hide-tutor revert + persona 更新 → 3b tutor-mock coaching 化 → 3c ReflectionLog → 3d Goal → 3e 振り返りスケジュール自動配置 → 3f TutorHandoff → 3g IssueChat 本実装
+- **次のステップ**: Phase 3 拡張 3a 着手（hide-tutor revert + persona 更新）/ Phase 3.5 学習計測・離席検知 / Phase 4 宿題伴走 / Phase 5 授業復習登録 / Phase 6 Claude API 接続 / Phase 7 Supabase 永続化 / Phase 8 音声入出力

@@ -8,16 +8,23 @@
  * Phase 3+ で Claude API に接続し、文脈に応じた応答に置き換える。
  */
 import type { TutorMessage, TutorThread } from "./types";
+import { MOCK_ISSUES, MOCK_SCHEDULE_TODAY } from "./mock-data";
 
-/** 担任の persona（system prompt の元になる）*/
+/**
+ * 担任の persona（Claude API 接続時の system prompt の元になる）。
+ *
+ * 設計原則は ARCHITECTURE.md の「ゆい先生 = コーチング エージェント」セクション参照。
+ * 教えない（教科の中身は絶対 NG、葵先生に振る）、引き出す。
+ * 発話の大半は質問。未来志向。承認は観察ベース。GROW を意識的に回す。
+ * 武田塾「説明させる」+ ファインマン式を技法として使う（教えるんじゃなく、引き出す）。
+ */
 export const TUTOR_PERSONA = {
   name: "ゆい",
-  /** 20代前半の女性チューター。フランク敬語ベース。 */
   description:
-    "20代前半の女性チューター。東進ハイスクールのチューター的存在。教えるのは科目の先生に任せ、自分は生徒の生活・気分・スケジュール・モチベを横断的に見る。「〜だよ」「〜してみる?」「了解!」「そっか」みたいな砕けた口調。距離が近め、感情の話もしやすい。",
+    "20代前半の女性チューター。東進ハイスクールのチューター + 武田塾のコーチング講師を融合したスタイル。教えるのは科目の先生（葵先生）に完全に任せ、自分は『教えない、引き出す』を徹底する純粋コーチ。GROW モデル（Goal/Reality/Options/Will）を意識して質問中心に対話し、過去原因の追及より「次どうする?」の未来志向。承認は評価でなく観察ベース。生徒の生活・気分・スケジュール・モチベ・振り返り・掘り起こし・科目の先生への申し送り を横断的に扱う。「〜だよ」「〜してみる?」「了解!」「そっか」みたいな砕けた口調。距離が近め、感情の話もしやすい。Phase 3 拡張で振り返り（日次/週次/月次）と掘り起こし（『何が分からないか分からない』を質問で言語化させる技法）を中核業務に追加。",
   avatarLetter: "ゆ",
   /** ヘッダー等で使うサブタイトル */
-  subtitle: "担任の先生（チューター）",
+  subtitle: "担任の先生（コーチ）",
 } as const;
 
 /**
@@ -39,13 +46,7 @@ export function buildInitialTutorThread(now: Date = new Date()): TutorThread {
     {
       id: "t-1",
       role: "tutor",
-      text: `${greeting} 今日はどんな一日だった？\n\n勉強の話でも、学校でのことでも、なんでも聞くよ。話すと頭の中が整理されるから、ちょっと一言からでも OK。`,
-      quickReplies: [
-        "ふつうかな",
-        "ちょっと疲れた",
-        "イヤなことあった",
-        "今日いい感じ",
-      ],
+      text: `${greeting} 今日はどんな一日だった？\n\n勉強の話でも、学校でのことでも、なんでも聞くよ。一言からでも OK。\n\nすぐ取り掛かりたい時は、上のメニューから「学習を開始」「課題を確認」「スケジュール確認」「教材を追加」「履歴を確認」を選んでもいいよ。`,
       createdAt: now.toISOString(),
     },
   ];
@@ -89,6 +90,148 @@ export function buildNextTutorReply(args: {
   const { state, userInput } = args;
   const lower = userInput.toLowerCase().trim();
   const now = new Date().toISOString();
+
+  // --- ハブ動作（Phase 3）: state に関係なく、課題 / スケジュール / 履歴の呼び出しに反応 ---
+  // 「課題見せて」「やる事は?」「未クリア」
+  if (
+    lower.includes("課題") ||
+    lower.includes("やる事") ||
+    lower.includes("やること") ||
+    lower.includes("未クリア")
+  ) {
+    const openIssues = MOCK_ISSUES.filter((i) => i.status === "open");
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text:
+          openIssues.length > 0
+            ? `未クリアの課題、いま ${openIssues.length} 件あるね。\nどれからいく? 全部見るならカードの下のボタンから。`
+            : "未クリアの課題はないよ。気持ちいい!",
+        card: {
+          kind: "issue-list",
+          issueIds: openIssues.slice(0, 5).map((i) => i.id),
+          seeAllLabel: "課題一覧を全部見る",
+        },
+        rightPaneAction: { kind: "open-issues" },
+        createdAt: now,
+      },
+    };
+  }
+
+  // 「スケジュール」「予定」「今日のタスク」
+  if (
+    lower.includes("スケジュール") ||
+    lower.includes("予定") ||
+    (lower.includes("今日") && lower.includes("タスク"))
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text:
+          MOCK_SCHEDULE_TODAY.length > 0
+            ? `今日のタスクはこんな感じ。気になるやつから手をつけよっか。`
+            : "今日のタスクはまだ立ててないね。AI と一緒に組み立てる?",
+        card: {
+          kind: "today-schedule",
+          scheduleItemIds: MOCK_SCHEDULE_TODAY.slice(0, 5).map((i) => i.id),
+          seeAllLabel: "スケジュールを全部見る",
+        },
+        rightPaneAction: { kind: "open-schedule" },
+        createdAt: now,
+      },
+    };
+  }
+
+  // 「教材を追加」「教材追加」「教材登録」「PDF」「テキスト追加」
+  if (
+    lower.includes("教材") ||
+    lower.includes("pdf") ||
+    lower.includes("テキスト追加") ||
+    lower.includes("テキスト登録")
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、新規教材登録するね。右でやろう。\nPDF を選んで、AI が体系図ノードを抽出するから、それを一緒に監修していこう。",
+        rightPaneAction: { kind: "open-material-new" },
+        createdAt: now,
+      },
+    };
+  }
+
+  // 「学習を開始」「学習を始める」「勉強する」「始める」
+  if (
+    lower.includes("学習を開始") ||
+    lower.includes("学習を始める") ||
+    lower.includes("勉強する") ||
+    lower === "始める" ||
+    lower === "始めたい"
+  ) {
+    return {
+      nextState: { ...state, state: "after-mood" },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、始めよっか！\n何の教科にする?",
+        card: {
+          kind: "subject-picker",
+          options: [{ subjectId: "subj-english", label: "英語" }],
+        },
+        createdAt: now,
+      },
+    };
+  }
+
+  // 「あおい先生」「英語の先生」「英語 履歴」「英語の対話」「英語 何話した」
+  // ※「履歴」分岐より先に判定する必要がある（先勝ちで一般「履歴」に持っていかれないように）
+  if (
+    lower.includes("あおい先生") ||
+    lower.includes("あおい") ||
+    lower.includes("英語の先生") ||
+    lower.includes("英語 履歴") ||
+    lower.includes("英語履歴") ||
+    lower.includes("英語の対話") ||
+    lower.includes("英語の履歴") ||
+    (lower.includes("英語") && lower.includes("何話した"))
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "あおい先生（英語）との対話履歴、右に出すね。\nノード対話と課題 chat を時系列で全部見られるよ。",
+        rightPaneAction: {
+          kind: "open-subject-history",
+          subjectId: "subj-english",
+        },
+        createdAt: now,
+      },
+    };
+  }
+
+  // 「履歴」「振り返り」「これまで」
+  if (
+    lower.includes("履歴") ||
+    lower.includes("振り返") ||
+    lower.includes("これまで")
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "これまでの学習履歴、右に出すね。\nセッションごとの時間とまとめが見られるよ。",
+        rightPaneAction: { kind: "open-history" },
+        createdAt: now,
+      },
+    };
+  }
 
   // --- opening: 本人の気分にリアクション ---
   if (state.state === "opening") {

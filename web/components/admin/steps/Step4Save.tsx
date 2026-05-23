@@ -11,9 +11,15 @@ type Props = {
   draft: MaterialDraft;
   extracted: AiExtractedNode[];
   onBack: () => void;
+  /**
+   * 保存完了時に親に通知する。
+   * - /admin/materials/new から呼ばれた時は未指定 → 既存 UI（教材一覧/学習画面リンク）を出す
+   * - /tutor 右ペインから呼ばれた時は指定 → ゆいに完了発話 + 右ペインを閉じる動作を親が行う
+   */
+  onComplete?: (materialName: string, approvedNodeCount: number) => void;
 };
 
-export function Step4Save({ draft, extracted, onBack }: Props) {
+export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
   const [saved, setSaved] = useState(false);
   const approved = extracted.filter(
     (n) => n.reviewStatus === "approved" || n.reviewStatus === "edited",
@@ -23,9 +29,29 @@ export function Step4Save({ draft, extracted, onBack }: Props) {
     // MVP モック: state だけ。後で Supabase Insert に置き換え。
     console.log("[save material]", draft, approved);
     setSaved(true);
+    onComplete?.(draft.name, approved.length);
   };
 
   if (saved) {
+    // onComplete が指定されている時（/tutor 右ペイン経由）は、親が完了発話 + 右ペインクローズを担当するので
+    // 既存の「教材一覧/学習画面」リンクは出さない。
+    if (onComplete) {
+      return (
+        <div className="flex flex-col gap-4">
+          <Card className="border-primary">
+            <CardContent className="py-12 text-center">
+              <CheckCircle2 className="mx-auto size-12 text-primary" />
+              <h2 className="mt-4 text-lg font-semibold">登録しました</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                「{draft.name}」を {approved.length} ノードと紐付けて保存しました。
+                <br />
+                ゆい先生に伝えました。
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col gap-4">
         <Card className="border-primary">

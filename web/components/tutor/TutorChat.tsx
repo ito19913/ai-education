@@ -12,11 +12,13 @@
  * Phase 3+ で Claude API に接続。tutor-mock.ts のスクリプトは
  * 実モデルの system prompt + tool calling に置き換わる。
  */
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { CalendarClock, GraduationCap, Info } from "lucide-react";
-import type { KnowledgeNode, TutorMessage } from "@/lib/learn/types";
+import type {
+  Issue,
+  KnowledgeNode,
+  ScheduleItem,
+  TutorMessage,
+} from "@/lib/learn/types";
 import { TUTOR_PERSONA } from "@/lib/learn/tutor-mock";
 import { TutorAvatar } from "./TutorAvatar";
 import { TutorMessageBubble } from "./TutorMessageBubble";
@@ -24,7 +26,13 @@ import { TutorComposer } from "./TutorComposer";
 
 type Props = {
   initialMessages: TutorMessage[];
+  /** Phase 3: state を親 (TutorWorkspace) に持たせるため、外から渡す */
+  messages?: TutorMessage[];
+  setMessages?: React.Dispatch<React.SetStateAction<TutorMessage[]>>;
   nodes: KnowledgeNode[];
+  /** Phase 3: 新カード（issue-list / today-schedule）用のデータ */
+  issues: Issue[];
+  scheduleItems: ScheduleItem[];
   /** チャットの「次の返信」を生成する純関数（mock スクリプト or API 呼び出し）*/
   generateReply: (args: {
     userInput: string;
@@ -34,16 +42,40 @@ type Props = {
    *  会話の状態を進めるためのフック */
   onPickSubject: (subjectId: string, label: string) => TutorMessage;
   onPickMaterial: (materialId: string, label: string) => TutorMessage;
+  /** Phase 3: 課題カードクリック → 右ペインに IssueChat / IssueListView を出す */
+  onSelectIssue?: (issueId: string) => void;
+  onSeeAllIssues?: () => void;
+  onSelectIssueItem?: (issueId: string) => void;
+  onSeeAllSchedule?: () => void;
+  /** Phase 3: 親（TutorWorkspace）から強制的に入力欄を locked にする
+   *  （右ペインに課題 chat が出ている時など）*/
+  externallyLocked?: boolean;
+  externalLockMessage?: string;
 };
 
 export function TutorChat({
   initialMessages,
+  messages: externalMessages,
+  setMessages: externalSetMessages,
   nodes,
+  issues,
+  scheduleItems,
   generateReply,
   onPickSubject,
   onPickMaterial,
+  onSelectIssue,
+  onSeeAllIssues,
+  onSelectIssueItem,
+  onSeeAllSchedule,
+  externallyLocked,
+  externalLockMessage,
 }: Props) {
-  const [messages, setMessages] = useState<TutorMessage[]>(initialMessages);
+  // 外部から messages/setMessages が渡されている時はそちらを使う（TutorWorkspace 経由）。
+  // 渡されていない時は内部 state（Phase 2 後方互換）。
+  const [internalMessages, setInternalMessages] =
+    useState<TutorMessage[]>(initialMessages);
+  const messages = externalMessages ?? internalMessages;
+  const setMessages = externalSetMessages ?? setInternalMessages;
   const [isThinking, setIsThinking] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -58,11 +90,8 @@ export function TutorChat({
     [messages],
   );
 
-  // AI ターン中の locked 判定
-  // ルール: 最新メッセージが AI で card がある → 本人はカードで選ぶか自由テキスト
-  // 最新メッセージが AI で text のみ + quickReplies → 本人入力待ち
-  // 最新が learner → AI 応答待ち（isThinking）
-  const locked = isThinking;
+  // AI ターン中の locked 判定 + externallyLocked（右ペインに課題 chat が出ている時など）
+  const locked = isThinking || !!externallyLocked;
 
   const appendThenReply = (userMsg: TutorMessage) => {
     setMessages((prev) => [...prev, userMsg]);
@@ -126,8 +155,10 @@ export function TutorChat({
       ? lastTutorMessage.quickReplies
       : undefined;
 
+  const noop = () => {};
+
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-full flex-col bg-background">
       {/* ヘッダー */}
       <header className="flex shrink-0 items-center gap-3 border-b border-border bg-background/95 px-5 py-3 backdrop-blur">
         <TutorAvatar size="md" />
@@ -139,26 +170,14 @@ export function TutorChat({
             {TUTOR_PERSONA.subtitle}
           </span>
         </div>
-        <Link href="/schedule">
-          <Button variant="ghost" size="sm" className="gap-1.5">
-            <CalendarClock className="size-4" />
-            <span>スケジュールを見る</span>
-          </Button>
-        </Link>
       </header>
+
+      {/* 定番メニュー（常時表示・ハブ動線、ヘッダ直下に固定）*/}
+      <TutorHubMenu onSend={handleUserSend} disabled={locked} />
 
       {/* メッセージリスト */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-5 py-5">
-          {/* 説明バナー (Phase 2 mock であることを伝える) */}
-          <div className="flex items-start gap-2 rounded-md border border-dashed border-border bg-muted/30 p-2.5 text-[11px] text-muted-foreground">
-            <Info className="mt-0.5 size-3.5 shrink-0" />
-            <span>
-              これは Phase 2 mock の担任 chat です。応答は scripted。Phase 3 で Claude
-              API に接続して、学習履歴・課題・スケジュールを踏まえた本物の対話になります。
-            </span>
-          </div>
-
           {messages.map((m) => (
             <TutorMessageBubble
               key={m.id}
@@ -166,6 +185,12 @@ export function TutorChat({
               nodes={nodes}
               onPickSubject={handlePickSubject}
               onPickMaterial={handlePickMaterial}
+              issues={issues}
+              scheduleItems={scheduleItems}
+              onSelectIssue={onSelectIssue ?? noop}
+              onSeeAllIssues={onSeeAllIssues ?? noop}
+              onSelectIssueItem={onSelectIssueItem ?? noop}
+              onSeeAllSchedule={onSeeAllSchedule ?? noop}
             />
           ))}
 
@@ -189,35 +214,57 @@ export function TutorChat({
 
       {/* 入力欄 */}
       <div className="mx-auto w-full max-w-3xl">
+        {externallyLocked && externalLockMessage && (
+          <div className="border-t border-border bg-muted/30 px-3 py-2 text-center text-[11px] text-muted-foreground">
+            {externalLockMessage}
+          </div>
+        )}
         <TutorComposer
           quickReplies={quickReplies}
           onSend={handleUserSend}
           locked={locked}
         />
-        <div className="flex items-center justify-center gap-3 pb-3 pt-1 text-[10px] text-muted-foreground">
-          <Link
-            href="/schedule"
-            className="underline-offset-2 hover:text-foreground hover:underline"
-          >
-            スケジュールへ
-          </Link>
-          <span>・</span>
-          <Link
-            href="/issues"
-            className="underline-offset-2 hover:text-foreground hover:underline"
-          >
-            課題一覧
-          </Link>
-          <span>・</span>
-          <Link
-            href="/learn"
-            className="inline-flex items-center gap-0.5 underline-offset-2 hover:text-foreground hover:underline"
-          >
-            <GraduationCap className="size-3" />
-            学習画面（直接）
-          </Link>
-        </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * TutorHubMenu - 入力欄下の定番メニュー（Phase 3）。
+ * scripted な quickReplies とは別枠で、いつでもハブ動線にアクセスできる。
+ * ボタンを押すと該当キーワードを発話扱いで送信 → tutor-mock の分岐で
+ * 右ペイン展開 or 学習開始フローに入る。
+ */
+function TutorHubMenu({
+  onSend,
+  disabled,
+}: {
+  onSend: (text: string) => void;
+  disabled?: boolean;
+}) {
+  const items: Array<{ label: string; phrase: string }> = [
+    { label: "学習を開始", phrase: "学習を開始" },
+    { label: "課題を確認", phrase: "課題を確認" },
+    { label: "スケジュール確認", phrase: "スケジュール確認" },
+    { label: "教材を追加", phrase: "教材を追加" },
+    { label: "履歴を確認", phrase: "履歴を確認" },
+  ];
+  return (
+    <div className="flex items-center gap-1.5 border-t border-border bg-muted/20 px-3 py-2">
+      <span className="mr-1 text-[10px] font-medium text-muted-foreground">
+        メニュー
+      </span>
+      {items.map((it) => (
+        <button
+          key={it.phrase}
+          type="button"
+          disabled={disabled}
+          onClick={() => onSend(it.phrase)}
+          className="rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+        >
+          {it.label}
+        </button>
+      ))}
     </div>
   );
 }

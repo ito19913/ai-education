@@ -37,6 +37,16 @@ type Props = {
   homeworks: Homework[];
   lessonReviews: LessonReview[];
   issues: Issue[];
+  /**
+   * true の時、ヘッダと min-h-screen を出さずに右ペイン埋め込み用の表示にする。
+   * Phase 3 で /tutor 右ペイン (?view=schedule) で使う。
+   */
+  embedded?: boolean;
+  /**
+   * ScheduleItem (type:"issue") のクリックハンドラ。
+   * 指定時は TodayTaskList の issue タスクから呼ばれる（/tutor?view=issue&id=xxx 遷移用）。
+   */
+  onSelectIssueItem?: (issueId: string) => void;
 };
 
 export function ScheduleDashboard({
@@ -47,6 +57,8 @@ export function ScheduleDashboard({
   homeworks,
   lessonReviews,
   issues,
+  embedded = false,
+  onSelectIssueItem,
 }: Props) {
   const [todayItems, setTodayItems] =
     useState<ScheduleItem[]>(initialTodayItems);
@@ -105,6 +117,59 @@ export function ScheduleDashboard({
     );
   };
 
+  const body = (
+    <>
+      {/* 上ヘッダ */}
+      <ScheduleHeader
+        nearestExam={nearestExam}
+        issues={issues}
+        thisWeekItems={thisWeekItems}
+      />
+
+      {/* 中央: 今日のタスク + ミニカレンダー */}
+      <div className="grid gap-4 md:grid-cols-[1fr_360px]">
+        <TodayTaskList
+          items={todayItems}
+          onToggleStatus={handleToggleStatus}
+          onPlanWithAi={handlePlanWithAi}
+          onSelectIssueItem={onSelectIssueItem}
+        />
+        <ScheduleMiniCalendar
+          items={[...todayItems, ...upcomingItems]}
+          exams={exams}
+        />
+      </div>
+
+      {/* 下段: タスク登録パネル */}
+      <div className="flex items-center gap-2 pt-2">
+        <h2 className="text-sm font-semibold text-foreground">
+          タスクを追加・管理
+        </h2>
+        <span className="text-[11px] text-muted-foreground">
+          ここから新しい試験対策・宿題・授業復習を登録できます
+        </span>
+      </div>
+      <TaskSourcesPanel
+        subjects={subjects}
+        exams={exams}
+        homeworks={homeworks}
+        lessonReviews={lessonReviews}
+        issues={issues}
+        onAddExamPrep={handleAddExamPrep}
+        onAddHomework={handleAddHomework}
+        onAddLessonReview={handleAddLessonReview}
+      />
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="flex h-full w-full flex-col gap-4 overflow-y-auto p-6">
+        {body}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
@@ -131,45 +196,7 @@ export function ScheduleDashboard({
       </header>
 
       <main className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
-        {/* 上ヘッダ */}
-        <ScheduleHeader
-          nearestExam={nearestExam}
-          issues={issues}
-          thisWeekItems={thisWeekItems}
-        />
-
-        {/* 中央: 今日のタスク + ミニカレンダー */}
-        <div className="grid gap-4 md:grid-cols-[1fr_360px]">
-          <TodayTaskList
-            items={todayItems}
-            onToggleStatus={handleToggleStatus}
-            onPlanWithAi={handlePlanWithAi}
-          />
-          <ScheduleMiniCalendar
-            items={[...todayItems, ...upcomingItems]}
-            exams={exams}
-          />
-        </div>
-
-        {/* 下段: タスク登録パネル */}
-        <div className="flex items-center gap-2 pt-2">
-          <h2 className="text-sm font-semibold text-foreground">
-            タスクを追加・管理
-          </h2>
-          <span className="text-[11px] text-muted-foreground">
-            ここから新しい試験対策・宿題・授業復習を登録できます
-          </span>
-        </div>
-        <TaskSourcesPanel
-          subjects={subjects}
-          exams={exams}
-          homeworks={homeworks}
-          lessonReviews={lessonReviews}
-          issues={issues}
-          onAddExamPrep={handleAddExamPrep}
-          onAddHomework={handleAddHomework}
-          onAddLessonReview={handleAddLessonReview}
-        />
+        {body}
       </main>
     </div>
   );

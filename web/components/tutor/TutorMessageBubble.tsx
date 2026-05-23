@@ -5,18 +5,32 @@
  * - role が tutor: 左寄せ、アバター付き、本文 + カード
  * - role が learner: 右寄せ、本文のみ
  */
-import type { KnowledgeNode, TutorMessage } from "@/lib/learn/types";
+import type {
+  Issue,
+  KnowledgeNode,
+  ScheduleItem,
+  TutorMessage,
+} from "@/lib/learn/types";
 import { TutorAvatar } from "./TutorAvatar";
 import { SubjectPickerCard } from "./cards/SubjectPickerCard";
 import { MaterialPickerCard } from "./cards/MaterialPickerCard";
 import { RangePreviewCard } from "./cards/RangePreviewCard";
 import { StartStudyCard } from "./cards/StartStudyCard";
+import { IssueListCard } from "./cards/IssueListCard";
+import { TodayScheduleCard } from "./cards/TodayScheduleCard";
 
 type Props = {
   message: TutorMessage;
   nodes: KnowledgeNode[];
   onPickSubject: (subjectId: string, label: string) => void;
   onPickMaterial: (materialId: string, label: string) => void;
+  /** Phase 3: 課題カードクリック → 右ペインに IssueChat */
+  issues: Issue[];
+  scheduleItems: ScheduleItem[];
+  onSelectIssue: (issueId: string) => void;
+  onSeeAllIssues: () => void;
+  onSelectIssueItem: (issueId: string) => void;
+  onSeeAllSchedule: () => void;
 };
 
 export function TutorMessageBubble({
@@ -24,6 +38,12 @@ export function TutorMessageBubble({
   nodes,
   onPickSubject,
   onPickMaterial,
+  issues,
+  scheduleItems,
+  onSelectIssue,
+  onSeeAllIssues,
+  onSelectIssueItem,
+  onSeeAllSchedule,
 }: Props) {
   if (message.role === "tutor") {
     return (
@@ -57,6 +77,23 @@ export function TutorMessageBubble({
               )}
               {message.card.kind === "start-study" && (
                 <StartStudyCard card={message.card} />
+              )}
+              {message.card.kind === "issue-list" && (
+                <IssueListCard
+                  card={message.card}
+                  issues={issues}
+                  nodes={nodes}
+                  onSelectIssue={onSelectIssue}
+                  onSeeAll={onSeeAllIssues}
+                />
+              )}
+              {message.card.kind === "today-schedule" && (
+                <TodayScheduleCard
+                  card={message.card}
+                  items={scheduleItems}
+                  onSelectIssueItem={onSelectIssueItem}
+                  onSeeAll={onSeeAllSchedule}
+                />
               )}
             </div>
           )}

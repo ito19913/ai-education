@@ -45,6 +45,16 @@ type Props = {
   /** クリア / クリア取り消し */
   onResolve: (id: string) => void;
   onReopen: (id: string) => void;
+  /**
+   * true の時、ヘッダと min-h-screen を出さずに右ペイン埋め込み用の表示にする。
+   * Phase 3 で /tutor 右ペイン (?view=issues) で使う。
+   */
+  embedded?: boolean;
+  /**
+   * 課題カードクリック時のコールバック。指定時は「AI と話す」ボタンが表示される。
+   * Phase 3 で /tutor?view=issue&id=xxx への遷移に使う。
+   */
+  onSelectIssue?: (issueId: string) => void;
 };
 
 export function IssueListView({
@@ -52,6 +62,8 @@ export function IssueListView({
   nodes,
   onResolve,
   onReopen,
+  embedded = false,
+  onSelectIssue,
 }: Props) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("open");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
@@ -75,37 +87,9 @@ export function IssueListView({
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [issues, statusFilter, sourceFilter]);
 
-  return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-4xl items-center gap-3 px-6 py-4">
-          <Target className="size-5 text-primary" />
-          <div className="flex-1">
-            <h1 className="text-base font-semibold">課題一覧</h1>
-            <p className="text-xs text-muted-foreground">
-              未クリア {counts.open} 件 · クリア済み {counts.resolved} 件
-              {counts.aiSuggested > 0 && (
-                <>
-                  {" "}
-                  ·{" "}
-                  <span className="text-primary">
-                    AI クリア提案 {counts.aiSuggested} 件
-                  </span>
-                </>
-              )}
-            </p>
-          </div>
-          <Link href="/learn">
-            <Button variant="outline" size="sm" className="gap-2">
-              <Home className="size-4" />
-              <span>学習画面に戻る</span>
-            </Button>
-          </Link>
-        </div>
-      </header>
-
-      <main className="mx-auto flex max-w-4xl flex-col gap-4 px-6 py-6">
-        {/* フィルタ */}
+  const body = (
+    <>
+      {/* フィルタ */}
         <div className="flex flex-wrap items-center gap-3">
           <FilterGroup label="状態">
             <FilterChip
@@ -172,15 +156,58 @@ export function IssueListView({
           </Card>
         )}
 
-        {filtered.map((issue) => (
-          <IssueCard
-            key={issue.id}
-            issue={issue}
-            nodeName={nameOf(issue.nodeId)}
-            onResolve={() => onResolve(issue.id)}
-            onReopen={() => onReopen(issue.id)}
-          />
-        ))}
+      {filtered.map((issue) => (
+        <IssueCard
+          key={issue.id}
+          issue={issue}
+          nodeName={nameOf(issue.nodeId)}
+          onResolve={() => onResolve(issue.id)}
+          onReopen={() => onReopen(issue.id)}
+          onSelectIssue={onSelectIssue}
+        />
+      ))}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="flex h-full w-full flex-col gap-4 overflow-y-auto p-6">
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
+        <div className="mx-auto flex max-w-4xl items-center gap-3 px-6 py-4">
+          <Target className="size-5 text-primary" />
+          <div className="flex-1">
+            <h1 className="text-base font-semibold">課題一覧</h1>
+            <p className="text-xs text-muted-foreground">
+              未クリア {counts.open} 件 · クリア済み {counts.resolved} 件
+              {counts.aiSuggested > 0 && (
+                <>
+                  {" "}
+                  ·{" "}
+                  <span className="text-primary">
+                    AI クリア提案 {counts.aiSuggested} 件
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
+          <Link href="/learn">
+            <Button variant="outline" size="sm" className="gap-2">
+              <Home className="size-4" />
+              <span>学習画面に戻る</span>
+            </Button>
+          </Link>
+        </div>
+      </header>
+
+      <main className="mx-auto flex max-w-4xl flex-col gap-4 px-6 py-6">
+        {body}
       </main>
     </div>
   );
@@ -230,11 +257,13 @@ function IssueCard({
   nodeName,
   onResolve,
   onReopen,
+  onSelectIssue,
 }: {
   issue: Issue;
   nodeName: string;
   onResolve: () => void;
   onReopen: () => void;
+  onSelectIssue?: (issueId: string) => void;
 }) {
   const isResolved = issue.status === "resolved";
   const occurrenceCount = issue.occurrences?.length ?? 0;
@@ -273,10 +302,23 @@ function IssueCard({
               <span>未クリアに戻す</span>
             </Button>
           ) : (
-            <Button size="sm" className="gap-1.5" onClick={onResolve}>
-              <Check className="size-3.5" />
-              <span>分かった！</span>
-            </Button>
+            <div className="flex items-center gap-1.5">
+              {onSelectIssue && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => onSelectIssue(issue.id)}
+                >
+                  <MessageSquare className="size-3.5" />
+                  <span>AI と話す</span>
+                </Button>
+              )}
+              <Button size="sm" className="gap-1.5" onClick={onResolve}>
+                <Check className="size-3.5" />
+                <span>分かった！</span>
+              </Button>
+            </div>
           )}
         </div>
       </CardHeader>

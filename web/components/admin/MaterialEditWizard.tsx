@@ -28,6 +28,16 @@ type Props = {
   existingNodes: KnowledgeNode[];
   /** URL クエリ等から渡される、初期選択する科目 ID */
   initialSubjectId?: string;
+  /**
+   * true の時、外殻 (`mx-auto max-w-4xl p-6`) を外して /tutor 右ペインに収まる形にする。
+   * Phase 3 追加実装: ゆい chat 経由で開く時に true。
+   */
+  embedded?: boolean;
+  /**
+   * 保存完了時のコールバック。
+   * /tutor 右ペイン経由の時に親がゆい発話を追加して右ペインを閉じるために使う。
+   */
+  onComplete?: (materialName: string, approvedNodeCount: number) => void;
 };
 
 const STEP_LABELS = ["メタ情報・PDF", "AI 抽出", "監修", "保存"];
@@ -36,6 +46,8 @@ export function MaterialEditWizard({
   subjects,
   existingNodes,
   initialSubjectId,
+  embedded = false,
+  onComplete,
 }: Props) {
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<MaterialDraft>({
@@ -66,7 +78,14 @@ export function MaterialEditWizard({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
+    <div
+      className={cn(
+        "flex w-full flex-col gap-6",
+        embedded
+          ? "h-full overflow-y-auto p-5"
+          : "mx-auto max-w-4xl p-6",
+      )}
+    >
       <div>
         <h1 className="text-2xl font-semibold">新しい教材を登録</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -142,6 +161,7 @@ export function MaterialEditWizard({
           draft={draft}
           extracted={extracted}
           onBack={goPrev}
+          onComplete={onComplete}
         />
       )}
     </div>
