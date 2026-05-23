@@ -420,7 +420,7 @@ export function LearnWorkspace({
           breadcrumb={breadcrumb}
           mindmapCollapsed={mindmapCollapsed}
           onToggleMindmap={toggleMindmap}
-          sessionActive={session.isActive}
+          sessionStatus={session.status}
           elapsedSec={session.elapsedSec}
         />
         <ResizablePanelGroup
