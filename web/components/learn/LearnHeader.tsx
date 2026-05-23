@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { KnowledgeNode, LearnSubject } from "@/lib/learn/types";
 import { formatElapsed } from "@/lib/learn/use-learning-session";
+import { cn } from "@/lib/utils";
 
 type Props = {
   subject: LearnSubject;
@@ -84,13 +85,64 @@ export function LearnHeader({
         <span className="text-xs text-muted-foreground">
           {subject.pageRange}
         </span>
-        {sessionActive && (
+        {/*
+          学習タイマー: 進行中は緑（ping アニメ付きドット）、停止中は赤。
+          進行/停止の状態を視覚的にハッキリ示す。
+          終了ボタンは進行中の時のみ表示（停止中は再終了できない）。
+        */}
+        {(sessionActive || elapsedSec > 0) && (
           <>
             <Separator orientation="vertical" className="h-5" />
-            <div className="flex items-center gap-1.5 text-xs">
-              <Clock className="size-3.5 text-muted-foreground" />
-              <span className="text-muted-foreground">学習中</span>
-              <span className="font-mono font-medium text-foreground tabular-nums">
+            <div
+              className="flex items-center gap-2 text-xs"
+              aria-live="polite"
+              aria-label={
+                sessionActive
+                  ? `学習中、${formatElapsed(elapsedSec)} 経過`
+                  : `停止中、${formatElapsed(elapsedSec)} で停止`
+              }
+            >
+              {/* 状態ドット (緑 + ping アニメ / 停止: 赤、静止) */}
+              <span className="relative inline-flex size-2 shrink-0">
+                <span
+                  className={cn(
+                    "relative inline-flex size-2 rounded-full",
+                    sessionActive ? "bg-emerald-500" : "bg-destructive",
+                  )}
+                />
+                {sessionActive && (
+                  <span
+                    className="absolute inset-0 inline-flex size-2 animate-ping rounded-full bg-emerald-500 opacity-75"
+                    aria-hidden="true"
+                  />
+                )}
+              </span>
+              <Clock
+                className={cn(
+                  "size-3.5",
+                  sessionActive
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-destructive",
+                )}
+              />
+              <span
+                className={cn(
+                  "font-medium",
+                  sessionActive
+                    ? "text-emerald-700 dark:text-emerald-300"
+                    : "text-destructive",
+                )}
+              >
+                {sessionActive ? "学習中" : "停止中"}
+              </span>
+              <span
+                className={cn(
+                  "font-mono font-semibold tabular-nums",
+                  sessionActive
+                    ? "text-emerald-700 dark:text-emerald-300"
+                    : "text-destructive",
+                )}
+              >
                 {formatElapsed(elapsedSec)}
               </span>
             </div>
@@ -98,19 +150,25 @@ export function LearnHeader({
               「学習を終了」: 即終了ではなく、ゆい先生 chat に遷移して
               振り返り対話を経て終了する設計（2026-05-24 改訂）。
               /tutor?ending=1 で tutor-mock が ending モードで起動する。
+              停止中（idle 自動終了済み）は再終了できないので非表示。
             */}
-            <Link href="/tutor?ending=1" title="ゆい先生に報告して学習を終了">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1.5"
-                aria-label="ゆい先生に報告して学習を終了"
+            {sessionActive && (
+              <Link
+                href="/tutor?ending=1"
+                title="ゆい先生に報告して学習を終了"
               >
-                <GraduationCap className="size-3.5" />
-                <span>学習を終了</span>
-                <ArrowRight className="size-3" />
-              </Button>
-            </Link>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 gap-1.5"
+                  aria-label="ゆい先生に報告して学習を終了"
+                >
+                  <GraduationCap className="size-3.5" />
+                  <span>学習を終了</span>
+                  <ArrowRight className="size-3" />
+                </Button>
+              </Link>
+            )}
           </>
         )}
       </div>
