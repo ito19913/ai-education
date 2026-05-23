@@ -29,6 +29,7 @@ import type {
   TutorTopic,
 } from "@/lib/learn/types";
 import { TutorMessageBubble } from "./TutorMessageBubble";
+import { TopicChip } from "./topic-display";
 import {
   listTutorThreadDates,
   loadTutorThread,
@@ -42,19 +43,6 @@ type Props = {
   /** issue-list / today-schedule カードの描画用 */
   issues: Issue[];
   scheduleItems: ScheduleItem[];
-};
-
-const TOPIC_LABEL: Record<TutorTopic, string> = {
-  "morning-reflection": "朝の振り返り",
-  excavation: "掘り起こし",
-  "issue-check": "課題を確認",
-  "schedule-check": "スケジュール確認",
-  "history-check": "学習履歴を確認",
-  "material-add": "教材を追加",
-  "subject-history": "先生の対話履歴",
-  "start-study": "学習を開始",
-  ending: "学習を終了",
-  "free-chat": "おしゃべり",
 };
 
 const ALL_TOPICS: TutorTopic[] = [
@@ -232,27 +220,16 @@ export function TutorArchiveView({ nodes, issues, scheduleItems }: Props) {
               )}
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {ALL_TOPICS.filter((t) => topicCounts.has(t)).map((t) => {
-                const active = topicFilter?.has(t) ?? false;
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => toggleTopic(t)}
-                    className={cn(
-                      "rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
-                      active
-                        ? "border-primary bg-primary/15 text-primary"
-                        : "border-border bg-card text-muted-foreground hover:border-primary/50",
-                    )}
-                  >
-                    {TOPIC_LABEL[t]}
-                    <span className="ml-1 text-[9px] opacity-60">
-                      {topicCounts.get(t)}
-                    </span>
-                  </button>
-                );
-              })}
+              {ALL_TOPICS.filter((t) => topicCounts.has(t)).map((t) => (
+                <TopicChip
+                  key={t}
+                  topic={t}
+                  size="sm"
+                  count={topicCounts.get(t)}
+                  active={topicFilter?.has(t) ?? false}
+                  onClick={() => toggleTopic(t)}
+                />
+              ))}
             </div>
           </>
         )}
