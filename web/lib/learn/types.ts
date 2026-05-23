@@ -337,6 +337,7 @@ export type TutorRightPaneAction =
   | { kind: "open-history" }
   | { kind: "open-material-new" }
   | { kind: "open-subject-history"; subjectId: string }
+  | { kind: "open-tutor-archive" }
   | { kind: "close" };
 
 /** 担任 chat の 1 メッセージ */
@@ -378,7 +379,8 @@ export type RightPaneView =
   | "schedule"
   | "history"
   | "material-new"
-  | "subject-history";
+  | "subject-history"
+  | "tutor-archive";
 
 /** 担任 chat スレッド全体 */
 export type TutorThread = {

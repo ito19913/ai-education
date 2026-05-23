@@ -31,6 +31,7 @@ import { ScheduleDashboard } from "@/components/schedule/ScheduleDashboard";
 import { HistoryView } from "@/components/history/HistoryView";
 import { MaterialEditWizard } from "@/components/admin/MaterialEditWizard";
 import { SubjectHistoryView } from "@/components/subjects/SubjectHistoryView";
+import { TutorArchiveView } from "@/components/tutor/TutorArchiveView";
 
 type Props = {
   view: RightPaneView;
@@ -157,6 +158,16 @@ export function RightPaneRouter({
         existingNodes={nodes}
         embedded
         onComplete={onMaterialAdded}
+      />
+    );
+  }
+
+  if (view === "tutor-archive") {
+    return (
+      <TutorArchiveView
+        nodes={nodes}
+        issues={issues}
+        scheduleItems={scheduleToday}
       />
     );
   }

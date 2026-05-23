@@ -342,7 +342,29 @@ function buildNextTutorReplyInner(args: {
     };
   }
 
+  // 「ゆい対話履歴」「ゆい先生との対話」「私との対話」「ゆいログ」 等
+  //   → ゆい先生 対話アーカイブ (tutor-archive view) を右ペインに展開
+  // ※「履歴」分岐より先に判定する（先勝ち回避）
+  if (
+    (lower.includes("ゆい") &&
+      (lower.includes("対話") || lower.includes("履歴") || lower.includes("ログ"))) ||
+    lower.includes("私との対話") ||
+    lower.includes("チャット履歴")
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "私との対話履歴、右に出すね。\n過去の日付を選んだり、話題（朝の振り返り / 課題確認 / 終了 等）で絞り込んで見返せるよ。",
+        rightPaneAction: { kind: "open-tutor-archive" },
+        createdAt: now,
+      },
+    };
+  }
+
   // 「履歴」「これまで」（「振り返り」は朝の儀式と混同するので外す）
+  // → 学習履歴 (HistoryView) を右ペインに展開
   if (lower.includes("履歴") || lower.includes("これまで")) {
     return {
       nextState: state,

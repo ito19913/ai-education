@@ -293,46 +293,66 @@ function TutorHubMenu({
         </button>
       ))}
 
-      {teachersAvailable.length > 0 && (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                disabled={disabled}
-                className="flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-50"
-              />
-            }
-          >
-            <span>先生との対話</span>
-            <ChevronDown className="size-3" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[200px]">
-            {/*
-              DropdownMenuLabel は base-ui の制約上 DropdownMenuGroup 内でしか
-              使えない（MenuGroupRootContext が要る）ので、ここは plain div で
-              ヘッダー風に表示するに留める。
-            */}
-            <div className="border-b border-border px-1.5 py-1 text-[10px] font-medium text-muted-foreground">
-              科目の先生との対話履歴
-            </div>
-            <div className="pt-1">
-              {teachersAvailable.map((s) => (
-                <DropdownMenuItem
-                  key={s.id}
-                  onClick={() => onSend(s.teacher!.displayName)}
-                >
-                  <GraduationCap />
-                  <span className="font-medium">{s.teacher!.displayName}</span>
-                  <span className="ml-auto text-[10px] text-muted-foreground">
-                    {s.name}
-                  </span>
-                </DropdownMenuItem>
-              ))}
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+      {/*
+        「先生との対話」プルダウン: ゆい先生（担任）+ 科目の先生 全員を列挙。
+        担任のゆいは「私との対話履歴」として常に最上位、その下に科目の先生（あおい等）。
+        Phase 3 拡張で tutor-archive view（ゆい）と subject-history view（科目）を別々に開く。
+      */}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <button
+              type="button"
+              disabled={disabled}
+              className="flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+            />
+          }
+        >
+          <span>先生との対話</span>
+          <ChevronDown className="size-3" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-[220px]">
+          {/*
+            DropdownMenuLabel は base-ui の制約上 DropdownMenuGroup 内でしか
+            使えないので、ここは plain div でヘッダー風に表示。
+          */}
+          <div className="border-b border-border px-1.5 py-1 text-[10px] font-medium text-muted-foreground">
+            担任の先生
+          </div>
+          <div className="py-1">
+            <DropdownMenuItem onClick={() => onSend("ゆい対話履歴")}>
+              <GraduationCap />
+              <span className="font-medium">ゆい先生</span>
+              <span className="ml-auto text-[10px] text-muted-foreground">
+                私との対話
+              </span>
+            </DropdownMenuItem>
+          </div>
+          {teachersAvailable.length > 0 && (
+            <>
+              <div className="border-b border-t border-border px-1.5 py-1 text-[10px] font-medium text-muted-foreground">
+                科目の先生
+              </div>
+              <div className="py-1">
+                {teachersAvailable.map((s) => (
+                  <DropdownMenuItem
+                    key={s.id}
+                    onClick={() => onSend(s.teacher!.displayName)}
+                  >
+                    <GraduationCap />
+                    <span className="font-medium">
+                      {s.teacher!.displayName}
+                    </span>
+                    <span className="ml-auto text-[10px] text-muted-foreground">
+                      {s.name}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </div>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
