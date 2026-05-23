@@ -26,8 +26,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TutorAvatar } from "./TutorAvatar";
@@ -309,20 +307,28 @@ function TutorHubMenu({
             <ChevronDown className="size-3" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-[200px]">
-            <DropdownMenuLabel>科目の先生との対話履歴</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {teachersAvailable.map((s) => (
-              <DropdownMenuItem
-                key={s.id}
-                onClick={() => onSend(s.teacher!.displayName)}
-              >
-                <GraduationCap />
-                <span className="font-medium">{s.teacher!.displayName}</span>
-                <span className="ml-auto text-[10px] text-muted-foreground">
-                  {s.name}
-                </span>
-              </DropdownMenuItem>
-            ))}
+            {/*
+              DropdownMenuLabel は base-ui の制約上 DropdownMenuGroup 内でしか
+              使えない（MenuGroupRootContext が要る）ので、ここは plain div で
+              ヘッダー風に表示するに留める。
+            */}
+            <div className="border-b border-border px-1.5 py-1 text-[10px] font-medium text-muted-foreground">
+              科目の先生との対話履歴
+            </div>
+            <div className="pt-1">
+              {teachersAvailable.map((s) => (
+                <DropdownMenuItem
+                  key={s.id}
+                  onClick={() => onSend(s.teacher!.displayName)}
+                >
+                  <GraduationCap />
+                  <span className="font-medium">{s.teacher!.displayName}</span>
+                  <span className="ml-auto text-[10px] text-muted-foreground">
+                    {s.name}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
       )}
