@@ -17,7 +17,10 @@
  *   - 「もどる」で右ペインを閉じると、フォーカスは左ゆいに戻る
  */
 import { useCallback, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { BookOpenCheck, GraduationCap } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { TutorChat } from "./TutorChat";
 import { RightPaneRouter } from "./RightPaneRouter";
 import {
@@ -276,6 +279,34 @@ export function TutorWorkspace({
 
   return (
     <div className="flex h-screen w-full flex-col bg-background">
+      {/* スリムな上部 app bar — AI-Education ブランディング + 学習画面への移動 */}
+      <header className="flex h-10 shrink-0 items-center gap-3 border-b border-border bg-background px-3">
+        <Link
+          href="/"
+          className="flex items-center gap-2 rounded-md px-1 py-0.5 transition-colors hover:bg-accent"
+          title="ホーム（ゆい先生）"
+        >
+          <BookOpenCheck className="size-5 text-primary" />
+          <span className="font-heading text-sm font-medium">
+            AI-Education
+          </span>
+        </Link>
+        <span className="text-xs text-muted-foreground">/ ゆい先生</span>
+        <div className="ml-auto flex items-center gap-2">
+          <Link href="/learn" title="学習画面へ">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5"
+              aria-label="学習画面へ"
+            >
+              <GraduationCap className="size-3.5" />
+              <span>学習画面</span>
+            </Button>
+          </Link>
+        </div>
+      </header>
+
       <ResizablePanelGroup
         orientation="horizontal"
         className="flex min-h-0 flex-1"
