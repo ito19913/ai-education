@@ -292,19 +292,17 @@ export function TutorWorkspace({
           </span>
         </Link>
         <span className="text-xs text-muted-foreground">/ ゆい先生</span>
-        <div className="ml-auto flex items-center gap-2">
-          <Link href="/learn" title="学習画面へ">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5"
-              aria-label="学習画面へ"
-            >
-              <GraduationCap className="size-3.5" />
-              <span>学習画面</span>
-            </Button>
-          </Link>
-        </div>
+        <Link href="/learn" title="学習画面へ">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5"
+            aria-label="学習画面へ"
+          >
+            <GraduationCap className="size-3.5" />
+            <span>学習画面</span>
+          </Button>
+        </Link>
       </header>
 
       <ResizablePanelGroup
