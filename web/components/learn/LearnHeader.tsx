@@ -6,17 +6,10 @@
  * 左端に SidebarTrigger を置いて Pane 1 を畳めるようにする。
  */
 
-import Link from "next/link";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import {
-  ChevronRight,
-  Clock,
-  GraduationCap,
-  Network,
-  StopCircle,
-} from "lucide-react";
+import { ChevronRight, Clock, Network, StopCircle } from "lucide-react";
 import type { KnowledgeNode, LearnSubject } from "@/lib/learn/types";
 import { formatElapsed } from "@/lib/learn/use-learning-session";
 
@@ -47,17 +40,6 @@ export function LearnHeader({
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3">
       <SidebarTrigger className="size-7" />
-      <Link href="/tutor" title="ゆい先生のところに戻る">
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 gap-1.5"
-          aria-label="ゆい先生のところに戻る"
-        >
-          <GraduationCap className="size-3.5" />
-          <span>ゆい先生</span>
-        </Button>
-      </Link>
       <Button
         variant={mindmapCollapsed ? "outline" : "secondary"}
         size="icon"
