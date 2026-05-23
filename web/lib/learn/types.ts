@@ -246,8 +246,30 @@ export type LessonReview = {
 // ・開始ボタン）が会話の流れに合わせて埋め込まれる。
 // ============================================================================
 
-/** 担任 chat メッセージの送信者 */
-export type TutorRole = "tutor" | "learner";
+/**
+ * 担任 chat メッセージの送信者。
+ * - tutor: ゆい先生 (左寄せ吹き出し)
+ * - learner: 本人 (右寄せ吹き出し)
+ * - section: 話題セクションのヘッダー (中央寄せ区切り線 + ラベル、Phase 3 拡張)
+ */
+export type TutorRole = "tutor" | "learner" | "section";
+
+/**
+ * 担任 chat の「話題」分類（Phase 3 拡張）。
+ * 1 日 1 chat の中で複数話題が登場するので、ヘッダーで区切る + アーカイブで
+ * フィルタするためにメッセージにタグを付ける。
+ */
+export type TutorTopic =
+  | "morning-reflection" // 朝の振り返り (昨日 / 学校 / 気分 / 疑問 / 計画)
+  | "excavation" // 掘り起こし (「分からない」を言語化)
+  | "issue-check" // 課題を確認
+  | "schedule-check" // スケジュールを確認
+  | "history-check" // 学習履歴を確認
+  | "material-add" // 教材を追加
+  | "subject-history" // 科目の先生 対話履歴を見る
+  | "start-study" // 学習開始フロー (教科→教材→範囲→開始)
+  | "ending" // 学習終了 (思いつき発話 → 要約 → 確認 → 終了)
+  | "free-chat"; // 上記いずれでもない自由会話 (デフォルト)
 
 /**
  * 担任メッセージに埋め込まれるリッチ UI 部品。
@@ -329,6 +351,13 @@ export type TutorMessage = {
   quickReplies?: string[];
   /** このメッセージ送信時に右ペインを切り替えるアクション（Phase 3）*/
   rightPaneAction?: TutorRightPaneAction;
+  /**
+   * このメッセージの話題タグ（Phase 3 拡張）。
+   * tutor / section ロールで設定。learner ロールは直前の tutor message から継承。
+   * 話題が切り替わると TutorWorkspace 側で section ロールのヘッダー
+   * メッセージが自動挿入される。
+   */
+  topic?: TutorTopic;
   createdAt: string;
 };
 

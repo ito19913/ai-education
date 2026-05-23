@@ -10,7 +10,12 @@
  *
  * Phase 6 で Claude API に置き換え。本ファイルは設計のリファレンス + デモ用。
  */
-import type { TutorMessage, TutorThread } from "./types";
+import type {
+  TutorMessage,
+  TutorRightPaneAction,
+  TutorThread,
+  TutorTopic,
+} from "./types";
 import { MOCK_ISSUES, MOCK_SCHEDULE_TODAY } from "./mock-data";
 
 /**
@@ -52,6 +57,7 @@ export function buildInitialTutorThread(
       {
         id: "t-end-1",
         role: "tutor",
+        topic: "ending",
         text: "お疲れさま！\n\n**今から、頭の中のふわっとしたものを、私がまとめて具体化していくね。**\n\n今日勉強してみて、頭の中で思い浮かんだこと、そのまま話してみて。\n\n- 「ここが分かった」「ここが分かんない」\n- 分かったけど、まだしっくりこないところ\n- どうして分からないのか、自分で思ったこと\n\nなんでも OK。**頭の中で思い浮かんだものを、そのまま喋って**。\n\n私がそれを要約して、**今ふわっとしてる** のを **具体的にまとめていく** から。頭の中でまだ抽象的なのを、毎回具体化していくね。\n\n思い切って話してみて。",
         quickReplies: [
           "ここがしっくりこない",
@@ -84,6 +90,7 @@ export function buildInitialTutorThread(
     {
       id: "t-1",
       role: "tutor",
+      topic: "morning-reflection",
       text: `${greeting}\n\nまず軽く振り返りからいこっか。**昨日はどこまで進んだ?**\n\n覚えてなかったら「えっと…」でも OK、一緒に思い出そう。すぐ取り掛かりたい時は、上のメニューからも始められるよ。`,
       quickReplies: ["覚えてない", "不定詞のとこまでやった", "昨日はやらなかった"],
       createdAt: now.toISOString(),
@@ -136,7 +143,70 @@ export type TutorStep = {
   endingVentItems?: string[];
 };
 
+/**
+ * 状態 + 右ペインアクション から話題タグを派生（Phase 3 拡張）。
+ * 既に reply.topic が明示設定されてればそちらを尊重するため、
+ * buildNextTutorReply の末尾でフォールバックとして使う。
+ */
+export function deriveTutorTopic(
+  state: TutorState,
+  action?: TutorRightPaneAction,
+): TutorTopic {
+  if (action) {
+    switch (action.kind) {
+      case "open-issues":
+      case "open-issue":
+        return "issue-check";
+      case "open-schedule":
+        return "schedule-check";
+      case "open-history":
+        return "history-check";
+      case "open-material-new":
+        return "material-add";
+      case "open-subject-history":
+        return "subject-history";
+      case "close":
+        return "free-chat";
+    }
+  }
+  switch (state) {
+    case "reflection-yesterday":
+    case "reflection-school":
+    case "reflection-mood":
+    case "reflection-questions":
+    case "reflection-plan":
+      return "morning-reflection";
+    case "excavation":
+      return "excavation";
+    case "subject-picked":
+    case "material-picked":
+    case "ready-to-start":
+    case "started":
+      return "start-study";
+    case "ending-vent":
+    case "ending-confirm":
+    case "ending-done":
+      return "ending";
+  }
+  return "free-chat";
+}
+
 export function buildNextTutorReply(args: {
+  state: TutorStep;
+  userInput: string;
+}): { reply: TutorMessage; nextState: TutorStep } {
+  const result = buildNextTutorReplyInner(args);
+  // 明示設定がなければ話題を派生（次の state + 右ペインアクションから）
+  if (!result.reply.topic) {
+    result.reply.topic = deriveTutorTopic(
+      result.nextState.state,
+      result.reply.rightPaneAction,
+    );
+  }
+  return result;
+}
+
+function buildNextTutorReplyInner(args: {
   state: TutorStep;
   userInput: string;
 }): { reply: TutorMessage; nextState: TutorStep } {

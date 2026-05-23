@@ -16,7 +16,7 @@
  *   - 右ペインが view=issue（課題 chat）の時のみ、左ゆい入力欄が disabled
  *   - 「もどる」で右ペインを閉じると、フォーカスは左ゆいに戻る
  */
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { BookOpenCheck, GraduationCap } from "lucide-react";
@@ -28,6 +28,11 @@ import {
   buildNextTutorReply,
   type TutorStep,
 } from "@/lib/learn/tutor-mock";
+import { formatLocalDate } from "@/lib/learn/session-storage";
+import {
+  loadTutorThread,
+  saveTutorThread,
+} from "@/lib/learn/tutor-thread-storage";
 import type {
   ChatMessage,
   ExamPrep,
@@ -96,18 +101,69 @@ export function TutorWorkspace({
   // /tutor?ending=1: /learn の「学習を終了」から来た時、ゆいを ending モードで起動
   const endingMode = searchParams.get("ending") === "1";
 
-  // ----- ゆい chat の state -----
-  // 初期メッセージと状態は mode（morning / ending）で分岐
-  const [tutorMessages, setTutorMessages] = useState<TutorMessage[]>(() =>
-    buildInitialTutorThread(
-      new Date(),
-      endingMode ? "ending" : "morning",
-    ).messages,
+  // ----- ゆい chat の state（1 日 1 thread、localStorage 永続化）-----
+  //
+  // 設計（ito19 さん指示 2026-05-24）:
+  //   - 1 日 1 chat。同日内に戻ったら継続（朝の振り返り → 課題 → ... → 終了 を 1 本に蓄積）
+  //   - 別日は破棄せず archive 残し、今日は新規 thread
+  //   - ending mode（/tutor?ending=1）の場合: 既存 thread に終了挨拶を append
+  //
+  // 初期メッセージ: lazy init で localStorage チェック + mode 分岐を 1 回
+  const [tutorInit] = useState(() => {
+    const today = formatLocalDate();
+    const stored = loadTutorThread(today);
+    const existingMessages = stored?.messages ?? [];
+
+    if (endingMode) {
+      // ending: 既存 thread に終了の挨拶を append（無ければ新規 thread + ending greeting）
+      const endingGreeting = buildInitialTutorThread(
+        new Date(),
+        "ending",
+      ).messages;
+      return {
+        messages: [...existingMessages, ...endingGreeting],
+        state: "ending-vent" as const,
+        endingVentItems: [] as string[],
+      };
+    }
+
+    if (existingMessages.length > 0) {
+      // 同日継続: 復元
+      return {
+        messages: existingMessages,
+        state: (stored?.state ?? "reflection-yesterday") as TutorStep["state"],
+        endingVentItems: stored?.endingVentItems ?? [],
+      };
+    }
+
+    // 今日初めて: 朝の挨拶で新規 thread
+    return {
+      messages: buildInitialTutorThread(new Date(), "morning").messages,
+      state: "reflection-yesterday" as const,
+      endingVentItems: [] as string[],
+    };
+  });
+
+  const [tutorMessages, setTutorMessages] = useState<TutorMessage[]>(
+    tutorInit.messages,
   );
   const tutorStepRef = useRef<TutorStep>({
-    state: endingMode ? "ending-vent" : "reflection-yesterday",
-    endingVentItems: [],
+    state: tutorInit.state,
+    endingVentItems: tutorInit.endingVentItems,
   });
+
+  // メッセージ or 状態が変化したら localStorage に保存（5 秒に 1 回程度で十分だが
+  // メッセージ追加はそんなに頻繁じゃないので毎回 save で OK）。
+  useEffect(() => {
+    if (tutorMessages.length === 0) return;
+    saveTutorThread({
+      date: formatLocalDate(),
+      messages: tutorMessages,
+      state: tutorStepRef.current.state,
+      endingVentItems: tutorStepRef.current.endingVentItems,
+      savedAt: new Date().toISOString(),
+    });
+  }, [tutorMessages]);
 
   // ----- Issue state（resolve / chatThread 追加を一元管理） -----
   const [issues, setIssues] = useState<Issue[]>(initialIssues);

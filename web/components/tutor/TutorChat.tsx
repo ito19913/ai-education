@@ -20,6 +20,7 @@ import type {
   ScheduleItem,
   Subject,
   TutorMessage,
+  TutorTopic,
 } from "@/lib/learn/types";
 import { TUTOR_PERSONA } from "@/lib/learn/tutor-mock";
 import {
@@ -113,7 +114,7 @@ export function TutorChat({
         userInput: userMsg.text ?? "",
         history: [...messages, userMsg],
       });
-      setMessages((prev) => [...prev, reply]);
+      setMessages((prev) => appendReplyWithSection(prev, reply));
       setIsThinking(false);
     }, 600);
   };
@@ -140,7 +141,7 @@ export function TutorChat({
     setIsThinking(true);
     window.setTimeout(() => {
       const reply = onPickSubject(subjectId, label);
-      setMessages((prev) => [...prev, reply]);
+      setMessages((prev) => appendReplyWithSection(prev, reply));
       setIsThinking(false);
     }, 600);
   };
@@ -156,7 +157,7 @@ export function TutorChat({
     setIsThinking(true);
     window.setTimeout(() => {
       const reply = onPickMaterial(materialId, label);
-      setMessages((prev) => [...prev, reply]);
+      setMessages((prev) => appendReplyWithSection(prev, reply));
       setIsThinking(false);
     }, 600);
   };
@@ -343,4 +344,38 @@ function Dot({ delay }: { delay: number }) {
       style={{ animationDelay: `${delay}ms` }}
     />
   );
+}
+
+/**
+ * AI 返信を thread に追加する時、直前の tutor message と話題が変わってたら
+ * 自動でセクションヘッダー (role: "section") を間に挿入する（Phase 3 拡張）。
+ * 同じ話題内なら何もせず append のみ。
+ */
+function appendReplyWithSection(
+  prev: TutorMessage[],
+  reply: TutorMessage,
+): TutorMessage[] {
+  if (reply.role !== "tutor" || !reply.topic) {
+    return [...prev, reply];
+  }
+  // 直前の tutor message の topic を探す
+  let lastTutorTopic: TutorTopic | undefined;
+  for (let i = prev.length - 1; i >= 0; i--) {
+    if (prev[i].role === "tutor") {
+      lastTutorTopic = prev[i].topic;
+      break;
+    }
+  }
+  if (lastTutorTopic === reply.topic) {
+    // 同じ話題 → ヘッダー不要
+    return [...prev, reply];
+  }
+  // 話題切り替わり → セクションヘッダーを挟む
+  const sectionHeader: TutorMessage = {
+    id: `sec-${Date.now()}`,
+    role: "section",
+    topic: reply.topic,
+    createdAt: reply.createdAt,
+  };
+  return [...prev, sectionHeader, reply];
 }

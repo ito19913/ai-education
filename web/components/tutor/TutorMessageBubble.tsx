@@ -4,12 +4,26 @@
  * TutorMessageBubble - 担任 chat の 1 メッセージ。
  * - role が tutor: 左寄せ、アバター付き、本文 + カード
  * - role が learner: 右寄せ、本文のみ
+ * - role が section: 中央寄せの話題セクションヘッダー（Phase 3 拡張）
  */
+import {
+  BookOpenCheck,
+  Coffee,
+  GraduationCap,
+  History,
+  MessageCircle,
+  Search,
+  Sparkles,
+  Sunrise,
+  Target,
+  Upload,
+} from "lucide-react";
 import type {
   Issue,
   KnowledgeNode,
   ScheduleItem,
   TutorMessage,
+  TutorTopic,
 } from "@/lib/learn/types";
 import { TutorAvatar } from "./TutorAvatar";
 import { SubjectPickerCard } from "./cards/SubjectPickerCard";
@@ -45,6 +59,11 @@ export function TutorMessageBubble({
   onSelectIssueItem,
   onSeeAllSchedule,
 }: Props) {
+  // セクションヘッダー (話題区切り)
+  if (message.role === "section") {
+    return <TutorSectionHeader topic={message.topic} text={message.text} />;
+  }
+
   if (message.role === "tutor") {
     return (
       <div className="flex items-start gap-2.5">
@@ -110,4 +129,84 @@ export function TutorMessageBubble({
       </div>
     </div>
   );
+}
+
+/**
+ * セクションヘッダー: 話題の区切り（朝の振り返り / 課題確認 / 学習開始 等）。
+ * 中央寄せの細い区切り線 + アイコン + ラベル で表示。
+ */
+function TutorSectionHeader({
+  topic,
+  text,
+}: {
+  topic: TutorTopic | undefined;
+  text: string | undefined;
+}) {
+  const t = topic ?? "free-chat";
+  const label = text ?? topicLabel(t);
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <div className="h-px flex-1 bg-border" />
+      <div className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+        {renderTopicIcon(t)}
+        <span>{label}</span>
+      </div>
+      <div className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+/**
+ * 動的なコンポーネント参照（const Icon = ...; <Icon />）は React の
+ * static-components ルールで NG なので、要素を直接返す関数で対応。
+ */
+function renderTopicIcon(topic: TutorTopic) {
+  const cls = "size-3";
+  switch (topic) {
+    case "morning-reflection":
+      return <Sunrise className={cls} />;
+    case "excavation":
+      return <Search className={cls} />;
+    case "issue-check":
+      return <Target className={cls} />;
+    case "schedule-check":
+      return <BookOpenCheck className={cls} />;
+    case "history-check":
+      return <History className={cls} />;
+    case "material-add":
+      return <Upload className={cls} />;
+    case "subject-history":
+      return <GraduationCap className={cls} />;
+    case "start-study":
+      return <Sparkles className={cls} />;
+    case "ending":
+      return <Coffee className={cls} />;
+    case "free-chat":
+      return <MessageCircle className={cls} />;
+  }
+}
+
+function topicLabel(topic: TutorTopic): string {
+  switch (topic) {
+    case "morning-reflection":
+      return "朝の振り返り";
+    case "excavation":
+      return "掘り起こし";
+    case "issue-check":
+      return "課題を確認";
+    case "schedule-check":
+      return "スケジュール確認";
+    case "history-check":
+      return "学習履歴を確認";
+    case "material-add":
+      return "教材を追加";
+    case "subject-history":
+      return "先生の対話履歴";
+    case "start-study":
+      return "学習を開始";
+    case "ending":
+      return "学習を終了";
+    case "free-chat":
+      return "おしゃべり";
+  }
 }
