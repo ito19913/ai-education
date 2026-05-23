@@ -106,8 +106,7 @@ export function TutorWorkspace({
   );
   const tutorStepRef = useRef<TutorStep>({
     state: endingMode ? "ending-vent" : "reflection-yesterday",
-    endingVentTurns: 0,
-    endingVentAccum: "",
+    endingVentItems: [],
   });
 
   // ----- Issue state（resolve / chatThread 追加を一元管理） -----

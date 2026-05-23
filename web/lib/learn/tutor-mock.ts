@@ -115,10 +115,9 @@ type TutorState =
   | "material-picked"
   | "ready-to-start"
   | "started"
-  // === 学習終了フロー（思いつき発話 → AI 要約 → 課題抽出 → 繰り越し確認 → 終了）===
-  | "ending-vent" // 自由発話を集める（複数ターン可）
-  | "ending-summary" // AI が要約 + 課題候補を提示
-  | "ending-confirm" // 本人が要約/課題を確認 or 修正
+  // === 学習終了フロー（毎ターン要約を見せて気づきを誘発 → 終わり宣言で確認 → 終了）===
+  | "ending-vent" // 自由発話ループ。毎ターン現状サマリーを返す
+  | "ending-confirm" // 最終サマリー + 「これで終わりますか?」
   | "ending-done"; // セッション終了完了
 
 export type TutorStep = {
@@ -129,10 +128,12 @@ export type TutorStep = {
   proposedEntryNodeId?: string;
   /** 掘り起こしで本人が言語化した不明事項（mock では 1 件まで保持） */
   excavationTopic?: string;
-  /** 終了振り返りで本人が言ったことの蓄積（mock: 文字列累積） */
-  endingVentAccum?: string;
-  /** 終了振り返りで集めた発話のターン数（要約タイミング判定用） */
-  endingVentTurns?: number;
+  /**
+   * 終了振り返りで本人が言ったことの蓄積。1 発話 = 1 要素。
+   * 毎ターン AI がこのリストを見せて「他にある?」と聞くことで、
+   * 本人の「あ、まだあった」気づきを誘発する（メタ認知促進）。
+   */
+  endingVentItems?: string[];
 };
 
 export function buildNextTutorReply(args: {
@@ -552,90 +553,94 @@ export function buildNextTutorReply(args: {
   //   返す → 本人が確認 → 繰り越し決めて終了。
   // =====================================================================
 
-  // --- ending-vent: 自由発話を 2〜3 ターン集める ---
+  // --- ending-vent: 毎ターン現状サマリーを見せて「他にある?」を繰り返すループ ---
+  //
+  // ito19 さん設計意図:
+  //   チャット 1 本送るたびに、これまでの蓄積を要約して見せる。
+  //   本人がまとまったものを見ると「あ、まだあった」って気づきがある。
+  //   それを繰り返して「これで終わり?」が出るまで続ける。
+  //   = ゆいの「具体化」能力をリアルタイムに体験させる設計。
   if (state.state === "ending-vent") {
-    const turns = (state.endingVentTurns ?? 0) + 1;
-    const accum =
-      (state.endingVentAccum ?? "") +
-      (state.endingVentAccum ? " / " : "") +
-      userInput;
-    // 本人が「まとめて」「もうない」と言ったらショートカットで summary へ
-    const wantsSummary =
-      lower.includes("まとめて") ||
-      lower.includes("もうない") ||
-      lower.includes("もう無い");
+    // 「終わり」宣言の検出
+    const wantsEnd =
+      lower === "もうない" ||
+      lower === "もう無い" ||
+      lower === "もうないかな" ||
+      lower === "終わり" ||
+      lower === "終わりです" ||
+      lower === "もう終わり" ||
+      lower === "以上" ||
+      lower === "以上です" ||
+      lower.includes("これで終わ") ||
+      lower.includes("もう終わり");
 
-    if (!wantsSummary && turns < 2) {
-      // もう 1 ターン拾う
+    if (wantsEnd) {
+      // 終わり宣言。これまでの items を最終サマリー + 課題候補として確認に進む。
+      // 「終わり」発話自体は items に含めない（実質的な振り返りじゃないので）。
+      const finalItems = state.endingVentItems ?? [];
+      const itemsList =
+        finalItems.length > 0
+          ? finalItems.map((s, i) => `${i + 1}. ${s}`).join("\n")
+          : "（まだ何も話してないみたい）";
+
       return {
-        nextState: {
-          ...state,
-          endingVentTurns: turns,
-          endingVentAccum: accum,
-        },
+        nextState: { ...state, state: "ending-confirm" },
         reply: {
           id: makeId(),
           role: "tutor",
-          text: "なるほど、了解。\n\n**他にもある?** 「集中できた / できなかった」「これモヤモヤ残ってる」「これスッキリした」、なんでも。\n（もうなければ「ない」って言ってくれて OK、まとめに入るね）",
-          quickReplies: ["もうない、まとめて", "もう少しある"],
+          text: `OK、これでまとめるね。\n\n**今日の振り返り（全 ${finalItems.length} 件）:**\n${itemsList}\n\n**繰り越したい課題候補:**\n・「動名詞 -ing との使い分け、もう少し詰めたい」\n・「副詞的用法、目的と結果の見分け方」\n\n**これで終わりますか?**\n（違うところあれば直すし、まだ思い出したら戻ろう）`,
+          quickReplies: [
+            "はい、終わりです",
+            "あ、まだあった",
+            "課題、修正したい",
+          ],
           createdAt: now,
         },
       };
     }
 
-    // 2 ターン以上集めた、または本人が「まとめて」と言ったら要約へ
-    return {
-      nextState: {
-        ...state,
-        state: "ending-summary",
-        endingVentTurns: turns,
-        endingVentAccum: accum,
-      },
-      reply: {
-        id: makeId(),
-        role: "tutor",
-        text: "OK、ありがとう。ちょっとまとめてみるね。",
-        createdAt: now,
-      },
-    };
-  }
+    // 通常ターン: 本人発話を items に追加して、現状サマリー + 「他にある?」
+    const items = [...(state.endingVentItems ?? []), userInput.trim()].filter(
+      (s) => s.length > 0,
+    );
+    const itemsList = items.map((s, i) => `${i + 1}. ${s}`).join("\n");
 
-  // --- ending-summary: 要約 + 課題候補を提示 → 確認待ち ---
-  if (state.state === "ending-summary") {
-    // mock: 蓄積した発話を簡易要約風に提示。Phase 6 で Claude が本物の要約を生成。
-    const ventSnippet = (state.endingVentAccum ?? "").slice(0, 80);
-    const summary = `**今日のサマリー（仮）**:\n「${ventSnippet}${(state.endingVentAccum ?? "").length > 80 ? "…" : ""}」\n\n**繰り越したい課題候補:**\n・「動名詞 -ing との使い分け、もうちょい詰めたい」\n・「副詞的用法、目的と結果の見分け方」\n\nこれであってる? 違うところあれば直すよ。`;
     return {
-      nextState: { ...state, state: "ending-confirm" },
+      nextState: { ...state, endingVentItems: items },
       reply: {
         id: makeId(),
         role: "tutor",
-        text: summary,
+        text: `なるほど、メモしたよ。\n\n**ここまでのまとめ:**\n${itemsList}\n\nこうやって並べてみると、**他にも思い出すこと、ある?**\n（まだあれば続けて、なければ「もうない」って言ってくれたら最終確認に進むよ）`,
         quickReplies: [
-          "OK、これで終わる",
-          "課題はこれだけ繰り越したい",
-          "違うところがある",
+          "まだある",
+          "あ、これも忘れてた",
+          "もうないかな",
+          "終わり",
         ],
         createdAt: now,
       },
     };
   }
 
-  // --- ending-confirm: 本人 OK → 終了 / 修正 → 戻る ---
+  // --- ending-confirm: 「これで終わりますか?」 → 終了 or vent に戻る ---
   if (state.state === "ending-confirm") {
-    if (lower.includes("違う") || lower.includes("修正")) {
-      // 修正したい → vent に戻る
+    if (
+      lower.includes("まだあった") ||
+      lower.includes("まだある") ||
+      lower.includes("修正")
+    ) {
+      // vent に戻る（追加発話を受ける）
       return {
         nextState: { ...state, state: "ending-vent" },
         reply: {
           id: makeId(),
           role: "tutor",
-          text: "了解、どこを直そう? 言ってくれたら直すよ。",
+          text: "OK、まだあるんだね！話してみて。何でも OK、思い出したそのまま投げて。",
           createdAt: now,
         },
       };
     }
-    // OK → done
+    // 「はい、終わりです」 / その他 OK 系 → 終了
     return {
       nextState: { ...state, state: "ending-done" },
       reply: {
