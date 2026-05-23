@@ -2,7 +2,7 @@
 
 実装の設計判断と全体像をまとめたドキュメント。哲学（[PHILOSOPHY.md](./PHILOSOPHY.md)）が「何のために作るか」、本書は「どう作るか」。
 
-最終更新: 2026-05-23（Phase 3 にコーチング設計レイヤーを追加）
+最終更新: 2026-05-24（Phase 3 中盤の実装スナップショット追加）
 
 ---
 
@@ -180,6 +180,119 @@
 
 ---
 
+## Phase 3 中盤の実装スナップショット（2026-05-24）
+
+3a〜3b を経て、ito19 さんの追加要望（学習終了の儀式化 / セッション永続化 / ゆい対話アーカイブ等）を反映した結果、以下のサブシステムが揃った状態。各機能の根拠は当該日の grill-me / commit メッセージに残る。
+
+### セッションライフサイクル（pause/resume + 永続化）
+
+> 実装: `web/lib/learn/use-learning-session.ts` / `web/lib/learn/session-storage.ts`
+> ヘッダ表示: `web/components/learn/LearnHeader.tsx`
+
+**3 状態モデル**: `active` / `paused` / `ended`
+
+| イベント | 旧設計 (撤回済) | **新設計** |
+|---|---|---|
+| アイドル 15 分 | auto-end | **auto-pause** （セッション継続）|
+| 任意操作 (mouse/key/click/scroll/touch) | markActivity 明示 | **global listener で auto-resume** (throttle 1 秒) |
+| ブラウザ閉じ | `browser-close` で終了 + 警告ダイアログ | **終了しない、localStorage に snapshot** + 警告ダイアログ撤去 |
+| 翌日に来る | 「今日始める?」儀式 | **完全サイレント**、別日のセッションを静かに破棄 |
+| 同日内に戻る | - | **localStorage から復元、paused 起動、操作で resume** |
+| 明示終了 | "manual" / "browser-close" 等 | **"manual" のみ**（`/tutor?ending=1` 経由）|
+
+**3 状態カラー (LearnHeader)**:
+- 🟢 緑 + ping アニメドット → 学習中（active）
+- 🟡 黄ドット + 「離席中…」 → 一時停止（paused）
+- 🔴 赤ドット + 「停止中」 → 終了（ended）
+
+**「学習を終了」ボタン**: 即終了ではなく `/tutor?ending=1` に遷移 → ゆいの ending 振り返り対話を経て終了。
+
+### ゆい chat の永続化（1 日 1 chat）
+
+> 実装: `web/lib/learn/tutor-thread-storage.ts`
+> UI: `web/components/tutor/TutorWorkspace.tsx` mount 時に load/save
+
+**設計原則** (ito19 さん指示 2026-05-24):
+- 1 日 1 thread。同日内は load して継続（朝の振り返り → 課題確認 → ... → 学習終了 を 1 本に蓄積）
+- 別日: 過去 thread はそのまま archive 残し、今日は新規 thread
+- Claude API (Phase 6) コンテキストは 1 日分で bounded
+
+**localStorage key**:
+- `ai-education:tutor-thread:YYYY-MM-DD` — 各日の thread
+- `ai-education:tutor-thread-index` — 全 thread 日付の index
+
+**ending モードの挙動**: `/tutor?ending=1` で来た場合、既存 thread に ending 挨拶を append（同日内の朝の振り返りからの続きとして自然に流れる）。
+
+### 話題タグ + セクションヘッダー
+
+> 型: `TutorTopic` / `TutorRole = "tutor" | "learner" | "section"`（`web/lib/learn/types.ts`）
+> 表示: `web/components/tutor/topic-display.tsx` (`TopicChip` コンポーネント、絵文字 + パステル色)
+
+**10 種類の Topic**:
+
+| Topic | 絵文字 | 色 | 場面 |
+|---|---|---|---|
+| morning-reflection | 🌅 | amber | 朝の振り返り 5 セクション |
+| excavation | 💭 | sky | 掘り起こし |
+| issue-check | 🎯 | orange | 課題を確認 |
+| schedule-check | 📅 | violet | スケジュール確認 |
+| history-check | 📖 | slate | 学習履歴を確認 |
+| material-add | 📚 | emerald | 教材を追加 |
+| subject-history | ✏️ | indigo | 科目の先生 対話履歴 |
+| start-study | ✨ | fuchsia | 学習を開始 |
+| ending | 🌙 | rose | 学習を終了 |
+| free-chat | 💬 | neutral | おしゃべり |
+
+**自動セクションヘッダー挿入**: `TutorChat.appendReplyWithSection()` が直前の tutor message と topic を比較、変わってたら自動で `role: "section"` メッセージを挿入。
+
+**Topic 派生**: `tutor-mock.ts::deriveTutorTopic(state, rightPaneAction)` が各 reply に topic を付与（明示設定があれば尊重）。
+
+### 学習終了の振り返り（ending dialogue）
+
+> 実装: `tutor-mock.ts::buildInitialTutorThread(now, "ending")` + state `ending-vent` / `ending-confirm` / `ending-done`
+
+**ループ型サマリー設計** (ito19 さん指示):
+1. 開始: 「お疲れさま！今から、頭の中のふわっとしたものを、私がまとめて具体化していくね...」（canonical script、TUTOR-ROLE.md 参照）
+2. 本人発話 → ゆいが現状サマリーを返却（番号付き箇条書き）+「他にある?」
+3. 本人が思い出した事を追加 → サマリー更新 → 「他にある?」
+4. 「もうない / 終わり / 以上」発話 → 最終サマリー + 繰り越し課題候補 + 「これで終わりますか?」
+5. 「はい」 → `ending-done` 確定 + localStorage clear
+6. 「あ、まだあった」 → vent に戻る
+
+**メタ認知の自動化**: 並べたまとめを本人が見ると「あ、まだあった」と気づきが生まれる → AI の要約・抽出能力を本人の気づき促進に転用。
+
+### ゆい先生対話アーカイブ
+
+> 実装: `web/components/tutor/TutorArchiveView.tsx`
+> 起動: HubMenu「先生との対話」プルダウン → 「ゆい先生」、または chat に「ゆい対話履歴」と書く
+
+- 日付セレクター（保存済み thread の降順、`[今日]` バッジ付き）
+- 話題フィルター（10 種、各件数バッジ、複数選択可）
+- 選択日の thread を `TutorMessageBubble` で readonly 表示（セクションヘッダー込み）
+- URL `?date=YYYY-MM-DD` で外部から特定日にジャンプ可能
+
+### 過去 chat 検索（「あの話したよね?」）
+
+> 実装: `tutor-thread-storage.ts::searchTutorThreads(query, maxResults)` + `tutor-mock.ts::detectSearchIntent()`
+> カード: `web/components/tutor/cards/ChatSearchResultCard.tsx`
+
+**検出パターン**: トリガーフレーズ 18 種 (「話したよね」「言ったよね」「覚えてる」「前に話した」「ゆい先生に話した」「あの話」等) + 明示プレフィックス (「探して:」「検索:」)。
+
+**動作**: トリガー検出 → トリガー語と助詞を除去してクエリ抽出 → 全 thread grep → 最大 5 件返却 → `ChatSearchResultCard` で日付 + 発話者 + Topic + snippet を表示 → クリックで `/tutor?view=tutor-archive&date=xxx` にジャンプ。
+
+**ヒットなし**: 「見当たらないなあ」+ `open-tutor-archive` をフォールバック発火（全件閲覧へ）。
+
+### HubMenu「先生との対話」プルダウン
+
+> 実装: `web/components/tutor/TutorChat.tsx::TutorHubMenu`
+
+担任「ゆい先生」+ 科目の先生（あおい先生 等、`Subject.teacher` 設定済みのみ）を列挙。担任セクションと科目セクションを区切り見出し付きで分離。
+
+- 「ゆい先生」クリック → `onSend("ゆい対話履歴")` → tutor-mock の検索意図検出にヒット → `tutor-archive` view
+- 科目の先生クリック → `onSend(teacher.displayName)` → tutor-mock の hub action → `subject-history` view
+
+---
+
 ## ゆい→葵への申し送り（TutorHandoff）
 
 ARCHITECTURE 既存の「葵 → ゆい：`Issue.summary` 経由」の **逆方向**。
@@ -217,6 +330,9 @@ TutorHandoff ドキュメント作成 (mock では chat 内のカード)
 | `/tutor?view=history` | 右ペインに学習履歴 | Phase 3 |
 | `/tutor?view=material-new` | 右ペインに新規教材登録ウィザード（`MaterialEditWizard` を embed） | Phase 3 |
 | `/tutor?view=subject-history&subjectId=xxx` | 右ペインに科目の先生との対話履歴ビュー（ノード対話 + 課題 chat の時系列集約）| Phase 3 |
+| `/tutor?view=tutor-archive` | **右ペインにゆい先生対話アーカイブ**（日付セレクター + 話題フィルター、readonly） | ✓ Phase 3 中盤 |
+| `/tutor?view=tutor-archive&date=YYYY-MM-DD` | 上記で特定日を即表示（検索結果カードからのジャンプ） | ✓ Phase 3 中盤 |
+| `/tutor?ending=1` | **学習終了振り返り (ending) モードでゆい起動**（`/learn` の「学習を終了」ボタンから） | ✓ Phase 3 中盤 |
 | `/schedule` | 学習スケジュール ダッシュボード（バックアップ動線、`/tutor?view=schedule` と同コンポーネント） | ✓ Phase 1 骨格 |
 | `/learn` | 学習画面（4 ペイン: サイドバー / 体系図 / 対話 / ノート + 課題）。`/tutor` 右ペインには収まらないため別ルート | ✓ |
 | `/learn?node=xxx&startDay=1` | 担任からのハンドオフで体系図 復元テスト → 学習 | ✓ |
@@ -428,8 +544,9 @@ TutorHandoff {
 | **Phase 0**（先行） | `/learn` 4 ペイン、`/test`、`/chapter-test`、認証、Supabase 基盤 | ✓ 完了 |
 | **Phase 1** | `/schedule` ダッシュボード骨格 + 4 task type の mock データ + サイドバー最上位 | ✓ 完了 |
 | **Phase 2** | 担任「ゆい」chat (mock)、リッチカード（教科 / 教材 / 範囲 / 開始）、`/` → `/tutor` redirect | ✓ 完了 |
-| **Phase 3 (構造)** | /tutor 2 ペイン司令室化 + 課題 chat 統合 + ゆいハブカード（下記 Phase 3 スコープ参照） | 部分実装中（hide-tutor 撤回が必要）|
-| **Phase 3 拡張: コーチング設計** | ゆいを純粋コーチング エージェントに進化（下記 Phase 3 拡張スコープ 3a〜3g 参照） | 未着手 |
+| **Phase 3 (構造)** | /tutor 2 ペイン司令室化 + 課題 chat 統合 + ゆいハブカード | ✓ 完了 |
+| **Phase 3 拡張: コーチング設計** | ゆいを純粋コーチング エージェントに進化（下記 Phase 3 拡張スコープ 3a〜3g 参照） | 3a-3b + 拡張機能 多数 ✓、3c-3g 残 |
+| **Phase 3 中盤の追加機能** | 1 日 1 chat 永続化 + 話題セクション + アーカイブ + 検索 + セッション pause/resume + 3 状態タイマー + ending dialogue（上記「Phase 3 中盤の実装スナップショット」参照） | ✓ 完了 |
 | **Phase 3.5** | 学習開始の儀式 + 経過時間計測 + 離席検知 + 終了儀式（下記 Phase 3.5 スコープ参照） | 未着手 |
 | **Phase 4** | 宿題タスク + AI 伴走 chat（「考え方を一緒に確認しながら」）| 未着手 |
 | **Phase 5** | 授業の新しい学び（本人入力 → 復習タスク自動生成）| 未着手 |
@@ -598,6 +715,30 @@ TutorHandoff {
 | ゆい → 葵への申し送り | **TutorHandoff 型** 新設（葵 → ゆいの Issue.summary の逆方向）。葵 IssueChat ヘッダに「ゆいから N 件」表示 → 葵が読んで指導戦略に反映 |
 | 2 つの AI の連携 | **生 chat は共有しない**。サマリー (`Issue.summary`) + 申し送り (`TutorHandoff`) のドキュメントのみで連携（コンテキスト爆発回避） |
 | 「環境 vs 中身」原則 | **環境（時間・場・儀式）は決めてあげる、対話の中身はコーチング**。ito19 さん自己認識「自分基準で設計するな（普通の人は自走できない）」より |
+
+### Phase 3 中盤の追加決定（2026-05-24）
+
+| 論点 | 確定 |
+|---|---|
+| 「学習を終了」ボタンの挙動 | 即終了せず `/tutor?ending=1` に遷移 → ゆいが ending 振り返り対話 → 確定後にセッション終了 |
+| ending 開始発話 | ito19 さん canonical script「お疲れさま！今から、頭の中のふわっとしたものを、私がまとめて具体化していくね...」(TUTOR-ROLE.md 記載) |
+| ending 振り返りの構造 | **ループ型サマリー**: 本人発話 → 累積サマリー + 「他にある?」を毎ターン繰り返す → 「もうない」で確定 |
+| 設計意図 | AI の要約能力を本人のメタ認知促進に転用（「あ、まだあった」を誘発）|
+| アイドル検知 | 15 分で auto-pause（auto-end しない）|
+| ブラウザ閉じ | 終了せず snapshot を localStorage に保存 |
+| 翌日復帰 | 完全サイレント。前日以前のセッションは静かに破棄、ゆいは過去に触れず通常の朝の振り返りから |
+| 同日復帰 | localStorage から復元、paused 起動、任意操作で auto-resume |
+| chat の lifecycle | **1 日 1 thread**。同日継続、別日新規。Claude API コンテキストは 1 日分で bounded |
+| 同日内の区切り | 1 本のスレッドに **話題セクションヘッダー** を自動挿入（topic 変化時）|
+| 話題タグの数 | 10 種（朝の振り返り / 掘り起こし / 課題確認 / スケジュール / 履歴 / 教材追加 / 先生対話 / 学習開始 / 学習終了 / おしゃべり）|
+| Topic の見た目 | 中2 女子向け: 絵文字 + パステル色（amber / sky / orange / violet / slate / emerald / indigo / fuchsia / rose / neutral） |
+| ゆい対話アーカイブ | 1 日 1 chat ベース、日付セレクター + 話題フィルター、readonly |
+| アクセス導線 | HubMenu「先生との対話」プルダウンに「ゆい先生」を追加、+ chat に「ゆい対話履歴」等のキーワードで |
+| 過去 chat 検索 | 「あの話したよね?」系トリガー 18 種で検出、grep ベース、結果はクリックでアーカイブにジャンプ |
+| 「先生との対話」プルダウンの構成 | 担任セクション（ゆい）+ 科目セクション（あおい先生 等）の 2 段構成 |
+| HubMenu の quickReplies 撤去 | ending-vent ループは quickReplies 撤去（テキスト本文で「続けて話す or 『もうない』」を明示）|
+| サイドバー整理 | 科目の先生エントリを撤去（HubMenu プルダウンに集約）、ゆい先生のみ最上位に残す |
+| /learn の「ゆい先生に戻る」ボタン | 撤去（サイドバーと重複）|
 
 ### 学習計測・離席検知（Phase 3.5 / 部分実装済）
 

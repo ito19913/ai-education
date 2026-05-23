@@ -121,7 +121,7 @@ npm run dev        # 開発サーバー起動
 | `/test` | 悪い癖の強制矯正テスト |
 | `/chapter-test?node=<id>` | 単元完了テスト（遡及式診断） |
 
-設計の全体像は [ARCHITECTURE.md](./ARCHITECTURE.md)、ゆい先生（担任 / コーチ）の役割の詳細は [TUTOR-ROLE.md](./TUTOR-ROLE.md) を参照。
+設計の全体像は [ARCHITECTURE.md](./ARCHITECTURE.md)、ゆい先生（担任 / コーチ）の役割の詳細は [TUTOR-ROLE.md](./TUTOR-ROLE.md)、最新の独立レビューは [REVIEW-2026-05-24.md](./REVIEW-2026-05-24.md) を参照。
 
 ### 認証アカウント
 Supabase ダッシュボード → Authentication → Users で手動作成済み：
@@ -160,4 +160,15 @@ Supabase ダッシュボード → Authentication → Users で手動作成済�
   - **掘り起こし**: 「何が分からないか分からない」を質問で言語化させる技法 → 課題 + 申し送りに派生 → 葵先生が IssueChat で対応
   - **TutorHandoff 型**: ゆい → 葵への申し送り（Issue.summary の逆方向）。2 つの AI は生 chat を共有せず、サマリー + 申し送りドキュメントで連携
   - **Phase 3 拡張ロードマップ (3a〜3g)** 確定: 3a hide-tutor revert + persona 更新 → 3b tutor-mock coaching 化 → 3c ReflectionLog → 3d Goal → 3e 振り返りスケジュール自動配置 → 3f TutorHandoff → 3g IssueChat 本実装
-- **次のステップ**: Phase 3 拡張 3a 着手（hide-tutor revert + persona 更新）/ Phase 3.5 学習計測・離席検知 / Phase 4 宿題伴走 / Phase 5 授業復習登録 / Phase 6 Claude API 接続 / Phase 7 Supabase 永続化 / Phase 8 音声入出力
+- **2026-05-24**: Phase 3 中盤の大幅追加。詳細は [ARCHITECTURE.md](./ARCHITECTURE.md) の「Phase 3 中盤の実装スナップショット」、独立レビューは [REVIEW-2026-05-24.md](./REVIEW-2026-05-24.md)
+  - **3a hide-tutor revert + 3b coaching tutor-mock 化**: ゆいを純粋コーチング エージェントに進化（GROW + 質問中心 + 未来志向 + 観察ベース承認 + 武田塾「説明させる」+ ファインマン式）
+  - **学習終了をゆい報告経由の儀式に**: `/learn` の「学習を終了」→ `/tutor?ending=1` → ゆいの ending 振り返り対話（思いつき発話 → ループ型サマリー → 確認 → 終了）。ito19 さん canonical script を [TUTOR-ROLE.md](./TUTOR-ROLE.md) に記録
+  - **セッション pause/resume + localStorage 永続化**: アイドル 15 分で auto-pause（auto-end しない）、操作で auto-resume、ブラウザ閉じ → snapshot 保存、同日復元 / 別日サイレント破棄
+  - **3 状態タイマー UI** (active 緑 ping / paused 黄 / ended 赤)
+  - **1 日 1 chat + 話題セクションヘッダー**: 同日内は朝の振り返り → 課題確認 → ... → 終了 を 1 本のスレッドに蓄積、話題切替で section ヘッダー自動挿入。10 種類の Topic に絵文字 + パステル色（中2 女子向け）
+  - **ゆい先生対話アーカイブ** (`/tutor?view=tutor-archive`): 日付セレクター + 話題フィルター（複数選択）、readonly 表示
+  - **過去 chat 検索** (「あの話したよね?」): トリガー 18 種でクエリ抽出 → grep → 結果カードで日付/発話者/Topic/snippet 表示、クリックでアーカイブにジャンプ
+  - **HubMenu「先生との対話」プルダウン**: 担任ゆい + 科目あおい を 2 段構成で集約
+  - **TUTOR-ROLE.md 新設**: ゆい先生の役割を ito19 さん実体験ベースで記録（CPA としての税理士試験スタッフ相談、コンダクター業務、ふわっと → 具体化）
+  - **独立レビュー実施**: 仕様 / UX-UI / コーチング有効性 の 3 観点で独立エージェントがレビュー。共通指摘「ARCHITECTURE と実装の乖離（Phase 3 拡張型 6 個の実装ゼロ）」「教えないハードガード未実装」「markdown レンダリングなし」等を [REVIEW-2026-05-24.md](./REVIEW-2026-05-24.md) に保存
+- **次のステップ**: REVIEW で挙がった最重要 3 つ（markdown レンダリング / 教えないハードガード / Phase 3 拡張型 6 個追加）から着手 → Phase 3c ReflectionLog 永続化 / Phase 3d Goal / Phase 3.5 学習計測 / Phase 4 宿題伴走 / Phase 5 授業復習登録 / Phase 6 Claude API 接続 / Phase 7 Supabase 永続化 / Phase 8 音声入出力
