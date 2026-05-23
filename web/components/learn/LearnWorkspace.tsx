@@ -422,7 +422,6 @@ export function LearnWorkspace({
           onToggleMindmap={toggleMindmap}
           sessionActive={session.isActive}
           elapsedSec={session.elapsedSec}
-          onEndSession={() => session.endSession("manual")}
         />
         <ResizablePanelGroup
           orientation="horizontal"

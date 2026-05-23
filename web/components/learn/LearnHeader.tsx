@@ -9,7 +9,7 @@
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, Clock, Network, StopCircle } from "lucide-react";
+import { ChevronRight, Clock, Network } from "lucide-react";
 import type { KnowledgeNode, LearnSubject } from "@/lib/learn/types";
 import { formatElapsed } from "@/lib/learn/use-learning-session";
 
@@ -22,8 +22,6 @@ type Props = {
   sessionActive: boolean;
   /** 経過秒数 */
   elapsedSec: number;
-  /** 終了ボタン押下時 */
-  onEndSession: () => void;
 };
 
 export function LearnHeader({
@@ -33,7 +31,6 @@ export function LearnHeader({
   onToggleMindmap,
   sessionActive,
   elapsedSec,
-  onEndSession,
 }: Props) {
   const lastId = breadcrumb[breadcrumb.length - 1]?.id;
 
@@ -90,15 +87,11 @@ export function LearnHeader({
                 {formatElapsed(elapsedSec)}
               </span>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onEndSession}
-              className="h-7 gap-1.5"
-            >
-              <StopCircle className="size-3.5" />
-              <span>学習を終了</span>
-            </Button>
+            {/*
+              「学習を終了」ボタンは撤去（2026-05-24）。
+              終了はゆい先生に報告して終わらせる設計に変更する（次の設計議論）。
+              タイマー表示は計測の可視化として残す。
+            */}
           </>
         )}
       </div>
