@@ -121,7 +121,7 @@ npm run dev        # 開発サーバー起動
 | `/test` | 悪い癖の強制矯正テスト |
 | `/chapter-test?node=<id>` | 単元完了テスト（遡及式診断） |
 
-設計の全体像は [ARCHITECTURE.md](./ARCHITECTURE.md) を参照。
+設計の全体像は [ARCHITECTURE.md](./ARCHITECTURE.md)、ゆい先生（担任 / コーチ）の役割の詳細は [TUTOR-ROLE.md](./TUTOR-ROLE.md) を参照。
 
 ### 認証アカウント
 Supabase ダッシュボード → Authentication → Users で手動作成済み：
