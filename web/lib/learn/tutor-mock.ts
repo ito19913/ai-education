@@ -17,6 +17,7 @@ import type {
   TutorTopic,
 } from "./types";
 import { MOCK_ISSUES, MOCK_SCHEDULE_TODAY } from "./mock-data";
+import { searchTutorThreads } from "./tutor-thread-storage";
 
 /**
  * 担任の persona（Claude API 接続時の system prompt の元になる）。
@@ -213,6 +214,45 @@ function buildNextTutorReplyInner(args: {
   const { state, userInput } = args;
   const lower = userInput.toLowerCase().trim();
   const now = new Date().toISOString();
+
+  // =====================================================================
+  // 過去 chat 検索（「あの話したよね?」系の発話を拾う）
+  //
+  // ito19 さん要望: ゆい先生の対話履歴を本人が探せるように。
+  // 「前に話した」「覚えてる?」等のトリガーがあれば、トリガー語を除いた
+  // 残りをクエリとして全 thread を grep。ヒット候補をカードで返す。
+  // =====================================================================
+  const searchQuery = detectSearchIntent(userInput);
+  if (searchQuery) {
+    const results = searchTutorThreads(searchQuery, 5);
+    if (results.length > 0) {
+      return {
+        nextState: state,
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: `「${searchQuery}」、過去の会話から見つけたよ。${results.length} 件あった、クリックで該当日のアーカイブが開くよ。`,
+          card: {
+            kind: "chat-search-result",
+            query: searchQuery,
+            results,
+          },
+          createdAt: now,
+        },
+      };
+    }
+    // ヒットなし
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: `「${searchQuery}」、見当たらないなあ。\n別の言い方で言ってみる? それか「対話履歴」って言うと過去 chat 全部を右ペインで見れるよ。`,
+        rightPaneAction: { kind: "open-tutor-archive" },
+        createdAt: now,
+      },
+    };
+  }
 
   // =====================================================================
   // ハブ動作（state に関係なく、メニュー的なキーワードに反応して右ペインへ）
@@ -770,4 +810,67 @@ let idCounter = 100;
 function makeId(): string {
   idCounter += 1;
   return `t-${idCounter}`;
+}
+
+/**
+ * ユーザー発話から「過去 chat 検索」意図を検出し、クエリ部分を抽出する。
+ * mock 用の素朴な実装。検出した場合は string、しなければ null。
+ *
+ * 例:
+ *   「不定詞の話、前にしたよね?」 → "不定詞"
+ *   「動名詞のこと、ゆい先生に話したっけ」 → "動名詞"
+ *   「あの英語の話、覚えてる?」 → "英語"
+ *   「探して: 比較級」 → "比較級"
+ */
+function detectSearchIntent(input: string): string | null {
+  const raw = input.trim();
+  if (raw.length === 0) return null;
+
+  // 明示プレフィックス: 「探して:」「検索:」
+  const explicitMatch = raw.match(/^(?:探して|検索|find|search)\s*[:：]?\s*(.+)/);
+  if (explicitMatch) {
+    return explicitMatch[1].trim() || null;
+  }
+
+  // トリガーフレーズが含まれているか
+  const TRIGGERS = [
+    "話したよね",
+    "話したっけ",
+    "話したやつ",
+    "話してたよね",
+    "言ったよね",
+    "言ったっけ",
+    "言ってたよね",
+    "覚えてる",
+    "覚えてた",
+    "前に話した",
+    "前に言った",
+    "前に話してた",
+    "あの話",
+    "あれ、どこ",
+    "どこだっけ",
+    "ゆい先生に話した",
+    "ゆいに話した",
+    "ゆい先生に言った",
+    "ゆいに言った",
+  ];
+  const hasTrigger = TRIGGERS.some((t) => raw.includes(t));
+  if (!hasTrigger) return null;
+
+  // クエリ抽出: トリガー語と一般的な助詞・語尾を全部削って残りをクエリに
+  let query = raw;
+  for (const t of TRIGGERS) {
+    query = query.replaceAll(t, " ");
+  }
+  // 一般的な助詞・語尾の除去（mock 用簡易、完璧でなくて OK）
+  query = query
+    .replace(/[、。?？!！]/g, " ")
+    .replace(/\b(の|を|に|は|が|で|と|から|よね|っけ|の事|のこと|の話|やつ|ちょっと)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // 空 or 短すぎ → 検索意図はあるが対象が曖昧。null を返さず "" を返す
+  // とアーカイブ全体を開く動線になる
+  if (query.length === 0) return null;
+  return query;
 }

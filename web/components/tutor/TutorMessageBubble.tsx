@@ -20,6 +20,7 @@ import { RangePreviewCard } from "./cards/RangePreviewCard";
 import { StartStudyCard } from "./cards/StartStudyCard";
 import { IssueListCard } from "./cards/IssueListCard";
 import { TodayScheduleCard } from "./cards/TodayScheduleCard";
+import { ChatSearchResultCard } from "./cards/ChatSearchResultCard";
 import { TopicChip } from "./topic-display";
 
 type Props = {
@@ -102,6 +103,9 @@ export function TutorMessageBubble({
                   onSelectIssueItem={onSelectIssueItem}
                   onSeeAll={onSeeAllSchedule}
                 />
+              )}
+              {message.card.kind === "chat-search-result" && (
+                <ChatSearchResultCard card={message.card} />
               )}
             </div>
           )}

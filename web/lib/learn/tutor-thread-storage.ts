@@ -12,7 +12,7 @@
  * Phase 7 で Supabase に差し替えやすい抽象を保つ。
  */
 
-import type { TutorMessage } from "./types";
+import type { TutorMessage, TutorRole, TutorTopic } from "./types";
 
 /** 1 日分の thread + 状態スナップショット */
 export type StoredTutorThread = {
@@ -84,6 +84,62 @@ export function listTutorThreadDates(): string[] {
   } catch {
     return [];
   }
+}
+
+/** 過去 chat 検索の 1 件分のヒット情報 */
+export type TutorChatSearchResult = {
+  /** 何日の thread にあったか YYYY-MM-DD */
+  date: string;
+  /** メッセージ ID */
+  messageId: string;
+  /** 該当メッセージの所属話題（section header から推論 or message.topic）*/
+  topic?: TutorTopic;
+  /** 発話者 */
+  role: TutorRole;
+  /** 該当箇所の抜粋（最大 120 文字）*/
+  snippet: string;
+};
+
+/**
+ * 全 thread をクエリで grep 検索（mock 用シンプル実装）。
+ * 大文字小文字を無視し、含まれているメッセージを返す。
+ * 新しい日付ほど上位に。最大 N 件で打ち切る。
+ *
+ * Phase 6 で Claude API + 埋め込み検索に置き換える想定。
+ */
+export function searchTutorThreads(
+  query: string,
+  maxResults = 20,
+): TutorChatSearchResult[] {
+  const q = query.trim().toLowerCase();
+  if (q.length < 1) return [];
+
+  const dates = listTutorThreadDates().sort().reverse(); // 新しい順
+  const results: TutorChatSearchResult[] = [];
+
+  for (const date of dates) {
+    const thread = loadTutorThread(date);
+    if (!thread) continue;
+    let currentTopic: TutorTopic | undefined;
+    for (const m of thread.messages) {
+      if (m.role === "section") {
+        currentTopic = m.topic;
+        continue;
+      }
+      const text = (m.text ?? "").toLowerCase();
+      if (text.includes(q)) {
+        results.push({
+          date,
+          messageId: m.id,
+          topic: m.topic ?? currentTopic,
+          role: m.role,
+          snippet: (m.text ?? "").slice(0, 120),
+        });
+        if (results.length >= maxResults) return results;
+      }
+    }
+  }
+  return results;
 }
 
 /** 1 日分の thread を削除（テスト・リセット用）。index からも除去。*/

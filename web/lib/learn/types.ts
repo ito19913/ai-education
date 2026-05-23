@@ -323,6 +323,20 @@ export type TutorCard =
       scheduleItemIds: string[];
       /** 「全部見る」CTA のラベル */
       seeAllLabel: string;
+    }
+  | {
+      /** Phase 3 拡張: 「あの話したよね?」検索ヒット候補のリスト */
+      kind: "chat-search-result";
+      /** AI が抽出 or 本人が指定したクエリ */
+      query: string;
+      /** ヒット候補（最大 5 件想定、クリックでアーカイブにジャンプ） */
+      results: Array<{
+        date: string;
+        messageId: string;
+        topic?: TutorTopic;
+        role: TutorRole;
+        snippet: string;
+      }>;
     };
 
 /**

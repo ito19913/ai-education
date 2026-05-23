@@ -12,6 +12,7 @@
  * 「過去の○○の話、どこだっけ」をサッと見返せる導線。
  */
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -70,9 +71,13 @@ function formatDateLabel(dateStr: string): string {
 }
 
 export function TutorArchiveView({ nodes, issues, scheduleItems }: Props) {
+  // URL ?date=YYYY-MM-DD で初期日付を指定可（検索結果カードからのジャンプ用）
+  const searchParams = useSearchParams();
+  const urlDate = searchParams.get("date");
+
   // 保存済み thread の日付一覧（localStorage は client-only なので useEffect で取得）
   const [dates, setDates] = useState<string[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(urlDate);
   const [topicFilter, setTopicFilter] = useState<Set<TutorTopic> | null>(null);
 
   // localStorage は client-only なので mount 後に 1 回だけ load。
@@ -86,6 +91,15 @@ export function TutorArchiveView({ nodes, issues, scheduleItems }: Props) {
     setDates(sorted);
     setSelectedDate((prev) => prev ?? sorted[0] ?? null);
   }, []);
+
+  // URL の date param が変わったら selected date に反映（検索結果からのジャンプ対応）
+  useEffect(() => {
+    if (urlDate) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedDate(urlDate);
+      setTopicFilter(null);
+    }
+  }, [urlDate]);
 
   // 選択日の thread を load
   const messages = useMemo(() => {
