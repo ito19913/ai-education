@@ -290,6 +290,7 @@ export function TutorWorkspace({
             nodes={nodes}
             issues={issues}
             scheduleItems={scheduleToday}
+            subjects={subjects}
             generateReply={generateReply}
             onPickSubject={onPickSubject}
             onPickMaterial={onPickMaterial}

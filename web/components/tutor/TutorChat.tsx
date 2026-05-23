@@ -13,13 +13,23 @@
  * 実モデルの system prompt + tool calling に置き換わる。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, GraduationCap } from "lucide-react";
 import type {
   Issue,
   KnowledgeNode,
   ScheduleItem,
+  Subject,
   TutorMessage,
 } from "@/lib/learn/types";
 import { TUTOR_PERSONA } from "@/lib/learn/tutor-mock";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TutorAvatar } from "./TutorAvatar";
 import { TutorMessageBubble } from "./TutorMessageBubble";
 import { TutorComposer } from "./TutorComposer";
@@ -33,6 +43,8 @@ type Props = {
   /** Phase 3: 新カード（issue-list / today-schedule）用のデータ */
   issues: Issue[];
   scheduleItems: ScheduleItem[];
+  /** Phase 3 拡張: TutorHubMenu の「先生との対話」プルダウン用 */
+  subjects: Subject[];
   /** チャットの「次の返信」を生成する純関数（mock スクリプト or API 呼び出し）*/
   generateReply: (args: {
     userInput: string;
@@ -60,6 +72,7 @@ export function TutorChat({
   nodes,
   issues,
   scheduleItems,
+  subjects,
   generateReply,
   onPickSubject,
   onPickMaterial,
@@ -173,7 +186,11 @@ export function TutorChat({
       </header>
 
       {/* 定番メニュー（常時表示・ハブ動線、ヘッダ直下に固定）*/}
-      <TutorHubMenu onSend={handleUserSend} disabled={locked} />
+      <TutorHubMenu
+        onSend={handleUserSend}
+        subjects={subjects}
+        disabled={locked}
+      />
 
       {/* メッセージリスト */}
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -232,14 +249,21 @@ export function TutorChat({
 /**
  * TutorHubMenu - 入力欄下の定番メニュー（Phase 3）。
  * scripted な quickReplies とは別枠で、いつでもハブ動線にアクセスできる。
- * ボタンを押すと該当キーワードを発話扱いで送信 → tutor-mock の分岐で
+ * 通常ボタンは該当キーワードを発話扱いで送信 → tutor-mock の分岐で
  * 右ペイン展開 or 学習開始フローに入る。
+ *
+ * Phase 3 拡張（2026-05-24）:
+ *   サイドバーから科目の先生エントリを撤去し、ここに「先生との対話」
+ *   プルダウンを追加。科目の先生（あおい先生 等）との対話履歴を
+ *   subjects から動的に列挙する。
  */
 function TutorHubMenu({
   onSend,
+  subjects,
   disabled,
 }: {
   onSend: (text: string) => void;
+  subjects: Subject[];
   disabled?: boolean;
 }) {
   const items: Array<{ label: string; phrase: string }> = [
@@ -249,8 +273,12 @@ function TutorHubMenu({
     { label: "教材を追加", phrase: "教材を追加" },
     { label: "履歴を確認", phrase: "履歴を確認" },
   ];
+
+  // teacher が設定されてる科目だけプルダウンに出す
+  const teachersAvailable = subjects.filter((s) => s.teacher);
+
   return (
-    <div className="flex items-center gap-1.5 border-t border-border bg-muted/20 px-3 py-2">
+    <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-muted/20 px-3 py-2">
       <span className="mr-1 text-[10px] font-medium text-muted-foreground">
         メニュー
       </span>
@@ -265,6 +293,39 @@ function TutorHubMenu({
           {it.label}
         </button>
       ))}
+
+      {teachersAvailable.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                disabled={disabled}
+                className="flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+              />
+            }
+          >
+            <span>先生との対話</span>
+            <ChevronDown className="size-3" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-[200px]">
+            <DropdownMenuLabel>科目の先生との対話履歴</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {teachersAvailable.map((s) => (
+              <DropdownMenuItem
+                key={s.id}
+                onClick={() => onSend(s.teacher!.displayName)}
+              >
+                <GraduationCap />
+                <span className="font-medium">{s.teacher!.displayName}</span>
+                <span className="ml-auto text-[10px] text-muted-foreground">
+                  {s.name}
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }

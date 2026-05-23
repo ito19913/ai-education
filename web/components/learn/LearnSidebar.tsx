@@ -119,35 +119,12 @@ export function LearnSidebar({
                 </Link>
               </SidebarMenuItem>
               {/*
-                科目の先生（あおい先生 等）はゆい先生の直下に並列で並べる。
-                クリックで /tutor?view=subject-history&subjectId=xxx に飛ぶ
-                = その先生との対話履歴ビュー（ARCHITECTURE §科目の先生 履歴ビュー 参照）。
-              */}
-              {subjects.map((subject) =>
-                subject.teacher ? (
-                  <SidebarMenuItem key={`teacher-${subject.id}`}>
-                    <Link
-                      href={`/tutor?view=subject-history&subjectId=${encodeURIComponent(
-                        subject.id,
-                      )}`}
-                    >
-                      <SidebarMenuButton
-                        tooltip={`${subject.teacher.displayName}（${subject.teacher.subtitle}）`}
-                      >
-                        <GraduationCap />
-                        <span>
-                          {subject.teacher.displayName}（{subject.name}）
-                        </span>
-                      </SidebarMenuButton>
-                    </Link>
-                  </SidebarMenuItem>
-                ) : null,
-              )}
-              {/*
-                スケジュール / 憲法 / 課題一覧 / 学習履歴 は ゆい chat 経由に一本化（2026-05-23）。
-                サイドバーから直接リンクを撤去。緊急時は URL バーから /schedule, /issues, /history,
-                /philosophy にアクセス可能（ARCHITECTURE §バックアップ動線 参照）。
-                ゴミ箱は SidebarContent の末尾に移動。
+                科目の先生（あおい先生 等）の対話履歴へのアクセスは
+                TutorHubMenu のプルダウン「先生との対話」に集約（2026-05-24）。
+                サイドバーから並列リンクは撤去（重複動線回避）。
+                スケジュール / 憲法 / 課題一覧 / 学習履歴 も ゆい chat 経由に一本化済み。
+                緊急時は URL バーから /schedule, /issues, /history, /philosophy, /tutor?view=subject-history
+                にアクセス可能（ARCHITECTURE §バックアップ動線 参照）。
               */}
             </SidebarMenu>
           </SidebarGroupContent>
