@@ -6,10 +6,17 @@
  * 左端に SidebarTrigger を置いて Pane 1 を畳めるようにする。
  */
 
+import Link from "next/link";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, Clock, Network } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronRight,
+  Clock,
+  GraduationCap,
+  Network,
+} from "lucide-react";
 import type { KnowledgeNode, LearnSubject } from "@/lib/learn/types";
 import { formatElapsed } from "@/lib/learn/use-learning-session";
 
@@ -88,10 +95,22 @@ export function LearnHeader({
               </span>
             </div>
             {/*
-              「学習を終了」ボタンは撤去（2026-05-24）。
-              終了はゆい先生に報告して終わらせる設計に変更する（次の設計議論）。
-              タイマー表示は計測の可視化として残す。
+              「学習を終了」: 即終了ではなく、ゆい先生 chat に遷移して
+              振り返り対話を経て終了する設計（2026-05-24 改訂）。
+              /tutor?ending=1 で tutor-mock が ending モードで起動する。
             */}
+            <Link href="/tutor?ending=1" title="ゆい先生に報告して学習を終了">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5"
+                aria-label="ゆい先生に報告して学習を終了"
+              >
+                <GraduationCap className="size-3.5" />
+                <span>学習を終了</span>
+                <ArrowRight className="size-3" />
+              </Button>
+            </Link>
           </>
         )}
       </div>

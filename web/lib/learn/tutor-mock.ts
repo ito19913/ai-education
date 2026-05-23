@@ -35,8 +35,38 @@ export const TUTOR_PERSONA = {
  *
  * Phase 3 拡張: コーチング型に変更。ぐだぐだ雑談ではなく、
  * 振り返り 5 セクションの最初の質問（昨日のレビュー = GROW の R）から入る。
+ *
+ * mode:
+ *  - "morning"（既定）: 朝の振り返り 5 セクション (昨日 → 学校 → 気分 → 疑問 → 計画)
+ *  - "ending": 学習終了の振り返り (思いつき発話 → AI 要約 → 課題抽出 → 繰り越し確認 → 終了)
  */
-export function buildInitialTutorThread(now: Date = new Date()): TutorThread {
+export function buildInitialTutorThread(
+  now: Date = new Date(),
+  mode: "morning" | "ending" = "morning",
+): TutorThread {
+  if (mode === "ending") {
+    const messages: TutorMessage[] = [
+      {
+        id: "t-end-1",
+        role: "tutor",
+        text: "お疲れさま！今日も頑張ったね。\n\n**今日どうだった?** 思いついたこと何でも喋ってみて。バラバラでも、断片でも OK。「うまく言えないけど…」とかでも全然 OK。\n\n後でこっちでまとめるから、考えすぎずに、頭に浮かんだやつをそのまま投げてくれたら大丈夫。",
+        quickReplies: [
+          "けっこう疲れた",
+          "なんとなく分かった気がする",
+          "イマイチ集中できなかった",
+          "新しいこと知った",
+        ],
+        createdAt: now.toISOString(),
+      },
+    ];
+    return {
+      id: "tutor-thread-ending",
+      learnerId: "girl",
+      messages,
+    };
+  }
+
+  // morning mode (既定)
   const hour = now.getHours();
   const greeting =
     hour < 11
@@ -81,7 +111,12 @@ type TutorState =
   | "subject-picked"
   | "material-picked"
   | "ready-to-start"
-  | "started";
+  | "started"
+  // === 学習終了フロー（思いつき発話 → AI 要約 → 課題抽出 → 繰り越し確認 → 終了）===
+  | "ending-vent" // 自由発話を集める（複数ターン可）
+  | "ending-summary" // AI が要約 + 課題候補を提示
+  | "ending-confirm" // 本人が要約/課題を確認 or 修正
+  | "ending-done"; // セッション終了完了
 
 export type TutorStep = {
   state: TutorState;
@@ -91,6 +126,10 @@ export type TutorStep = {
   proposedEntryNodeId?: string;
   /** 掘り起こしで本人が言語化した不明事項（mock では 1 件まで保持） */
   excavationTopic?: string;
+  /** 終了振り返りで本人が言ったことの蓄積（mock: 文字列累積） */
+  endingVentAccum?: string;
+  /** 終了振り返りで集めた発話のターン数（要約タイミング判定用） */
+  endingVentTurns?: number;
 };
 
 export function buildNextTutorReply(args: {
@@ -496,6 +535,123 @@ export function buildNextTutorReply(args: {
           withReconstruction: true,
           label: "今日の学習を始める",
         },
+        createdAt: now,
+      },
+    };
+  }
+
+  // =====================================================================
+  // 学習終了フロー（思いつき発話 → AI 要約 → 課題抽出 → 繰り越し確認 → 終了）
+  //
+  // 設計意図（ito1919 さん）:
+  //   ゆいの核は「気づきを与えること」。AI 相手だから本人は「うまく言えない」
+  //   「思いつき」をそのまま投げられる。AI が得意な要約・抽出で課題化して
+  //   返す → 本人が確認 → 繰り越し決めて終了。
+  // =====================================================================
+
+  // --- ending-vent: 自由発話を 2〜3 ターン集める ---
+  if (state.state === "ending-vent") {
+    const turns = (state.endingVentTurns ?? 0) + 1;
+    const accum =
+      (state.endingVentAccum ?? "") +
+      (state.endingVentAccum ? " / " : "") +
+      userInput;
+    // 本人が「まとめて」「もうない」と言ったらショートカットで summary へ
+    const wantsSummary =
+      lower.includes("まとめて") ||
+      lower.includes("もうない") ||
+      lower.includes("もう無い");
+
+    if (!wantsSummary && turns < 2) {
+      // もう 1 ターン拾う
+      return {
+        nextState: {
+          ...state,
+          endingVentTurns: turns,
+          endingVentAccum: accum,
+        },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: "なるほど、了解。\n\n**他にもある?** 「集中できた / できなかった」「これモヤモヤ残ってる」「これスッキリした」、なんでも。\n（もうなければ「ない」って言ってくれて OK、まとめに入るね）",
+          quickReplies: ["もうない、まとめて", "もう少しある"],
+          createdAt: now,
+        },
+      };
+    }
+
+    // 2 ターン以上集めた、または本人が「まとめて」と言ったら要約へ
+    return {
+      nextState: {
+        ...state,
+        state: "ending-summary",
+        endingVentTurns: turns,
+        endingVentAccum: accum,
+      },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、ありがとう。ちょっとまとめてみるね。",
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- ending-summary: 要約 + 課題候補を提示 → 確認待ち ---
+  if (state.state === "ending-summary") {
+    // mock: 蓄積した発話を簡易要約風に提示。Phase 6 で Claude が本物の要約を生成。
+    const ventSnippet = (state.endingVentAccum ?? "").slice(0, 80);
+    const summary = `**今日のサマリー（仮）**:\n「${ventSnippet}${(state.endingVentAccum ?? "").length > 80 ? "…" : ""}」\n\n**繰り越したい課題候補:**\n・「動名詞 -ing との使い分け、もうちょい詰めたい」\n・「副詞的用法、目的と結果の見分け方」\n\nこれであってる? 違うところあれば直すよ。`;
+    return {
+      nextState: { ...state, state: "ending-confirm" },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: summary,
+        quickReplies: [
+          "OK、これで終わる",
+          "課題はこれだけ繰り越したい",
+          "違うところがある",
+        ],
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- ending-confirm: 本人 OK → 終了 / 修正 → 戻る ---
+  if (state.state === "ending-confirm") {
+    if (lower.includes("違う") || lower.includes("修正")) {
+      // 修正したい → vent に戻る
+      return {
+        nextState: { ...state, state: "ending-vent" },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: "了解、どこを直そう? 言ってくれたら直すよ。",
+          createdAt: now,
+        },
+      };
+    }
+    // OK → done
+    return {
+      nextState: { ...state, state: "ending-done" },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、お疲れさま！今日もよくやったね。🌸\n\n**繰り越し課題は明日のスケジュールに入れといたよ。** ゆっくり休んでね。\n\n（学習セッションを記録しました。また明日 👋）",
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- ending-done: 終了後の追加発話 ---
+  if (state.state === "ending-done") {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "また話したくなったらいつでも来てね。今日はゆっくり休んで。",
         createdAt: now,
       },
     };

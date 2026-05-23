@@ -93,14 +93,22 @@ export function TutorWorkspace({
   const view = viewFromParam(searchParams.get("view"));
   const selectedIssueId = searchParams.get("id");
   const selectedSubjectId = searchParams.get("subjectId");
+  // /tutor?ending=1: /learn の「学習を終了」から来た時、ゆいを ending モードで起動
+  const endingMode = searchParams.get("ending") === "1";
 
   // ----- ゆい chat の state -----
-  const [tutorMessages, setTutorMessages] = useState<TutorMessage[]>(
-    () => buildInitialTutorThread().messages,
+  // 初期メッセージと状態は mode（morning / ending）で分岐
+  const [tutorMessages, setTutorMessages] = useState<TutorMessage[]>(() =>
+    buildInitialTutorThread(
+      new Date(),
+      endingMode ? "ending" : "morning",
+    ).messages,
   );
-  // 初期 state は朝の振り返り 5 セクションの最初（昨日のレビュー）。
-  // Phase 3b でコーチング型に再定義（旧 "opening" を撤去）。
-  const tutorStepRef = useRef<TutorStep>({ state: "reflection-yesterday" });
+  const tutorStepRef = useRef<TutorStep>({
+    state: endingMode ? "ending-vent" : "reflection-yesterday",
+    endingVentTurns: 0,
+    endingVentAccum: "",
+  });
 
   // ----- Issue state（resolve / chatThread 追加を一元管理） -----
   const [issues, setIssues] = useState<Issue[]>(initialIssues);
