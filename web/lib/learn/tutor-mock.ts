@@ -1,11 +1,14 @@
 /**
- * 担任の先生「ゆい」さん（mock）の人格と、初回会話の雛形。
+ * 担任の先生「ゆい」さん（mock）の人格と、scripted conversation。
  *
- * Phase 2 では Claude API 接続はせず、scripted conversation で
- * 「リッチカードが埋め込まれる」体験を見せる。本人が typed input すると
- * 次のスクリプトに進む（または quickReply ボタンで即進める）。
+ * Phase 3 拡張で **コーチング エージェント** として再定義した版:
+ *   - GROW モデル意識（Goal / Reality / Options / Will）
+ *   - 質問中心、未来志向、観察ベースの承認
+ *   - 朝の振り返り 5 セクション（昨日 / 学校 / 気分 / 疑問 / 計画）を主動線に
+ *   - 「掘り起こし」: 疑問が出たら 1 ターン深掘り → 課題化 + 葵への申し送り（mock 演出）
+ *   - 「教えない」: 教科の中身には絶対踏み込まない（葵先生に振る）
  *
- * Phase 3+ で Claude API に接続し、文脈に応じた応答に置き換える。
+ * Phase 6 で Claude API に置き換え。本ファイルは設計のリファレンス + デモ用。
  */
 import type { TutorMessage, TutorThread } from "./types";
 import { MOCK_ISSUES, MOCK_SCHEDULE_TODAY } from "./mock-data";
@@ -29,7 +32,9 @@ export const TUTOR_PERSONA = {
 
 /**
  * 初回ログイン時の挨拶メッセージ。
- * mock では「今 = 夕方」と仮定したスクリプトを使う。
+ *
+ * Phase 3 拡張: コーチング型に変更。ぐだぐだ雑談ではなく、
+ * 振り返り 5 セクションの最初の質問（昨日のレビュー = GROW の R）から入る。
  */
 export function buildInitialTutorThread(now: Date = new Date()): TutorThread {
   const hour = now.getHours();
@@ -37,7 +42,7 @@ export function buildInitialTutorThread(now: Date = new Date()): TutorThread {
     hour < 11
       ? "おはよう！"
       : hour < 17
-        ? "おかえり！"
+        ? "おかえり！お疲れさま。"
         : hour < 22
           ? "おかえり〜、お疲れさま。"
           : "もうこんな時間か。来てくれてありがとう。";
@@ -46,7 +51,8 @@ export function buildInitialTutorThread(now: Date = new Date()): TutorThread {
     {
       id: "t-1",
       role: "tutor",
-      text: `${greeting} 今日はどんな一日だった？\n\n勉強の話でも、学校でのことでも、なんでも聞くよ。一言からでも OK。\n\nすぐ取り掛かりたい時は、上のメニューから「学習を開始」「課題を確認」「スケジュール確認」「教材を追加」「履歴を確認」を選んでもいいよ。`,
+      text: `${greeting}\n\nまず軽く振り返りからいこっか。**昨日はどこまで進んだ?**\n\n覚えてなかったら「えっと…」でも OK、一緒に思い出そう。すぐ取り掛かりたい時は、上のメニューからも始められるよ。`,
+      quickReplies: ["覚えてない", "不定詞のとこまでやった", "昨日はやらなかった"],
       createdAt: now.toISOString(),
     },
   ];
@@ -60,20 +66,22 @@ export function buildInitialTutorThread(now: Date = new Date()): TutorThread {
 
 /**
  * scripted な「次の発話」を返す関数。
- * 本人の入力 / quickReply の選択に応じて、次の AI 応答を組み立てる。
  *
- * mock の戦略:
- *   1. 「気分」系の返答 → 共感 + 「軽めに行く?」を提案
- *   2. 「ふつう / いい感じ」系 → 普通に勉強の話へ
- *   3. 何でも → 1〜2 ターン雑談 → 教科選択カード
+ * Phase 3 拡張: コーチング型 朝の振り返り → 掘り起こし → 計画 → 学習開始 のフロー。
  */
 type TutorState =
-  | "opening" // 最初の挨拶後、本人の気分待ち
-  | "after-mood" // 気分への共感を返した後、教科を聞く
-  | "subject-picked" // 教科が選ばれた、教材を聞く
-  | "material-picked" // 教材が選ばれた、範囲提示
-  | "ready-to-start" // 体系図見せた、開始ボタン出した
-  | "started"; // 学習に遷移した
+  // === 朝の振り返り 5 セクション（コーチング契約 / GROW の R+W）===
+  | "reflection-yesterday" // 昨日のレビュー（初期状態）
+  | "reflection-school" // 今日学校で習ったこと
+  | "reflection-mood" // 気分・出来事の受け止め
+  | "reflection-questions" // 疑問・不安（掘り起こし入口）
+  | "excavation" // 掘り起こし継続中
+  | "reflection-plan" // 今日の計画（GROW の W）
+  // === 学習開始フロー（教科 → 教材 → 範囲 → 開始）===
+  | "subject-picked"
+  | "material-picked"
+  | "ready-to-start"
+  | "started";
 
 export type TutorStep = {
   state: TutorState;
@@ -81,6 +89,8 @@ export type TutorStep = {
   proposedSubjectId?: string;
   proposedMaterialId?: string;
   proposedEntryNodeId?: string;
+  /** 掘り起こしで本人が言語化した不明事項（mock では 1 件まで保持） */
+  excavationTopic?: string;
 };
 
 export function buildNextTutorReply(args: {
@@ -91,7 +101,10 @@ export function buildNextTutorReply(args: {
   const lower = userInput.toLowerCase().trim();
   const now = new Date().toISOString();
 
-  // --- ハブ動作（Phase 3）: state に関係なく、課題 / スケジュール / 履歴の呼び出しに反応 ---
+  // =====================================================================
+  // ハブ動作（state に関係なく、メニュー的なキーワードに反応して右ペインへ）
+  // =====================================================================
+
   // 「課題見せて」「やる事は?」「未クリア」
   if (
     lower.includes("課題") ||
@@ -107,8 +120,8 @@ export function buildNextTutorReply(args: {
         role: "tutor",
         text:
           openIssues.length > 0
-            ? `未クリアの課題、いま ${openIssues.length} 件あるね。\nどれからいく? 全部見るならカードの下のボタンから。`
-            : "未クリアの課題はないよ。気持ちいい!",
+            ? `未クリアの課題、いま ${openIssues.length} 件あるね。\nどれから掘る? 全部見るならカードの下のボタンから。`
+            : "未クリアの課題はないよ。気持ちいい!\n次どうする?",
         card: {
           kind: "issue-list",
           issueIds: openIssues.slice(0, 5).map((i) => i.id),
@@ -133,8 +146,8 @@ export function buildNextTutorReply(args: {
         role: "tutor",
         text:
           MOCK_SCHEDULE_TODAY.length > 0
-            ? `今日のタスクはこんな感じ。気になるやつから手をつけよっか。`
-            : "今日のタスクはまだ立ててないね。AI と一緒に組み立てる?",
+            ? `今日のタスクはこんな感じ。どれから手をつけたい?`
+            : "今日のタスクはまだ立ててないね。一緒に組み立ててみる?",
         card: {
           kind: "today-schedule",
           scheduleItemIds: MOCK_SCHEDULE_TODAY.slice(0, 5).map((i) => i.id),
@@ -158,7 +171,7 @@ export function buildNextTutorReply(args: {
       reply: {
         id: makeId(),
         role: "tutor",
-        text: "OK、新規教材登録するね。右でやろう。\nPDF を選んで、AI が体系図ノードを抽出するから、それを一緒に監修していこう。",
+        text: "OK、新規教材登録するね。右でやろう。\nPDF を選んだら AI が体系図ノードを抽出してくれるから、それを一緒に監修していこう。",
         rightPaneAction: { kind: "open-material-new" },
         createdAt: now,
       },
@@ -166,6 +179,7 @@ export function buildNextTutorReply(args: {
   }
 
   // 「学習を開始」「学習を始める」「勉強する」「始める」
+  // → 振り返りをスキップして直接 計画フェーズへ
   if (
     lower.includes("学習を開始") ||
     lower.includes("学習を始める") ||
@@ -174,11 +188,11 @@ export function buildNextTutorReply(args: {
     lower === "始めたい"
   ) {
     return {
-      nextState: { ...state, state: "after-mood" },
+      nextState: { ...state, state: "reflection-plan" },
       reply: {
         id: makeId(),
         role: "tutor",
-        text: "OK、始めよっか！\n何の教科にする?",
+        text: "OK、サクッと始めよっか。**何の教科から?**",
         card: {
           kind: "subject-picker",
           options: [{ subjectId: "subj-english", label: "英語" }],
@@ -189,7 +203,7 @@ export function buildNextTutorReply(args: {
   }
 
   // 「あおい先生」「英語の先生」「英語 履歴」「英語の対話」「英語 何話した」
-  // ※「履歴」分岐より先に判定する必要がある（先勝ちで一般「履歴」に持っていかれないように）
+  // ※「履歴」分岐より先に判定する（先勝ちで一般「履歴」に持っていかれないように）
   if (
     lower.includes("あおい先生") ||
     lower.includes("あおい") ||
@@ -205,7 +219,7 @@ export function buildNextTutorReply(args: {
       reply: {
         id: makeId(),
         role: "tutor",
-        text: "あおい先生（英語）との対話履歴、右に出すね。\nノード対話と課題 chat を時系列で全部見られるよ。",
+        text: "あおい先生（英語）との対話履歴、右に出すね。\n見ながら「ここ課題にして」「ここノートにまとめて」って言ってくれたら拾うよ。",
         rightPaneAction: {
           kind: "open-subject-history",
           subjectId: "subj-english",
@@ -215,79 +229,166 @@ export function buildNextTutorReply(args: {
     };
   }
 
-  // 「履歴」「振り返り」「これまで」
-  if (
-    lower.includes("履歴") ||
-    lower.includes("振り返") ||
-    lower.includes("これまで")
-  ) {
+  // 「履歴」「これまで」（「振り返り」は朝の儀式と混同するので外す）
+  if (lower.includes("履歴") || lower.includes("これまで")) {
     return {
       nextState: state,
       reply: {
         id: makeId(),
         role: "tutor",
-        text: "これまでの学習履歴、右に出すね。\nセッションごとの時間とまとめが見られるよ。",
+        text: "これまでの学習履歴、右に出すね。\nセッションごとの時間と振り返りが見られるよ。",
         rightPaneAction: { kind: "open-history" },
         createdAt: now,
       },
     };
   }
 
-  // --- opening: 本人の気分にリアクション ---
-  if (state.state === "opening") {
-    const tired =
-      lower.includes("疲れ") ||
-      lower.includes("イヤ") ||
-      lower.includes("やだ") ||
-      lower.includes("だるい") ||
-      lower.includes("つらい") ||
-      lower.includes("喧嘩") ||
-      lower.includes("もめ");
+  // =====================================================================
+  // 朝の振り返り 5 セクション（コーチング型）
+  // 観察ベースの承認 + 次の質問、を毎ターン繰り返す
+  // =====================================================================
 
-    if (tired) {
-      return {
-        nextState: { ...state, state: "after-mood" },
-        reply: {
-          id: makeId(),
-          role: "tutor",
-          text: "そっか、それはキツいね。\n\nモヤモヤしてる時って、頭の中が散らかってる感じになるじゃん？意外と勉強って整頓になることもあるんだけど、無理しすぎないでね。\n\n今日は軽めにする？それともいつもどおりやる？",
-          quickReplies: ["軽めにしたい", "いつもどおり"],
-          createdAt: now,
-        },
-      };
-    }
-
-    // ふつう / いい感じ系
+  // --- reflection-yesterday → reflection-school ---
+  if (state.state === "reflection-yesterday") {
+    const ack =
+      lower.includes("覚えてない") ||
+      lower.includes("やらなかった") ||
+      lower === ""
+        ? "OK、そういう日もあるよ。"
+        : "なるほど、そこまでやったんだね。";
     return {
-      nextState: { ...state, state: "after-mood" },
+      nextState: { ...state, state: "reflection-school" },
       reply: {
         id: makeId(),
         role: "tutor",
-        text: "ナイス、いい感じだね。\nじゃあサクッと始めよっか。何から行く？",
-        card: {
-          kind: "subject-picker",
-          options: [
-            { subjectId: "subj-english", label: "英語" },
-            // 将来増えたらここに追加。MVP は英語のみ。
-          ],
-        },
+        text: `${ack}\n\nじゃあ次。**学校では今日どんなことやった?** 英語でも他の教科でも、なんでも。`,
+        quickReplies: [
+          "特になかった",
+          "英語で新しいの習った",
+          "数学が大変だった",
+        ],
         createdAt: now,
       },
     };
   }
 
-  // --- after-mood: 「軽め / いつもどおり」を受けて教科ピッカー ---
-  if (state.state === "after-mood") {
-    const light =
-      lower.includes("軽") || lower.includes("みじか") || lower.includes("短");
+  // --- reflection-school → reflection-mood ---
+  if (state.state === "reflection-school") {
     return {
-      nextState: { ...state, state: "after-mood" },
+      nextState: { ...state, state: "reflection-mood" },
       reply: {
         id: makeId(),
         role: "tutor",
-        text: light
-          ? "了解！短めでいこう。\nで、何の教科にする？"
-          : "OK、じゃあ普通のペースで。\n何の教科にする？",
+        text: "覚えといたよ、それ。あとで復習タスクに入れとくね。\n\nそれで、**今日どんな気分?** 嬉しかったこと、しんどかったこと、なんでも。",
+        quickReplies: [
+          "ふつう",
+          "ちょっと疲れた",
+          "いい感じ",
+          "ヤなことあった",
+        ],
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- reflection-mood → reflection-questions ---
+  if (state.state === "reflection-mood") {
+    const tired =
+      lower.includes("疲れ") ||
+      lower.includes("やだ") ||
+      lower.includes("ヤ") ||
+      lower.includes("だるい") ||
+      lower.includes("つら") ||
+      lower.includes("喧嘩") ||
+      lower.includes("もめ");
+    const ack = tired
+      ? "そっか、それはキツいね。\n無理しすぎないでね、今日できる分だけで OK。"
+      : "うん、いい感じ。";
+    return {
+      nextState: { ...state, state: "reflection-questions" },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: `${ack}\n\n**何かモヤモヤしてること、ある?** 「よく分からないけど何か引っかかる」みたいなのも OK だよ。\n\nなければ次に行こう。`,
+        quickReplies: [
+          "特にない",
+          "ちょっと分からないとこある",
+          "葵先生に聞きたいことある",
+        ],
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- reflection-questions → excavation or reflection-plan ---
+  if (state.state === "reflection-questions") {
+    const hasQuestion =
+      (lower.includes("分からない") ||
+        lower.includes("わからない") ||
+        lower.includes("聞きたい") ||
+        lower.includes("質問") ||
+        lower.includes("引っかか") ||
+        lower.includes("ある")) &&
+      !lower.includes("特にない") &&
+      !lower.includes("ないかな");
+
+    if (hasQuestion) {
+      // 掘り起こしへ
+      return {
+        nextState: { ...state, state: "excavation" },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: "OK、一緒に掘ってみよう。\n\n**それって、どの科目? あと、もう少し具体的に言うと、どんなとこが分からない?**\n\n（うまく言葉にならなくても OK。「うーん…」とか「なんか…」とかでも、書いてみることが大事だから）",
+          createdAt: now,
+        },
+      };
+    }
+    // 疑問なし → 計画へ
+    return {
+      nextState: { ...state, state: "reflection-plan" },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、じゃあ今日いこうか。\n\n**今日はどうする?** 課題消化? 新しい単元?",
+        quickReplies: ["課題見せて", "学習を始める", "スケジュール見せて"],
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- excavation → reflection-plan ---
+  // 本人が言語化したものを 1 件キープ + 「課題に追加 + 葵への申し送り」と演出
+  if (state.state === "excavation") {
+    const topic = userInput.slice(0, 40);
+    return {
+      nextState: {
+        ...state,
+        state: "reflection-plan",
+        excavationTopic: userInput,
+      },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: `言ってくれてありがとう、それ大事。\n\n**「${topic}${userInput.length > 40 ? "…" : ""}」を課題に追加しといたね。** 葵先生にも「ここ深掘り提案」って申し送りしておくよ。\n\nじゃあ今日はどうする? 今追加した課題からやる? 別のことから?`,
+        quickReplies: [
+          "今追加した課題からやる",
+          "課題見せて",
+          "学習を始める",
+        ],
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- reflection-plan → subject picker ---
+  if (state.state === "reflection-plan") {
+    return {
+      nextState: { ...state, state: "reflection-plan" },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "了解。**何の教科から始める?**",
         card: {
           kind: "subject-picker",
           options: [{ subjectId: "subj-english", label: "英語" }],
@@ -297,6 +398,10 @@ export function buildNextTutorReply(args: {
     };
   }
 
+  // =====================================================================
+  // 学習開始フロー（教科 → 教材 → 範囲 → 開始）
+  // =====================================================================
+
   // --- subject-picked: 教材ピッカー ---
   if (state.state === "subject-picked") {
     return {
@@ -304,7 +409,7 @@ export function buildNextTutorReply(args: {
       reply: {
         id: makeId(),
         role: "tutor",
-        text: "英語ね！\nテキストはどれにする？",
+        text: "英語ね。**テキストはどれにする?**",
         card: {
           kind: "material-picker",
           subjectId: state.proposedSubjectId ?? "subj-english",
@@ -333,7 +438,6 @@ export function buildNextTutorReply(args: {
 
   // --- material-picked: 範囲プレビュー ---
   if (state.state === "material-picked") {
-    // mock: 教材によって entry を変える
     const matId = state.proposedMaterialId ?? "mat-english-textbook-g8";
     let entry = "inf-noun";
     let scope = ["inf", "inf-noun", "inf-adj", "inf-adv"];
@@ -364,12 +468,11 @@ export function buildNextTutorReply(args: {
       reply: {
         id: makeId(),
         role: "tutor",
-        text: `OK、${matId.includes("textbook") ? "教科書" : matId.includes("workbook") ? "問題集" : "副教材"}ね。\n\n今日のところはこのへんを考えてる。`,
+        text: `OK、${matId.includes("textbook") ? "教科書" : matId.includes("workbook") ? "問題集" : "副教材"}ね。\n\n今日のところはこのへんを考えてる。**どう?**`,
         card: {
           kind: "range-preview",
           entryNodeId: entry,
           highlightNodeIds: scope,
-          // scope の親もハイライト対象に含めるため、簡易的に scope と同じものを scopeNodeIds に
           scopeNodeIds: scope,
           humanLabel: label,
         },
@@ -386,7 +489,7 @@ export function buildNextTutorReply(args: {
       reply: {
         id: makeId(),
         role: "tutor",
-        text: "じゃあ始めようか！\nまず体系図の「思い出す訓練」を軽くやってから、本編に入るよ。",
+        text: "じゃあ始めようか！\nまず体系図の「思い出す訓練」を軽くやってから、葵先生にバトンタッチするね。",
         card: {
           kind: "start-study",
           entryNodeId: entry,

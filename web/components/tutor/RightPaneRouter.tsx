@@ -177,7 +177,6 @@ export function RightPaneRouter({
         nodes={nodes}
         chatMessages={chatMessages}
         issues={issues}
-        onBack={onBack}
       />
     );
   }

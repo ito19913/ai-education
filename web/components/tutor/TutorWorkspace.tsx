@@ -95,7 +95,9 @@ export function TutorWorkspace({
   const [tutorMessages, setTutorMessages] = useState<TutorMessage[]>(
     () => buildInitialTutorThread().messages,
   );
-  const tutorStepRef = useRef<TutorStep>({ state: "opening" });
+  // 初期 state は朝の振り返り 5 セクションの最初（昨日のレビュー）。
+  // Phase 3b でコーチング型に再定義（旧 "opening" を撤去）。
+  const tutorStepRef = useRef<TutorStep>({ state: "reflection-yesterday" });
 
   // ----- Issue state（resolve / chatThread 追加を一元管理） -----
   const [issues, setIssues] = useState<Issue[]>(initialIssues);
@@ -269,82 +271,69 @@ export function TutorWorkspace({
   );
 
   // 右ペインに課題 chat が出ている時、左ゆい入力欄を無効化する
+  // （subject-history 等の他 view では左ゆいは常時アクティブ）
   const tutorLocked = view === "issue";
-
-  // 「科目の先生のドメイン」に入った時はゆい先生ペインを完全に隠す。
-  // 現状: subject-history（科目の先生との対話履歴の集約タイムライン）
-  // 戻り導線は右ペインヘッダの「ゆい先生に戻る」ボタン（onBack → /tutor）。
-  const hideTutorPane = view === "subject-history";
-
-  const rightPane = (
-    <RightPaneRouter
-      view={view}
-      selectedIssue={selectedIssue}
-      selectedSubjectId={selectedSubjectId}
-      issues={issues}
-      nodes={nodes}
-      chatMessages={chatMessages}
-      scheduleToday={scheduleToday}
-      scheduleUpcoming={scheduleUpcoming}
-      exams={exams}
-      homeworks={homeworks}
-      lessonReviews={lessonReviews}
-      subjects={subjects}
-      sessions={sessions}
-      onResolveIssue={handleResolveIssue}
-      onReopenIssue={handleReopenIssue}
-      onAppendChatMessages={handleAppendChatMessages}
-      onSelectIssue={(id) => navigate("issue", { issueId: id })}
-      onSelectIssueItem={(id) => navigate("issue", { issueId: id })}
-      onBack={() => navigate("default")}
-      onMaterialAdded={handleMaterialAdded}
-    />
-  );
 
   return (
     <div className="flex h-screen w-full flex-col bg-background">
-      {hideTutorPane ? (
-        // 1 ペイン: 科目の先生のドメイン（ゆい先生は引っ込む）
-        <div className="flex min-h-0 flex-1">{rightPane}</div>
-      ) : (
-        // 2 ペイン: 左ゆい + 右動的
-        <ResizablePanelGroup
-          orientation="horizontal"
-          className="flex min-h-0 flex-1"
-        >
-          {/* 左: ゆい chat */}
-          <ResizablePanel defaultSize={40} minSize={25}>
-            <TutorChat
-              initialMessages={tutorMessages}
-              messages={tutorMessages}
-              setMessages={setTutorMessages}
-              nodes={nodes}
-              issues={issues}
-              scheduleItems={scheduleToday}
-              generateReply={generateReply}
-              onPickSubject={onPickSubject}
-              onPickMaterial={onPickMaterial}
-              externallyLocked={tutorLocked}
-              externalLockMessage={
-                tutorLocked
-                  ? "課題の対話中… 右で科目の先生と話してね"
-                  : undefined
-              }
-              onSelectIssue={(id) => navigate("issue", { issueId: id })}
-              onSeeAllIssues={() => navigate("issues")}
-              onSelectIssueItem={(id) => navigate("issue", { issueId: id })}
-              onSeeAllSchedule={() => navigate("schedule")}
-            />
-          </ResizablePanel>
+      <ResizablePanelGroup
+        orientation="horizontal"
+        className="flex min-h-0 flex-1"
+      >
+        {/* 左: ゆい chat（常駐。コーチング設計 + 「葵 chat 見ながら段取り依頼」
+            ユースケースのため、subject-history view でも引っ込まない） */}
+        <ResizablePanel defaultSize={40} minSize={25}>
+          <TutorChat
+            initialMessages={tutorMessages}
+            messages={tutorMessages}
+            setMessages={setTutorMessages}
+            nodes={nodes}
+            issues={issues}
+            scheduleItems={scheduleToday}
+            generateReply={generateReply}
+            onPickSubject={onPickSubject}
+            onPickMaterial={onPickMaterial}
+            externallyLocked={tutorLocked}
+            externalLockMessage={
+              tutorLocked
+                ? "課題の対話中… 右で科目の先生と話してね"
+                : undefined
+            }
+            onSelectIssue={(id) => navigate("issue", { issueId: id })}
+            onSeeAllIssues={() => navigate("issues")}
+            onSelectIssueItem={(id) => navigate("issue", { issueId: id })}
+            onSeeAllSchedule={() => navigate("schedule")}
+          />
+        </ResizablePanel>
 
-          <ResizableHandle withHandle />
+        <ResizableHandle withHandle />
 
-          {/* 右: 動的展開エリア */}
-          <ResizablePanel defaultSize={60} minSize={30}>
-            {rightPane}
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      )}
+        {/* 右: 動的展開エリア */}
+        <ResizablePanel defaultSize={60} minSize={30}>
+          <RightPaneRouter
+            view={view}
+            selectedIssue={selectedIssue}
+            selectedSubjectId={selectedSubjectId}
+            issues={issues}
+            nodes={nodes}
+            chatMessages={chatMessages}
+            scheduleToday={scheduleToday}
+            scheduleUpcoming={scheduleUpcoming}
+            exams={exams}
+            homeworks={homeworks}
+            lessonReviews={lessonReviews}
+            subjects={subjects}
+            sessions={sessions}
+            onResolveIssue={handleResolveIssue}
+            onReopenIssue={handleReopenIssue}
+            onAppendChatMessages={handleAppendChatMessages}
+            onSelectIssue={(id) => navigate("issue", { issueId: id })}
+            onSelectIssueItem={(id) => navigate("issue", { issueId: id })}
+            onBack={() => navigate("default")}
+            onMaterialAdded={handleMaterialAdded}
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 }

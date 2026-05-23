@@ -15,9 +15,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft,
   Book,
   ChevronRight,
   MessageSquare,
@@ -44,12 +42,6 @@ type Props = {
   nodes: KnowledgeNode[];
   chatMessages: ChatMessage[];
   issues: Issue[];
-  /**
-   * 「ゆい先生に戻る」リンクのハンドラ。
-   * TutorWorkspace では subject-history 時に左ゆい先生ペインを隠すため、
-   * 戻り導線をこのビューのヘッダに置く（呼び出し側が無ければ非表示）。
-   */
-  onBack?: () => void;
 };
 
 type KindFilter = "all" | "node-chat" | "issue-chat";
@@ -62,7 +54,6 @@ export function SubjectHistoryView({
   nodes,
   chatMessages,
   issues,
-  onBack,
 }: Props) {
   const subject = subjects.find((s) => s.id === subjectId);
   const subjectName = subject?.name ?? subjectId;
@@ -105,17 +96,6 @@ export function SubjectHistoryView({
     <div className="flex h-full w-full flex-col bg-canvas">
       {/* ヘッダ */}
       <header className="border-b border-border bg-background px-5 py-3">
-        {onBack && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2 mb-1 h-7 gap-1.5 px-2 text-xs"
-            onClick={onBack}
-          >
-            <ArrowLeft className="size-3.5" />
-            <span>ゆい先生に戻る</span>
-          </Button>
-        )}
         <div className="flex items-center gap-2">
           <ScrollText className="size-4 text-primary" />
           <h2 className="text-sm font-semibold text-foreground">
