@@ -26,6 +26,11 @@ import {
   MOCK_SCHEDULE_TODAY,
 } from "./mock-data";
 import { searchTutorThreads } from "./tutor-thread-storage";
+import {
+  detectTeachingRequest,
+  labelForTeachingCategory,
+  type TeachingDetection,
+} from "./tutor-teaching-guard";
 
 /**
  * 担任の persona（Claude API 接続時の system prompt の元になる）。
@@ -320,6 +325,48 @@ function emptyDraft(): ReflectionDraft {
 }
 
 /**
+ * C6: ハードガード hit から TutorHandoff draft を派生して push する。
+ * Issue は作らない（本人が「葵先生に聞く」を選んだ場合に IssueChat で
+ * 別途立ち上げる想定）。Handoff の relatedIssueId は undefined のまま。
+ *
+ * 戻り値: 派生した handoff の id（呼び出し元の発話で言及可能）
+ */
+function deriveFromHardGuard(
+  userInput: string,
+  detection: TeachingDetection,
+): string {
+  const nodeId = inferNodeIdFromText(userInput);
+  const truncatedTitle =
+    userInput.length > 50 ? `${userInput.slice(0, 50)}…` : userInput;
+  const now = new Date().toISOString();
+  const handoffId = makeDerivedId("handoff-guard");
+
+  const handoff: TutorHandoff = {
+    id: handoffId,
+    fromTutor: true,
+    toSubjectId: "subj-english",
+    relatedNodeId: nodeId === "grammar" ? undefined : nodeId,
+    relatedIssueId: undefined,
+    title: truncatedTitle,
+    body: [
+      "**ゆいから葵先生へ（ハードガード経由 / C6）**",
+      "",
+      `本人がゆいに「教えて」系の発話をしたので、ゆいは教えずに葵先生に振りました。`,
+      `（カテゴリ: ${detection.category} / マッチ語: \`${detection.matched}\`）`,
+      "",
+      "発話:",
+      `> ${userInput}`,
+      "",
+      "**所感**: 教科の中身の質問なので私からは答えていません。本人が「今すぐ聞く」「メモして後で」「もう少し自分で考える」のどれを選んだかはこの handoff には記録しません（Phase 7 で永続化と合わせて追跡）。次回 chat で取り上げてもらえると嬉しいです。",
+    ].join("\n"),
+    status: "unread",
+    createdAt: now,
+  };
+  MOCK_HANDOFFS.push(handoff);
+  return handoffId;
+}
+
+/**
  * 状態 + 右ペインアクション から話題タグを派生（Phase 3 拡張）。
  * 既に reply.topic が明示設定されてればそちらを尊重するため、
  * buildNextTutorReply の末尾でフォールバックとして使う。
@@ -395,6 +442,84 @@ function buildNextTutorReplyInner(args: {
   const now = new Date().toISOString();
 
   // =====================================================================
+  // C6: ハードガード hit 後の 3 肢処理（既存 keyword 分岐より前に置く）
+  //
+  // 「メモしてあとで」「もう少し自分で考える」は ack のみ返す。
+  // 「今すぐ葵先生に聞く」「葵先生に聞く」は既存「課題見せて」分岐
+  // (lower.includes("葵先生に聞") を含めて拡張) に流して課題リストを開く。
+  // =====================================================================
+
+  if (
+    lower.includes("メモしてあとで") ||
+    lower.includes("メモして後で") ||
+    lower.includes("メモしておいて")
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、メモしておいたよ。葵先生にも申し送り済み。\nいつでも課題一覧の右ペインから開けるよ。",
+        quickReplies: ["課題見せて", "別の話", "学習を始める"],
+        createdAt: now,
+      },
+    };
+  }
+
+  if (
+    lower.includes("もう少し自分") ||
+    lower.includes("自分で考える") ||
+    lower.includes("自分で考えてみる")
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "いいね。考えたものを言葉にして、また話そう。\n「考えたよ」って戻ってきてくれたら、聞くね。",
+        quickReplies: ["考えたよ", "別の話", "学習を始める"],
+        createdAt: now,
+      },
+    };
+  }
+
+  // =====================================================================
+  // C6: ハードガード hit 判定
+  //
+  // 「教えて」「答えは」「訳して」等のキーワード検知（detectTeachingRequest）。
+  // ending 系 state ではループの本人発話を誤検知しないようスキップ。
+  // hit したら TutorHandoff draft を push + 3 肢 quickReplies を出す。
+  // =====================================================================
+
+  const skipGuard =
+    state.state === "ending-vent" ||
+    state.state === "ending-confirm" ||
+    state.state === "ending-done";
+  if (!skipGuard) {
+    const teachingHit = detectTeachingRequest(userInput);
+    if (teachingHit) {
+      // 副作用: MOCK_HANDOFFS に draft handoff を push
+      deriveFromHardGuard(userInput, teachingHit);
+      const preview =
+        userInput.length > 30 ? `${userInput.slice(0, 30)}…` : userInput;
+      return {
+        nextState: state, // state は変えない（本人が選んだ後に流れる）
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: `ごめん、それは ${labelForTeachingCategory(teachingHit.category)} の話だから、**私じゃなくて葵先生の領域** だね。\n\n**「${preview}」を葵先生に申し送りしておいたよ。** どうする?`,
+          quickReplies: [
+            "今すぐ葵先生に聞く",
+            "メモしてあとで",
+            "もう少し自分で考える",
+          ],
+          createdAt: now,
+        },
+      };
+    }
+  }
+
+  // =====================================================================
   // 過去 chat 検索（「あの話したよね?」系の発話を拾う）
   //
   // ito19 さん要望: ゆい先生の対話履歴を本人が探せるように。
@@ -438,11 +563,14 @@ function buildNextTutorReplyInner(args: {
   // =====================================================================
 
   // 「課題見せて」「やる事は?」「未クリア」
+  // C6: ハードガード後の「今すぐ葵先生に聞く」もここに流す（課題一覧で本人が選ぶ）
   if (
     lower.includes("課題") ||
     lower.includes("やる事") ||
     lower.includes("やること") ||
-    lower.includes("未クリア")
+    lower.includes("未クリア") ||
+    lower.includes("葵先生に聞") ||
+    lower.includes("今すぐ葵")
   ) {
     const openIssues = MOCK_ISSUES.filter((i) => i.status === "open");
     return {

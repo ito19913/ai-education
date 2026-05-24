@@ -110,6 +110,7 @@
 - **教える系 (= NG、必ず葵先生に振る)**: 教科の中身、解き方、用語の定義
 - **教えない系 (= OK、ゆいが話す)**: 勉強の必要性、大きな考え方、メタ認知、学び方の促し
 - **武田塾「生徒に解き方を説明させる」技法は使う**(教えるんじゃなく、引き出す。これは ito19 さん哲学のファインマン式と一致)
+- **C6 ハードガードで scripted に強制**: `detectTeachingRequest()` (`lib/learn/tutor-teaching-guard.ts`) が「教えて」「答えは」「訳して」等を検知 → ゆいは答えず TutorHandoff draft を作成して葵に振る。META_KEYWORDS (勉強 / 努力 / 集中 / なぜ 等) は救済（メタ質問はゆい OK）
 
 ### ゆい先生の依頼カタログ（6 種）
 
@@ -437,6 +438,54 @@ C2 + C3 で永続化された `ReflectionLog` を実際に画面で見られる�
 **既読化のアクション**: 現状は読み取り専用 (mutation なし)。Phase 7 (Supabase 永続化) と合わせて「読んだら自動的に read に更新」を実装する。Phase 3 段階では `MOCK_HANDOFFS` が const array で immutable に近いため、ステート管理は複雑化を避けて見送り。
 
 **動作確認**: 既存 mock の `handoff-2026-05-13-1` (read) が `issue-ai-3` (過去分詞) のヘッダに表示される。`handoff-2026-05-22-1` は `relatedIssueId: undefined` (nodeId に紐付く一般 handoff) なので IssueChat ヘッダには出ない。C3 の excavation 経由で派生する handoff は `relatedIssueId` を持つので動的に出る。
+
+#### C6: 「教えない」ハードガード + draft 自動生成
+
+> 実装: `web/lib/learn/tutor-teaching-guard.ts` 新設、`tutor-mock.ts` の冒頭で hit 判定
+
+REVIEW-2026-05-24.md コーチング #1「最高」優先項目への対応。ゆいが scripted mock の段階から **教科の中身に踏み込まない構造** を作る。Phase 6 (Claude API) で system prompt + LLM classifier の二重ガードに統合する前段。
+
+**判定関数** (`detectTeachingRequest(text)`):
+
+```
+1. META_KEYWORDS 含む → null (メタ質問救済)
+2. 否定形 (「教えないで」等) → null
+3. CATEGORY_PATTERNS マッチ → { hit, category, matched }
+4. それ以外 → null
+```
+
+| カテゴリ | キーワード例 |
+|---|---|
+| `teach` | 教えて / おしえて / 知りたい |
+| `answer` | 答えは / 正解は / 答え何 |
+| `translate` | 訳して / 英訳 / 和訳 |
+| `solve` | 解いて / どうやって解く / 式は |
+| `explain` | 説明して / って何 / とは |
+
+**META_KEYWORDS** (hit 抑制): `["勉強", "努力", "集中", "やる気", "意味", "意義", "なんで", "なぜ", "目的", "habit", "習慣", "モチベ", "受験", "将来"]`。「数学って何のためにやるの?」のような哲学質問は **メタ認知 / 学び方の促し** に該当するため、ゆいが受ける。
+
+**hit 時挙動** (3 肢選択):
+
+1. `deriveFromHardGuard(text, detection)` で `TutorHandoff` draft を `MOCK_HANDOFFS` に push (status: "unread")。Issue は作らない（本人が「葵先生に聞く」を選んだ後の IssueChat で立ち上げる想定）
+2. ゆい発話: 「ごめん、それは {category 日本語} の話だから、私じゃなくて葵先生の領域だね。**「{userInput preview}」を葵先生に申し送りしておいたよ。** どうする?」
+3. quickReplies: `["今すぐ葵先生に聞く", "メモしてあとで", "もう少し自分で考える"]`
+
+**3 肢クリック後の処理**:
+
+| 選択 | 処理 |
+|---|---|
+| 「今すぐ葵先生に聞く」 | 既存「課題見せて」分岐 (lower.includes("葵先生に聞") を追加) に流す → 課題一覧の右ペインで本人が選ぶ |
+| 「メモしてあとで」 | ack「OK、メモしておいたよ」。draft はそのまま MOCK_HANDOFFS に残る |
+| 「もう少し自分で考える」 | ack「いいね、考えたものを言葉にして、また話そう」。draft はそのまま残る |
+
+放置追跡 (次セッションで「あれどうなった?」) は Phase 3d 以降に持ち越し。
+
+**ending 系 state でのスキップ**: `ending-vent` / `ending-confirm` / `ending-done` では検知しない。ループ中の本人発話 (「to の使い方が分からない」等) を誤検知しないため。
+
+**Phase 6 への布石**:
+- `CATEGORY_PATTERNS` と `META_KEYWORDS` は **few-shot 評価セット** として system prompt に投入できる
+- `detectTeachingRequest` 自体は LLM classifier の **fallback / sanity check** として並走させる二重ガード設計が可能
+- `TUTOR_PERSONA.description` 1 段落では Opus に「教えない」を保証させきれない、というレビュー指摘への構造的解答
 
 ---
 
@@ -1006,6 +1055,7 @@ lib/learn/
 ├── mock-data.ts                    # 中2 英語文法 33 ノード + 全 mock データ
 ├── tutor-mock.ts                   # 担任の persona + 状態機械（scripted、Phase 3 で課題/スケジュール分岐追加）
 ├── issue-chat-mock.ts              # ★Phase 3: 科目の先生 persona + 課題 chat scripted 応答
+├── tutor-teaching-guard.ts         # ★C6: 「教えない」ハードガード (detectTeachingRequest)
 ├── subject-resolver.ts             # ★Phase 3: ノード ID から所属 subject を引く（root 階層を辿る）
 ├── subject-history.ts              # ★Phase 3: 科目の先生対話履歴の集約 utility
 ├── use-learning-session.ts         # セッション auto-tracking hook（Phase 3.5 でアイドル検知を追加）
