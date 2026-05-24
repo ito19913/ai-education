@@ -342,6 +342,50 @@ ARCHITECTURE.md で定義済みだが types.ts に存在しなかった 5 型を
 
 派生実装 (excavation 終了で `MOCK_HANDOFFS.push(...)`、朝の振り返り完了で `MOCK_REFLECTIONS.push(...)`) は C3 で実装する。本 commit は型と静的データの土台までで止める。
 
+#### C3: tutor-mock 派生実装 (excavation / 振り返り完了)
+
+> 実装: `web/lib/learn/tutor-mock.ts` の `deriveFromExcavation` / `deriveMorningReflectionLog` / `inferNodeIdFromText` / `TutorStep.reflectionDraft` 追加
+
+「申し送りしておくよ」と発話するだけで実際には何も派生しなかった excavation を、本当に Issue + TutorHandoff を生成するように改修。同時に朝の振り返り 5 セクションを `ReflectionLog` として永続化。REVIEW-2026-05-24.md コーチング #2「仕様詐欺」の解消。
+
+**TutorStep に `reflectionDraft` 追加**:
+
+```ts
+type ReflectionDraft = {
+  yesterdayReview?: string;
+  schoolToday?: string;
+  emotionsAndEvents?: string;
+  questionsAndDoubts?: string;
+  derivedIssueIds: string[];
+  derivedHandoffIds: string[];
+};
+```
+
+各 `reflection-*` 遷移時に該当フィールドを `userInput` で更新。`reflection-plan` 到達時に `deriveMorningReflectionLog(draft)` が呼ばれ、`MOCK_REFLECTION_LOGS` に push される。
+
+**派生フロー**:
+
+| 遷移 | 派生 |
+|---|---|
+| `reflection-yesterday → reflection-school` | `draft.yesterdayReview = userInput` |
+| `reflection-school → reflection-mood` | `draft.schoolToday = userInput` |
+| `reflection-mood → reflection-questions` | `draft.emotionsAndEvents = userInput` |
+| `reflection-questions → reflection-plan` (疑問なし) | `draft.questionsAndDoubts = userInput` + **ReflectionLog push** |
+| `reflection-questions → excavation` (疑問あり) | `draft.questionsAndDoubts = userInput` |
+| `excavation → reflection-plan` | **Issue + TutorHandoff 派生 push**、`draft.derived{Issue,Handoff}Ids` 蓄積、**ReflectionLog push** |
+
+**`inferNodeIdFromText(text)`**: 掘り起こしテキストから推定ノード ID をキーワードマッチで返す。「不定詞」「動名詞」「受動態」「比較」「助動詞」「過去」「未来」を分類、推定失敗時は root の "grammar" にフォールバック。Phase 6 で LLM ベースの分類に置換する想定。
+
+**派生 ID の規約**: `issue-runtime-<base36 timestamp>-<counter>` / `handoff-runtime-...` / `ref-runtime-...`。runtime セッション内の重複は counter で防ぐ。静的 mock データ (C2 で投入したもの) と衝突しないよう接頭辞を分けている。
+
+**これで実現する事**:
+
+- 「申し送りしておくよ」発話が **MOCK_HANDOFFS に実データが追加される** ことで裏付けられる
+- ReflectionLog 一覧 (C4) を開けば、今日朝に振り返った内容が実際に表示される
+- IssueChat ヘッダの「ゆいから N 件」(C5) も、excavation 経由で動的に増える handoff が反映される
+
+ライフサイクル: `MOCK_*` 配列への push は **メモリ上の mutation**。ページリロードで消える (Phase 7 で Supabase 永続化)。デモ・開発時の挙動確認には十分。
+
 ---
 
 ## ゆい→葵への申し送り（TutorHandoff）

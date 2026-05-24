@@ -11,12 +11,20 @@
  * Phase 6 で Claude API に置き換え。本ファイルは設計のリファレンス + デモ用。
  */
 import type {
+  Issue,
+  ReflectionLog,
+  TutorHandoff,
   TutorMessage,
   TutorRightPaneAction,
   TutorThread,
   TutorTopic,
 } from "./types";
-import { MOCK_ISSUES, MOCK_SCHEDULE_TODAY } from "./mock-data";
+import {
+  MOCK_HANDOFFS,
+  MOCK_ISSUES,
+  MOCK_REFLECTION_LOGS,
+  MOCK_SCHEDULE_TODAY,
+} from "./mock-data";
 import { searchTutorThreads } from "./tutor-thread-storage";
 
 /**
@@ -137,12 +145,179 @@ export type TutorStep = {
   /** 掘り起こしで本人が言語化した不明事項（mock では 1 件まで保持） */
   excavationTopic?: string;
   /**
+   * 朝の振り返り 5 セクションの draft（C3 で追加）。
+   * 各 reflection-* 遷移時に該当フィールドを userInput で更新し、
+   * reflection-plan 到達時に `MOCK_REFLECTION_LOGS.push(...)` で確定する。
+   */
+  reflectionDraft?: ReflectionDraft;
+  /**
    * 終了振り返りで本人が言ったことの蓄積。1 発話 = 1 要素。
    * 毎ターン AI がこのリストを見せて「他にある?」と聞くことで、
    * 本人の「あ、まだあった」気づきを誘発する（メタ認知促進）。
    */
   endingVentItems?: string[];
 };
+
+/**
+ * 朝の振り返り 5 セクションの蓄積。reflection-plan 到達で
+ * ReflectionLog として MOCK_REFLECTION_LOGS に push される。
+ */
+export type ReflectionDraft = {
+  yesterdayReview?: string;
+  schoolToday?: string;
+  emotionsAndEvents?: string;
+  questionsAndDoubts?: string;
+  /** excavation 経由で派生した Issue の id 群 */
+  derivedIssueIds: string[];
+  /** excavation 経由で派生した TutorHandoff の id 群 */
+  derivedHandoffIds: string[];
+};
+
+// ============================================================================
+// 派生実装 (C3): excavation 終了 / 朝の振り返り完了 で mock データに push
+//
+// REVIEW-2026-05-24.md コーチング #2「『申し送りしておくよ』と発話するが
+// 派生先が存在しない（仕様詐欺）」の解消。
+// ============================================================================
+
+/**
+ * 掘り起こしで本人が言語化したテキストから、推定ノード ID を返す。
+ * Issue.nodeId は必須なので、推定失敗時は root の "grammar" にフォールバック。
+ * 単純なキーワードマッチ。Phase 6 で LLM ベースの分類に置換する。
+ */
+function inferNodeIdFromText(text: string): string {
+  const t = text.toLowerCase();
+  if (t.includes("不定詞") && t.includes("名詞")) return "inf-noun";
+  if (t.includes("不定詞") && t.includes("形容")) return "inf-adj";
+  if (t.includes("不定詞") && t.includes("副詞")) return "inf-adv";
+  if (t.includes("不定詞")) return "inf";
+  if (t.includes("動名詞") || t.includes("ing")) return "inf-noun";
+  if (t.includes("受動") || t.includes("受け身") || t.includes("passive"))
+    return "passive-basic";
+  if (t.includes("比較")) return "comparative";
+  if (
+    t.includes("助動詞") ||
+    t.includes("must") ||
+    t.includes("may") ||
+    t.includes("should")
+  )
+    return "modal";
+  if (t.includes("過去進行")) return "past-progressive";
+  if (t.includes("過去") || t.includes("不規則")) return "verb-past";
+  if (t.includes("未来") || t.includes("will") || t.includes("going to"))
+    return "future";
+  return "grammar";
+}
+
+let derivedCounter = 0;
+function makeDerivedId(prefix: string): string {
+  derivedCounter += 1;
+  return `${prefix}-runtime-${Date.now().toString(36)}-${derivedCounter}`;
+}
+
+/**
+ * 掘り起こしから Issue と TutorHandoff を派生して MOCK に push する。
+ * 戻り値で派生した id を返し、呼び出し元が ReflectionLog の derivedXxxIds に
+ * 積み上げられるようにする。
+ */
+function deriveFromExcavation(topic: string): {
+  issueId: string;
+  handoffId: string;
+} {
+  const nodeId = inferNodeIdFromText(topic);
+  const truncatedTitle =
+    topic.length > 50 ? `${topic.slice(0, 50)}…` : topic;
+  const now = new Date().toISOString();
+  const issueId = makeDerivedId("issue");
+  const handoffId = makeDerivedId("handoff");
+
+  const issue: Issue = {
+    id: issueId,
+    nodeId,
+    source: "self",
+    title: truncatedTitle,
+    detail: topic.length > 50 ? topic : undefined,
+    status: "open",
+    createdAt: now,
+    occurrences: [
+      {
+        id: makeDerivedId("occ"),
+        detectedAt: now,
+        description: "朝の振り返り 掘り起こしで本人が言語化（C3 mock 派生）。",
+        source: "self",
+      },
+    ],
+  };
+
+  const handoff: TutorHandoff = {
+    id: handoffId,
+    fromTutor: true,
+    toSubjectId: "subj-english",
+    relatedNodeId: nodeId === "grammar" ? undefined : nodeId,
+    relatedIssueId: issueId,
+    title: truncatedTitle,
+    body: [
+      "**ゆいから葵先生へ**",
+      "",
+      "朝の振り返り 掘り起こしで本人が言語化:",
+      `> ${topic}`,
+      "",
+      "**所感**: 本人が自分から「分からない」と言語化できた件。次回の chat で深掘りお願いします。",
+    ].join("\n"),
+    status: "unread",
+    createdAt: now,
+  };
+
+  MOCK_ISSUES.push(issue);
+  MOCK_HANDOFFS.push(handoff);
+  return { issueId, handoffId };
+}
+
+/**
+ * ローカル日付を YYYY-MM-DD で返す（タイムゾーンずれ防止）。
+ */
+function formatLocalDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * 朝の振り返り完了で ReflectionLog を派生して MOCK_REFLECTION_LOGS に push する。
+ * reflection-plan 到達時に呼ばれる。
+ */
+function deriveMorningReflectionLog(
+  draft: ReflectionDraft,
+  todayPlan?: string,
+): ReflectionLog {
+  const now = new Date();
+  const log: ReflectionLog = {
+    id: makeDerivedId("ref"),
+    learnerId: "girl",
+    date: formatLocalDate(now),
+    cadence: "daily",
+    yesterdayReview: draft.yesterdayReview,
+    schoolToday: draft.schoolToday,
+    emotionsAndEvents: draft.emotionsAndEvents,
+    questionsAndDoubts: draft.questionsAndDoubts,
+    todayPlan,
+    derivedIssueIds: draft.derivedIssueIds.length
+      ? [...draft.derivedIssueIds]
+      : undefined,
+    derivedHandoffIds: draft.derivedHandoffIds.length
+      ? [...draft.derivedHandoffIds]
+      : undefined,
+    createdAt: now.toISOString(),
+  };
+  MOCK_REFLECTION_LOGS.push(log);
+  return log;
+}
+
+/** draft の初期化（reflection-yesterday から開始する初回ターン用）*/
+function emptyDraft(): ReflectionDraft {
+  return { derivedIssueIds: [], derivedHandoffIds: [] };
+}
 
 /**
  * 状態 + 右ペインアクション から話題タグを派生（Phase 3 拡張）。
@@ -431,8 +606,14 @@ function buildNextTutorReplyInner(args: {
       lower === ""
         ? "OK、そういう日もあるよ。"
         : "なるほど、そこまでやったんだね。";
+    // C3: draft に yesterdayReview を蓄積
+    const draft = state.reflectionDraft ?? emptyDraft();
     return {
-      nextState: { ...state, state: "reflection-school" },
+      nextState: {
+        ...state,
+        state: "reflection-school",
+        reflectionDraft: { ...draft, yesterdayReview: userInput },
+      },
       reply: {
         id: makeId(),
         role: "tutor",
@@ -449,8 +630,14 @@ function buildNextTutorReplyInner(args: {
 
   // --- reflection-school → reflection-mood ---
   if (state.state === "reflection-school") {
+    // C3: draft に schoolToday を蓄積
+    const draft = state.reflectionDraft ?? emptyDraft();
     return {
-      nextState: { ...state, state: "reflection-mood" },
+      nextState: {
+        ...state,
+        state: "reflection-mood",
+        reflectionDraft: { ...draft, schoolToday: userInput },
+      },
       reply: {
         id: makeId(),
         role: "tutor",
@@ -479,8 +666,14 @@ function buildNextTutorReplyInner(args: {
     const ack = tired
       ? "そっか、それはキツいね。\n無理しすぎないでね、今日できる分だけで OK。"
       : "うん、いい感じ。";
+    // C3: draft に emotionsAndEvents を蓄積
+    const draft = state.reflectionDraft ?? emptyDraft();
     return {
-      nextState: { ...state, state: "reflection-questions" },
+      nextState: {
+        ...state,
+        state: "reflection-questions",
+        reflectionDraft: { ...draft, emotionsAndEvents: userInput },
+      },
       reply: {
         id: makeId(),
         role: "tutor",
@@ -507,10 +700,21 @@ function buildNextTutorReplyInner(args: {
       !lower.includes("特にない") &&
       !lower.includes("ないかな");
 
+    // C3: questionsAndDoubts を draft に積む（excavation 経由でも非経由でも保持）
+    const draft = state.reflectionDraft ?? emptyDraft();
+    const updatedDraft: ReflectionDraft = {
+      ...draft,
+      questionsAndDoubts: userInput,
+    };
+
     if (hasQuestion) {
       // 掘り起こしへ
       return {
-        nextState: { ...state, state: "excavation" },
+        nextState: {
+          ...state,
+          state: "excavation",
+          reflectionDraft: updatedDraft,
+        },
         reply: {
           id: makeId(),
           role: "tutor",
@@ -519,9 +723,14 @@ function buildNextTutorReplyInner(args: {
         },
       };
     }
-    // 疑問なし → 計画へ
+    // C3: 疑問なし → 計画へ + ReflectionLog 確定 push
+    deriveMorningReflectionLog(updatedDraft);
     return {
-      nextState: { ...state, state: "reflection-plan" },
+      nextState: {
+        ...state,
+        state: "reflection-plan",
+        reflectionDraft: updatedDraft,
+      },
       reply: {
         id: makeId(),
         role: "tutor",
@@ -533,19 +742,30 @@ function buildNextTutorReplyInner(args: {
   }
 
   // --- excavation → reflection-plan ---
-  // 本人が言語化したものを 1 件キープ + 「課題に追加 + 葵への申し送り」と演出
+  // 本人が言語化したものを 1 件キープ + Issue / TutorHandoff を派生 push (C3)
   if (state.state === "excavation") {
     const topic = userInput.slice(0, 40);
+    // C3: Issue + Handoff を派生して MOCK_ISSUES / MOCK_HANDOFFS に push
+    const { issueId, handoffId } = deriveFromExcavation(userInput);
+    const draft = state.reflectionDraft ?? emptyDraft();
+    const updatedDraft: ReflectionDraft = {
+      ...draft,
+      derivedIssueIds: [...draft.derivedIssueIds, issueId],
+      derivedHandoffIds: [...draft.derivedHandoffIds, handoffId],
+    };
+    // C3: ReflectionLog を確定 push（派生 id 群も含む）
+    deriveMorningReflectionLog(updatedDraft);
     return {
       nextState: {
         ...state,
         state: "reflection-plan",
         excavationTopic: userInput,
+        reflectionDraft: updatedDraft,
       },
       reply: {
         id: makeId(),
         role: "tutor",
-        text: `言ってくれてありがとう、それ大事。\n\n**「${topic}${userInput.length > 40 ? "…" : ""}」を課題に追加しといたね。** 葵先生にも「ここ深掘り提案」って申し送りしておくよ。\n\nじゃあ今日はどうする? 今追加した課題からやる? 別のことから?`,
+        text: `言ってくれてありがとう、それ大事。\n\n**「${topic}${userInput.length > 40 ? "…" : ""}」を課題に追加しといたね。** 葵先生にも「ここ深掘り提案」って申し送りしておいたよ。\n\nじゃあ今日はどうする? 今追加した課題からやる? 別のことから?`,
         quickReplies: [
           "今追加した課題からやる",
           "課題見せて",
