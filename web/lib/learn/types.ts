@@ -265,6 +265,7 @@ export type TutorTopic =
   | "issue-check" // 課題を確認
   | "schedule-check" // スケジュールを確認
   | "history-check" // 学習履歴を確認
+  | "reflection-check" // 振り返りログを確認 (C4: ReflectionLog 一覧)
   | "material-add" // 教材を追加
   | "subject-history" // 科目の先生 対話履歴を見る
   | "start-study" // 学習開始フロー (教科→教材→範囲→開始)
@@ -349,6 +350,7 @@ export type TutorRightPaneAction =
   | { kind: "open-issue"; issueId: string }
   | { kind: "open-schedule" }
   | { kind: "open-history" }
+  | { kind: "open-reflections" } // C4: ReflectionLog 一覧
   | { kind: "open-material-new" }
   | { kind: "open-subject-history"; subjectId: string }
   | { kind: "open-tutor-archive" }
@@ -392,6 +394,7 @@ export type RightPaneView =
   | "issue"
   | "schedule"
   | "history"
+  | "reflections" // C4: ReflectionLog 一覧
   | "material-new"
   | "subject-history"
   | "tutor-archive";

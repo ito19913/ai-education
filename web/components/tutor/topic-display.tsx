@@ -24,6 +24,8 @@ export function topicEmoji(topic: TutorTopic): string {
       return "📅";
     case "history-check":
       return "📖";
+    case "reflection-check":
+      return "📔";
     case "material-add":
       return "📚";
     case "subject-history":
@@ -49,6 +51,8 @@ export function topicLabel(topic: TutorTopic): string {
       return "スケジュール確認";
     case "history-check":
       return "学習履歴を確認";
+    case "reflection-check":
+      return "振り返りログ";
     case "material-add":
       return "教材を追加";
     case "subject-history":
@@ -110,6 +114,13 @@ export function topicTone(topic: TutorTopic): Tone {
         text: "text-slate-700 dark:text-slate-300",
         border: "border-slate-200 dark:border-slate-700/60",
         activeRing: "ring-slate-400",
+      };
+    case "reflection-check":
+      return {
+        bg: "bg-teal-100 dark:bg-teal-950/40",
+        text: "text-teal-700 dark:text-teal-300",
+        border: "border-teal-200 dark:border-teal-900/60",
+        activeRing: "ring-teal-400",
       };
     case "material-add":
       return {

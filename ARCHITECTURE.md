@@ -386,6 +386,37 @@ type ReflectionDraft = {
 
 ライフサイクル: `MOCK_*` 配列への push は **メモリ上の mutation**。ページリロードで消える (Phase 7 で Supabase 永続化)。デモ・開発時の挙動確認には十分。
 
+#### C4: `/tutor?view=reflections` 一覧画面
+
+> 実装: `web/components/reflections/ReflectionListView.tsx` 新設、`RightPaneRouter` に分岐追加、`tutor-mock.ts` に keyword 分岐追加
+
+C2 + C3 で永続化された `ReflectionLog` を実際に画面で見られるようにする。これで「ReflectionLog 一覧」(REVIEW コーチング #2 の「コーチング契約の永続化」) の最低 UI が成立。
+
+**配管**:
+
+| レイヤ | 変更 |
+|---|---|
+| `types.ts` | `RightPaneView` に `"reflections"` 追加、`TutorRightPaneAction` に `{ kind: "open-reflections" }` 追加、`TutorTopic` に `"reflection-check"` 追加 |
+| `topic-display.tsx` | `reflection-check` の emoji (📔) / label (振り返りログ) / tone (teal) を追加 |
+| `tutor-mock.ts` | `deriveTutorTopic` に `open-reflections → reflection-check` 追加。keyword 分岐に「振り返りログ」「ふりかえり一覧」「日記」「reflection」を追加（朝の儀式と混同しないよう「振り返り」単独では反応しない）|
+| `TutorWorkspace.tsx` | `viewFromParam` で `reflections` 通す、`applyRightPaneAction` で `open-reflections → navigate("reflections")` |
+| `RightPaneRouter.tsx` | `view === "reflections"` で `ReflectionListView` を render |
+| **`ReflectionListView.tsx`** | **新規。日付降順のカード一覧 + cadence フィルタ + 派生リンク表示** |
+
+**ReflectionListView の構成**:
+
+- ヘッダ: 件数表示
+- フィルタ: cadence 4 種類 (all/daily/weekly/monthly) + 各件数バッジ
+- 一覧: 日付降順、`ReflectionCard` ごとに:
+  - cadence バッジ (amber/sky/violet) + 日付 (M/D (曜))
+  - 5 セクションをアイコン付きで表示 (Clock / BookOpen / HeartHandshake / HelpCircle / Calendar)
+  - 本文は `MarkdownText` で renderer (C1 の共通化を再利用)
+  - 派生リンク (`derivedIssueIds` / `derivedHandoffIds`) を下部にチップで表示
+    - Issue チップ → `/tutor?view=issue&id=...` にリンク
+    - TutorHandoff チップ → status (unread/read) で見た目分岐、未読は緑バッジ
+
+**mock データソース**: `MOCK_REFLECTION_LOGS` / `MOCK_ISSUES` / `MOCK_HANDOFFS` を直接 import。C3 の派生実装で実行時に追加される log もそのまま表示される。Phase 7 で Supabase 化する時に props で受け取る形にリファクタ予定。
+
 ---
 
 ## ゆい→葵への申し送り（TutorHandoff）
@@ -427,6 +458,7 @@ TutorHandoff ドキュメント作成 (mock では chat 内のカード)
 | `/tutor?view=subject-history&subjectId=xxx` | 右ペインに科目の先生との対話履歴ビュー（ノード対話 + 課題 chat の時系列集約）| Phase 3 |
 | `/tutor?view=tutor-archive` | **右ペインにゆい先生対話アーカイブ**（日付セレクター + 話題フィルター、readonly） | ✓ Phase 3 中盤 |
 | `/tutor?view=tutor-archive&date=YYYY-MM-DD` | 上記で特定日を即表示（検索結果カードからのジャンプ） | ✓ Phase 3 中盤 |
+| `/tutor?view=reflections` | **右ペインに振り返りログ一覧**（cadence フィルタ、派生リンク表示、readonly） | ✓ Phase 3 レビュー追従 C4 |
 | `/tutor?ending=1` | **学習終了振り返り (ending) モードでゆい起動**（`/learn` の「学習を終了」ボタンから） | ✓ Phase 3 中盤 |
 | `/schedule` | 学習スケジュール ダッシュボード（バックアップ動線、`/tutor?view=schedule` と同コンポーネント） | ✓ Phase 1 骨格 |
 | `/learn` | 学習画面（4 ペイン: サイドバー / 体系図 / 対話 / ノート + 課題）。`/tutor` 右ペインには収まらないため別ルート | ✓ |
@@ -932,6 +964,8 @@ components/
 │   └── SubjectHistoryView.tsx      # ノード対話 + 課題 chat の時系列集約タイムライン
 ├── chat/                           # ★Phase 3 レビュー追従: chat 共通基盤
 │   └── MarkdownText.tsx            # ★C1: chat バブル用 markdown renderer + stripMarkdown
+├── reflections/                    # ★Phase 3 レビュー追従 C4
+│   └── ReflectionListView.tsx      # ★C4: 振り返りログの日付別一覧 + cadence フィルタ + 派生リンク
 ├── learn/                          # 学習画面（別ルート、4 ペイン）
 │   ├── LearnWorkspace.tsx          # 親 + state
 │   ├── LearnSidebar.tsx            # サイドバー（担任 / スケジュール / 課題 / 履歴 / 憲法 / 教材 / ゴミ箱）

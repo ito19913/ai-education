@@ -337,10 +337,14 @@ export function deriveTutorTopic(
         return "schedule-check";
       case "open-history":
         return "history-check";
+      case "open-reflections":
+        return "reflection-check";
       case "open-material-new":
         return "material-add";
       case "open-subject-history":
         return "subject-history";
+      case "open-tutor-archive":
+        return "subject-history"; // 担任対話履歴も history 系扱い (専用 topic なし)
       case "close":
         return "free-chat";
     }
@@ -588,6 +592,32 @@ function buildNextTutorReplyInner(args: {
         role: "tutor",
         text: "これまでの学習履歴、右に出すね。\nセッションごとの時間と振り返りが見られるよ。",
         rightPaneAction: { kind: "open-history" },
+        createdAt: now,
+      },
+    };
+  }
+
+  // C4: 「振り返りログ」「ふりかえり」「日記」「reflection」
+  // → ReflectionLog 一覧 (ReflectionListView) を右ペインに展開
+  // 「振り返り」単独は朝の儀式と混同するので **「ログ」「日記」「一覧」を伴う場合のみ** 反応。
+  // 朝の振り返りを直接呼び出したい場合は別途 keyword を用意する想定。
+  if (
+    lower.includes("振り返りログ") ||
+    lower.includes("ふりかえりログ") ||
+    lower.includes("振り返り一覧") ||
+    lower.includes("ふりかえり一覧") ||
+    lower.includes("振り返り見") ||
+    lower.includes("ふりかえり見") ||
+    lower.includes("日記") ||
+    lower.includes("reflection")
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、これまでの振り返りログ、右に出すね。\n日付ごとに、その日に話したことをまとめてあるよ。",
+        rightPaneAction: { kind: "open-reflections" },
         createdAt: now,
       },
     };
