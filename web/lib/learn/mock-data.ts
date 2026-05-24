@@ -10,6 +10,7 @@ import type {
   ChatMessage,
   CurrentUser,
   ExamPrep,
+  GoalReview,
   Homework,
   Issue,
   IssueCandidate,
@@ -17,11 +18,16 @@ import type {
   LearningSession,
   LearnSubject,
   LessonReview,
+  LongTermGoal,
   Material,
   Memo,
+  NodeComprehension,
   Note,
+  ReflectionLog,
   ScheduleItem,
   Subject,
+  TutorHandoff,
+  WeeklyGoal,
 } from "./types";
 
 export const MOCK_SUBJECT: LearnSubject = {
@@ -762,9 +768,268 @@ export const MOCK_SESSIONS: LearningSession[] = [
   },
 ];
 
-// NOTE: 旧 MOCK_NODE_COMPREHENSIONS（バナー方式の AI 理解度判定 mock）は
-// イシュードリブン思考への移行で撤去。同じ判定信号は MOCK_ISSUES の
-// source: "ai-detected" と MOCK_SESSION_ISSUE_CANDIDATES に表現される。
+// ============================================================================
+// NodeComprehension — ノード単位の AI 理解度判定 (Phase 3 拡張、2026-05-24 復活)
+//
+// 旧版（バナー方式の UI）は撤去したが、ARCHITECTURE.md が「ゆいが読む重要型」
+// として位置付けているため、Phase 6 (Claude API) で「ゆいへの入力アダプタ」
+// の土台として mock を復活させた。
+//
+// 同じ判定信号は MOCK_ISSUES.source: "ai-detected" や MOCK_SESSION_ISSUE_CANDIDATES
+// にも表現されるが、NodeComprehension は「ノード単位の浅さ・戻り先提案」を
+// 軸にした補完的な信号源として並走する。
+// ============================================================================
+
+export const MOCK_NODE_COMPREHENSIONS: NodeComprehension[] = [
+  // 副詞的用法（浅め）。親ノード inf に戻る提案。sess-2026-05-22 の comprehensionScore: 0.45 と整合。
+  {
+    nodeId: "inf-adv",
+    score: 0.45,
+    reason:
+      "副詞的用法の 3 種類（目的・結果・原因）を 1 つも自分の言葉で言い分けできなかった。例文を見せれば理解できるが、自発的な分類ができない。",
+    suggestedNodeId: "inf",
+    sessionId: "sess-2026-05-22",
+    createdAt: "2026-05-22T19:48:00.000Z",
+  },
+  // 過去分詞（中）。issue-ai-3 と同根の判定。
+  {
+    nodeId: "passive-basic",
+    score: 0.62,
+    reason:
+      "受動態 be + 過去分詞の形は理解しているが、不規則動詞の過去分詞が口頭で詰まった。形は理解、語彙が定着途中。",
+    suggestedNodeId: "verb-past",
+    sessionId: "sess-2026-05-13",
+    createdAt: "2026-05-13T19:50:00.000Z",
+  },
+];
+
+// ============================================================================
+// 振り返り / コーチング契約 / 申し送り (Phase 3 拡張、C2 で追加)
+//
+// ARCHITECTURE.md「振り返りとコーチング契約」セクションの実装。
+// REVIEW-2026-05-24.md で「ARCHITECTURE.md と実装の乖離（仕様詐欺）」と
+// 指摘された 6 型のうち、5 型 + NodeComprehension mock を C2 で投入する。
+//
+// 今日 = 2026-05-24（日曜）想定:
+//   - ReflectionLog: 5/18(月)〜5/24(日) の 7 日分（うち日次 5、週次 1、月次 1）
+//   - 学習セッションがあった日（5/20, 5/21, 5/22）と無かった日（5/18, 5/19, 5/23）を混ぜる
+//   - LongTermGoal: 2026 年 5 月の月次ゴール
+//   - WeeklyGoal: 5/18 週のゴール（不定詞 3 用法を自分の言葉で）
+//   - GoalReview: WeeklyGoal の週末振り返り
+//   - TutorHandoff: ゆい → 葵 の申し送り 2 件（excavation 経由 / メタ質問経由）
+// ============================================================================
+
+export const MOCK_REFLECTION_LOGS: ReflectionLog[] = [
+  // ====== 5/18 (月) daily ======
+  {
+    id: "ref-2026-05-18",
+    learnerId: "girl",
+    date: "2026-05-18",
+    cadence: "daily",
+    yesterdayReview: "日曜は学習お休み。",
+    schoolToday: "数学で平方完成のやり方、英語でリスニング小テスト。",
+    emotionsAndEvents:
+      "リスニング、ちょっと聞き取れなかった単語あって悔しい。あと友達と昼休み楽しかった。",
+    questionsAndDoubts: "平方完成の途中の式が、なんでそう変形できるのか分かんない。",
+    todayPlan: "今日は数学のワークだけやる。英語はお休み。",
+    derivedIssueIds: [],
+    derivedScheduleItemIds: [],
+    createdAt: "2026-05-18T07:30:00.000Z",
+  },
+  // ====== 5/20 (水) daily — sess-2026-05-20 と連動 ======
+  {
+    id: "ref-2026-05-20",
+    learnerId: "girl",
+    date: "2026-05-20",
+    cadence: "daily",
+    yesterdayReview: "昨日は学校から帰ってすぐ寝ちゃった。学習なし。",
+    schoolToday: "英語で不定詞の名詞的用法。to + 動詞で「〜すること」になるやつ。",
+    emotionsAndEvents: "今日は元気。",
+    questionsAndDoubts:
+      "「To play soccer is fun.」みたいに、文の最初に to が来るやつ、自分で組み立てる自信ない。",
+    todayPlan: "今日 ゆい先生のとこで不定詞 名詞的用法、葵先生と話す。",
+    derivedIssueIds: ["issue-ai-1"],
+    derivedScheduleItemIds: [],
+    createdAt: "2026-05-20T18:55:00.000Z",
+  },
+  // ====== 5/21 (木) daily — sess-2026-05-21 と連動 ======
+  {
+    id: "ref-2026-05-21",
+    learnerId: "girl",
+    date: "2026-05-21",
+    cadence: "daily",
+    yesterdayReview:
+      "葵先生と不定詞 名詞的用法、けっこう話した。「to play は『これからやる感じ』」って言われて、ちょっと掴めた気がする。でも動名詞との違いはまだフワッとしてる。",
+    schoolToday: "数学で関数の応用問題。",
+    emotionsAndEvents: "ちょっと疲れた。今日は短めにしたい。",
+    questionsAndDoubts: "動名詞 -ing と不定詞 名詞的用法、結局どう使い分けるの？",
+    todayPlan: "形容詞的用法を軽く触って終わる。30 分だけ。",
+    derivedIssueIds: ["issue-self-1"],
+    derivedScheduleItemIds: [],
+    createdAt: "2026-05-21T19:25:00.000Z",
+  },
+  // ====== 5/22 (金) daily — sess-2026-05-22 と連動、副詞的用法 浅め ======
+  {
+    id: "ref-2026-05-22",
+    learnerId: "girl",
+    date: "2026-05-22",
+    cadence: "daily",
+    yesterdayReview:
+      "形容詞的用法は「前の名詞を後ろから飾る」で、I have something to eat. の例で自分で言えた。動名詞との使い分けは保留。",
+    schoolToday:
+      "英語で不定詞の副詞的用法。「〜するために」が出てきて、目的・結果・原因の 3 つあるって言われた。",
+    emotionsAndEvents: "授業中、3 つの違いがフワッとしてて、置いてかれた感じあった。",
+    questionsAndDoubts:
+      "副詞的用法の「結果」と「目的」、どう見分けるの？前の言葉で判断するんだっけ？",
+    todayPlan: "今日は副詞的用法を葵先生と話す。3 つの違いを言葉にしたい。",
+    derivedIssueIds: [],
+    derivedScheduleItemIds: [],
+    derivedHandoffIds: ["handoff-2026-05-22-1"],
+    createdAt: "2026-05-22T18:40:00.000Z",
+  },
+  // ====== 5/23 (土) daily — 学校なし / 学習なし ======
+  {
+    id: "ref-2026-05-23",
+    learnerId: "girl",
+    date: "2026-05-23",
+    cadence: "daily",
+    yesterdayReview:
+      "副詞的用法 葵先生と話したけど、目的と結果の見分けがまだフワッとしてる。形容詞的用法と副詞的用法も、前の言葉で判断ってちょっと違う気がする…？",
+    schoolToday: "（土曜なので学校なし）",
+    emotionsAndEvents: "週末で気持ち楽。でも来週水曜の英語小テスト、不定詞が範囲だから不安。",
+    questionsAndDoubts: "副詞的用法の 3 種類、自分の言葉で言える?",
+    todayPlan: "今日は休む。日曜に小テストの不安を ゆい先生に話す。",
+    derivedIssueIds: [],
+    derivedScheduleItemIds: [],
+    createdAt: "2026-05-23T09:00:00.000Z",
+  },
+  // ====== 5/18 週 weekly (5/24 日曜 = 今日に記録) ======
+  {
+    id: "ref-week-2026-05-18",
+    learnerId: "girl",
+    date: "2026-05-24",
+    cadence: "weekly",
+    weekStart: "2026-05-18",
+    goalIds: ["wgoal-2026-05-18"],
+    yesterdayReview:
+      "今週は不定詞を 3 用法とも触った週。名詞・形容詞・副詞の順で、副詞が一番フワッとしてる。",
+    questionsAndDoubts:
+      "副詞的用法の 3 種類（目的・結果・原因）の見分け。これは来週、葵先生にもう一回。",
+    todayPlan: "来週: 副詞的用法 3 種類を自分の言葉で言えるようにする。動名詞との使い分けも一緒に。",
+    derivedIssueIds: ["issue-self-1"],
+    derivedHandoffIds: ["handoff-2026-05-22-1"],
+    createdAt: "2026-05-24T08:30:00.000Z",
+  },
+  // ====== 2026 年 5 月 monthly (5/24 日曜 = 今日に記録、中間まとめ) ======
+  {
+    id: "ref-month-2026-05",
+    learnerId: "girl",
+    date: "2026-05-24",
+    cadence: "monthly",
+    goalIds: ["lgoal-2026-05"],
+    yesterdayReview:
+      "5 月は助動詞 → 受動態 → 比較 → 不定詞 と、けっこう色々触った。「教えてもらう」じゃなくて「葵先生と話して自分で言う」のが少し慣れてきた。",
+    emotionsAndEvents:
+      "学習開始の儀式や、終わりの「お疲れさま」のループがあると、サボった日も罪悪感少ない。前みたいに「今日もできなかった…」ってならない。",
+    questionsAndDoubts: "覚えるんじゃなくて整理する、って感覚がまだ完全には掴めてない。",
+    todayPlan: "6 月: 期末（6/3）までに不定詞をクリア、その後 ing 形と関係詞へ。",
+    createdAt: "2026-05-24T08:45:00.000Z",
+  },
+];
+
+export const MOCK_LONG_TERM_GOALS: LongTermGoal[] = [
+  {
+    id: "lgoal-2026-05",
+    learnerId: "girl",
+    scope: "month",
+    scopeLabel: "2026 年 5 月",
+    startDate: "2026-05-01",
+    endDate: "2026-05-31",
+    title: "英語に「自分から触る」感覚を作る",
+    detail:
+      "テストの点じゃなくて、葵先生との会話で「自分で気づいた」と言える瞬間を週 3 つ。",
+    status: "active",
+    createdAt: "2026-05-01T08:00:00.000Z",
+  },
+];
+
+export const MOCK_WEEKLY_GOALS: WeeklyGoal[] = [
+  {
+    id: "wgoal-2026-05-18",
+    learnerId: "girl",
+    weekStart: "2026-05-18",
+    parentGoalId: "lgoal-2026-05",
+    title: "不定詞 3 用法を自分の言葉で言える",
+    detail: "名詞 / 形容詞 / 副詞、それぞれ「いつ使うか」を自分で 1 文ずつ。",
+    status: "active",
+    createdAt: "2026-05-18T08:00:00.000Z",
+  },
+];
+
+export const MOCK_GOAL_REVIEWS: GoalReview[] = [
+  {
+    id: "greview-wgoal-2026-05-18",
+    goalId: "wgoal-2026-05-18",
+    learnerId: "girl",
+    reviewDate: "2026-05-24",
+    reflection:
+      "名詞的・形容詞的は自分の言葉で言えた。副詞的は 3 種類の違いがフワッとしてて、まだ言葉にできてない。「ちゃんと達成」とは言いきれない。",
+    achievementPct: 65,
+    nextActions: [
+      "副詞的用法の 3 種類（目的・結果・原因）を、葵先生ともう一回。",
+      "動名詞 -ing との使い分けと合わせて、5 月最終週で仕上げる。",
+    ],
+    createdAt: "2026-05-24T08:35:00.000Z",
+  },
+];
+
+export const MOCK_HANDOFFS: TutorHandoff[] = [
+  // 5/22 振り返りの「目的と結果の見分け」掘り起こしから派生
+  {
+    id: "handoff-2026-05-22-1",
+    fromTutor: true,
+    toSubjectId: "subj-english",
+    relatedNodeId: "inf-adv",
+    relatedIssueId: undefined,
+    title: "副詞的用法 — 目的・結果・原因の見分けで混乱中",
+    body: [
+      "**ゆいから葵先生へ**",
+      "",
+      "今日の振り返りで本人がこう言ってました:",
+      "> 副詞的用法の「結果」と「目的」、どう見分けるの？前の言葉で判断するんだっけ？",
+      "",
+      "**所感**: 形容詞的用法（前の名詞を後ろから飾る）と副詞的用法を「前の言葉で判断」と混同してる気配。",
+      "「前の言葉」じゃなくて「to + 動詞 全体が何を修飾するか」が軸だと思うので、",
+      "ノード `inf` まで戻って **3 用法を並べて比較する** 形で対話してもらえると、本人の中で言葉になりそう。",
+      "",
+      "急ぎではないですが、次回 inf-adv の chat 開いた時に頭の片隅に置いといてください。",
+    ].join("\n"),
+    status: "unread",
+    createdAt: "2026-05-22T18:42:00.000Z",
+  },
+  // 過去分詞の口頭詰まり (issue-ai-3) に紐づく申し送り（既読済み、5/13 の判定からの派生）
+  {
+    id: "handoff-2026-05-13-1",
+    fromTutor: true,
+    toSubjectId: "subj-english",
+    relatedNodeId: "passive-basic",
+    relatedIssueId: "issue-ai-3",
+    title: "過去分詞 — 形は理解 / 口頭で詰まる",
+    body: [
+      "**ゆいから葵先生へ**",
+      "",
+      "本人から「不規則動詞、どう覚えるのが効率いいの？」と相談あり。",
+      "受動態の chat (5/13) でも `written` がパッと出ず詰まってたので、",
+      "**理解じゃなくて語彙の問題** という認識でいてほしいです。",
+      "",
+      "「覚える」じゃなくて「使い続けて自然に出るようにする」方向で、",
+      "短い英作文を組み立てさせる形で接してもらえると、本人の哲学（暗記ではなくツール化）にも沿います。",
+    ].join("\n"),
+    status: "read",
+    createdAt: "2026-05-13T20:00:00.000Z",
+    readAt: "2026-05-14T18:30:00.000Z",
+  },
+];
 
 // ============================================================================
 // 学習スケジュール (Phase 1 mock)

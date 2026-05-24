@@ -315,6 +315,33 @@ scripted mock の発話 (`**強調**` / 箇条書き / 引用 / 表) が生 `**.
 
 Phase 6 (Claude API 化) で AI 発話が markdown 構造を返してきても、この 1 コンポーネントで全 chat の表示が揃う。
 
+#### C2: Phase 3 拡張型 6 個 + 静的 mock データ
+
+> 実装: `web/lib/learn/types.ts` (5 型追加) / `web/lib/learn/mock-data.ts` (6 種類の mock)
+
+ARCHITECTURE.md で定義済みだが types.ts に存在しなかった 5 型を追加 + 既存 `NodeComprehension` (型は既存) の mock データを復活。REVIEW-2026-05-24.md 共通指摘の「ARCHITECTURE と実装の乖離」を解消する基盤工事。
+
+**追加した型** (`types.ts`):
+
+| 型 | 役割 | grill γ で選んだ mock 量 |
+|---|---|---|
+| `ReflectionLog` | 振り返りログ (daily/weekly/monthly)、5 セクション + 派生リンク | **7 日分** (daily 5 + weekly 1 + monthly 1) |
+| `LongTermGoal` | 月/学期/試験/フリーの長期コーチング契約 | 1 件 (2026 年 5 月) |
+| `WeeklyGoal` | 週次ゴール、parentGoalId で長期に紐付け | 1 件 (5/18 週) |
+| `GoalReview` | ゴール振り返り（合議制、achievementPct optional）| 1 件 (WeeklyGoal 振り返り) |
+| `TutorHandoff` | ゆい → 葵への申し送り (status: unread/read) | 2 件 (excavation 由来 / 過去分詞由来) |
+| `NodeComprehension` (既存) | ノード単位の AI 理解度判定 + 戻り先提案 | 2 件 (副詞的用法 0.45 / 過去分詞 0.62) |
+
+**NodeComprehension の経緯**: 型は既存だったが mock データは「Issue に統合で撤去」コメントで消されていた (mock-data.ts line 765-767)。ARCHITECTURE.md が「ゆいが読む重要型」と位置付けている以上は乖離なので、Phase 6 (Claude API) で「ゆいへの入力アダプタ」の土台として復活させた。
+
+**mock データの整合**:
+- ReflectionLog 7 日分は既存 `MOCK_SESSIONS` (5/20, 5/21, 5/22 にセッションあり) と連動。サボった日 (5/18, 5/19, 5/23) も意図的に含めて「サボった日も罪悪感少ない」哲学を表現。
+- `derivedIssueIds` / `derivedHandoffIds` で既存 `MOCK_ISSUES` / 新規 `MOCK_HANDOFFS` への参照を持つ。
+- `MOCK_LONG_TERM_GOALS` (1 件、5 月) ← `MOCK_WEEKLY_GOALS` (1 件、5/18 週、`parentGoalId` で紐付け) ← `MOCK_GOAL_REVIEWS` (1 件、achievementPct: 65)。
+- `MOCK_HANDOFFS` の 1 件は `handoff-2026-05-22-1` (副詞的用法、unread、excavation 由来) を ReflectionLog から参照、もう 1 件は `issue-ai-3` (過去分詞) に紐づく既読済み。
+
+派生実装 (excavation 終了で `MOCK_HANDOFFS.push(...)`、朝の振り返り完了で `MOCK_REFLECTIONS.push(...)`) は C3 で実装する。本 commit は型と静的データの土台までで止める。
+
 ---
 
 ## ゆい→葵への申し送り（TutorHandoff）

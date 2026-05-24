@@ -541,6 +541,169 @@ export type NodeComprehension = {
   reason: string;
   /** 浅い場合、推奨される戻り先ノード（親ノード等） */
   suggestedNodeId?: string;
+  /** どのセッションで判定されたか */
+  sessionId?: string;
+  /** 判定時刻 ISO */
+  createdAt?: string;
+};
+
+// ============================================================================
+// 振り返り / コーチング契約 / 申し送り（Phase 3 拡張）
+//
+// ARCHITECTURE.md「振り返りとコーチング契約」セクションで定義した型を実装。
+// REVIEW-2026-05-24.md の最重要 3 つの 3 つ目（Phase 3 拡張型 6 個追加）として
+// C2 で types.ts に追加された。
+//
+// ゆい先生のコーチング軸（純粋コーチ、教えない、引き出す）の永続化機構:
+// - ReflectionLog: 朝/夜の振り返りログ（日次 / 週次 / 月次）
+// - LongTermGoal / WeeklyGoal / GoalReview: コーチング契約の長期 + 週次
+// - TutorHandoff: ゆい → 葵への申し送り（葵 → ゆいの Issue.summary の逆方向）
+// ============================================================================
+
+/**
+ * 振り返りログの周期。
+ * - daily: 毎朝・毎晩（5 セクションが埋まる）
+ * - weekly: 週次（日曜想定、5 セクション + weekStart + goalIds）
+ * - monthly: 月次（月末、5 セクション + goalIds）
+ */
+export type ReflectionCadence = "daily" | "weekly" | "monthly";
+
+/**
+ * 振り返りログ。日記的に保存 + 中身から既存型（Issue / ScheduleItem / LessonReview / TutorHandoff）
+ * に派生リンクを持つハイブリッド型。
+ *
+ * cadence で 5 セクションのうち必要なものが埋まる（daily は基本全部、
+ * weekly/monthly は yesterdayReview のかわりに「期間全体のレビュー」が来る）。
+ */
+export type ReflectionLog = {
+  id: string;
+  learnerId: string;
+  /** 振り返り日付 (YYYY-MM-DD, ローカル) */
+  date: string;
+  cadence: ReflectionCadence;
+
+  // 5 セクション（cadence で必要なものだけ埋まる）
+  /** 昨日（or 期間）の学習レビュー */
+  yesterdayReview?: string;
+  /** 今日学校で習ったこと */
+  schoolToday?: string;
+  /** 起きたこと、気分 */
+  emotionsAndEvents?: string;
+  /** 疑問・不安・「先生の言ってる意味分からない」*/
+  questionsAndDoubts?: string;
+  /** 今日（or 期間）の計画 */
+  todayPlan?: string;
+
+  // 派生リンク（独立型のハイブリッド性の核心）
+  /** ここから生まれた Issue */
+  derivedIssueIds?: string[];
+  /** ここから生まれた ScheduleItem */
+  derivedScheduleItemIds?: string[];
+  /** ここから生まれた LessonReview */
+  derivedLessonReviewIds?: string[];
+  /** ここから生まれた TutorHandoff */
+  derivedHandoffIds?: string[];
+
+  // 週次 / 月次の場合
+  /** 週次の場合の月曜日付 (YYYY-MM-DD) */
+  weekStart?: string;
+  /** 該当期間の goal id 群 */
+  goalIds?: string[];
+
+  createdAt: string;
+};
+
+/**
+ * 長期ゴール（月 / 学期 / 試験単位 / フリー）。
+ * 月初 or 試験前にコーチング契約として設定される。
+ */
+export type LongTermGoal = {
+  id: string;
+  learnerId: string;
+  scope: "month" | "semester" | "exam" | "free";
+  /** 「2026 年 5 月」「中間試験まで」のような人間表記 */
+  scopeLabel: string;
+  /** 開始日 (YYYY-MM-DD) */
+  startDate: string;
+  /** 終了日 (YYYY-MM-DD) */
+  endDate: string;
+  /**
+   * ゴール本文（自由テキスト）。
+   * 学習成果 / メタ認知 / 気持ち / モチベ、本人が言ったものは何でも OK。
+   */
+  title: string;
+  detail?: string;
+  status: "active" | "achieved" | "abandoned" | "expired";
+  createdAt: string;
+  achievedAt?: string;
+};
+
+/**
+ * 週次ゴール。長期ゴールに紐づく（紐付けなしも可）。
+ * 週初に設定、週末に GoalReview で振り返る。
+ */
+export type WeeklyGoal = {
+  id: string;
+  learnerId: string;
+  /** 週の月曜日付 (YYYY-MM-DD) */
+  weekStart: string;
+  /** 親 LongTermGoal への紐付け（任意）*/
+  parentGoalId?: string;
+  title: string;
+  detail?: string;
+  status: "active" | "achieved" | "missed";
+  createdAt: string;
+};
+
+/**
+ * ゴール振り返り（合議制）。
+ * LongTermGoal / WeeklyGoal の両方に紐付けられる（goalId は両方を指せる）。
+ */
+export type GoalReview = {
+  id: string;
+  /** LongTermGoal.id or WeeklyGoal.id */
+  goalId: string;
+  learnerId: string;
+  /** 振り返り日 (YYYY-MM-DD) */
+  reviewDate: string;
+  /** ゆいと本人で書いた振り返り (自由テキスト) */
+  reflection: string;
+  /** 0-100 自己評価 (optional、メタゴールでは未使用) */
+  achievementPct?: number;
+  /** 「次どうする?」の具体アクション */
+  nextActions?: string[];
+  createdAt: string;
+};
+
+/**
+ * ゆい先生 → 科目の先生 への申し送りドキュメント。
+ * 葵先生 → ゆい先生 の `Issue.summary` の逆方向。
+ *
+ * 流れ:
+ *   1. ゆいが掘り起こし or ハードガード hit で「これは葵に振ろう」と判断
+ *   2. TutorHandoff を draft で作成（status: "unread"）
+ *   3. 葵 IssueChat ヘッダに「ゆいから N 件」表示
+ *   4. 葵がクリック → 読む → status を "read" に更新 → 指導戦略に反映
+ *
+ * 将来 reverse 方向（葵 → ゆい）の handoff も追加するなら fromTutor を bool union に。
+ */
+export type TutorHandoff = {
+  id: string;
+  /** 現状は常に true（ゆい→葵）。将来 reverse 追加時に false が登場する */
+  fromTutor: true;
+  /** 葵先生（英語）の subject id */
+  toSubjectId: string;
+  /** 関連ノード（あれば）*/
+  relatedNodeId?: string;
+  /** 関連 Issue（あれば）*/
+  relatedIssueId?: string;
+  /** 1 行タイトル（「不定詞 名詞的用法 — 動名詞との使い分けで混乱中」等）*/
+  title: string;
+  /** ヒアリング要約 + ゆいの所感 + 指導提案（マークダウン OK）*/
+  body: string;
+  status: "unread" | "read";
+  createdAt: string;
+  readAt?: string;
 };
 
 // ============================================================================
