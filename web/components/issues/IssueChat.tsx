@@ -22,6 +22,8 @@ import type {
 } from "@/lib/learn/types";
 import { IssueChatBubble } from "./IssueChatBubble";
 import { IssueChatComposer } from "./IssueChatComposer";
+import { HandoffBanner } from "./HandoffBanner";
+import { MOCK_HANDOFFS } from "@/lib/learn/mock-data";
 import {
   buildInitialIssueChat,
   buildNextIssueChatReply,
@@ -89,6 +91,17 @@ export function IssueChat({
   const nodeName = useMemo(
     () => nodes.find((n) => n.id === issue.nodeId)?.name ?? issue.nodeId,
     [nodes, issue.nodeId],
+  );
+
+  // C5: 当該 Issue に紐づくゆいからの申し送り
+  // relatedIssueId == issue.id で絞り込み。日時昇順で並べる（古い順 = 出来事順）。
+  // MOCK_HANDOFFS への ranetime push (C3) も即反映される。
+  const issueHandoffs = useMemo(
+    () =>
+      MOCK_HANDOFFS.filter((h) => h.relatedIssueId === issue.id).sort(
+        (a, b) => (a.createdAt < b.createdAt ? -1 : 1),
+      ),
+    [issue.id],
   );
 
   // 引用元 node 名（trigger-message-quote 表示用）
@@ -186,6 +199,9 @@ export function IssueChat({
           </Button>
         )}
       </header>
+
+      {/* C5: ゆいからの申し送りバナー（handoff があれば表示） */}
+      <HandoffBanner handoffs={issueHandoffs} />
 
       {/* 中央: メッセージリスト */}
       <div className="min-h-0 flex-1 overflow-y-auto">

@@ -417,6 +417,27 @@ C2 + C3 で永続化された `ReflectionLog` を実際に画面で見られる�
 
 **mock データソース**: `MOCK_REFLECTION_LOGS` / `MOCK_ISSUES` / `MOCK_HANDOFFS` を直接 import。C3 の派生実装で実行時に追加される log もそのまま表示される。Phase 7 で Supabase 化する時に props で受け取る形にリファクタ予定。
 
+#### C5: IssueChat ヘッダ「ゆいから N 件」バッジ
+
+> 実装: `web/components/issues/HandoffBanner.tsx` 新設、`IssueChat.tsx` ヘッダ下に挿入
+
+`IssueChat` (課題 chat) のヘッダ直下に「ゆいから N 件」バッジを表示。クリックで展開して各 `TutorHandoff` の詳細を読める。
+
+**抽出ロジック**: `MOCK_HANDOFFS.filter(h => h.relatedIssueId === issue.id)` (日時昇順)。C3 のランタイム派生も即反映される。
+
+**HandoffBanner の表示**:
+
+| 状態 | 見た目 |
+|---|---|
+| 折り畳み (default) | `📨 ゆい先生から N 件` + 未読バッジ (緑) + 「申し送りを読む」 chevron |
+| 展開 | 各 handoff をカード表示。Mail/MailOpen アイコン、タイトル、未読/既読バッジ、本文 (markdown)、作成日時、既読日時 |
+
+**未読の強調**: status === "unread" の handoff は emerald カラーで強調、Mail アイコン (closed envelope)。read は MailOpen + muted カラー。これで「葵が読むモチベ」を視覚的に作る。
+
+**既読化のアクション**: 現状は読み取り専用 (mutation なし)。Phase 7 (Supabase 永続化) と合わせて「読んだら自動的に read に更新」を実装する。Phase 3 段階では `MOCK_HANDOFFS` が const array で immutable に近いため、ステート管理は複雑化を避けて見送り。
+
+**動作確認**: 既存 mock の `handoff-2026-05-13-1` (read) が `issue-ai-3` (過去分詞) のヘッダに表示される。`handoff-2026-05-22-1` は `relatedIssueId: undefined` (nodeId に紐付く一般 handoff) なので IssueChat ヘッダには出ない。C3 の excavation 経由で派生する handoff は `relatedIssueId` を持つので動的に出る。
+
 ---
 
 ## ゆい→葵への申し送り（TutorHandoff）
@@ -953,6 +974,7 @@ components/
 │   ├── IssueChat.tsx               # ★Phase 3: 課題 chat 本体（科目の先生との対話）
 │   ├── IssueChatBubble.tsx         # ★Phase 3: メッセージ吹き出し（IssueChatMessage 描画）
 │   ├── IssueChatComposer.tsx       # ★Phase 3: 課題 chat の入力欄
+│   ├── HandoffBanner.tsx           # ★C5: ゆいからの申し送りバナー（IssueChat ヘッダ下）
 │   └── cards/
 │       ├── TriggerMessageQuoteCard.tsx  # ★Phase 3: AI 発 Issue の triggerMessage 引用
 │       └── ResolveSuggestionCard.tsx    # ★Phase 3: 「クリアして OK そう」AI 提案
