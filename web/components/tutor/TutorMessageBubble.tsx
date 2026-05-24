@@ -13,6 +13,7 @@ import type {
   TutorMessage,
   TutorTopic,
 } from "@/lib/learn/types";
+import { MarkdownText } from "@/components/chat/MarkdownText";
 import { TutorAvatar } from "./TutorAvatar";
 import { SubjectPickerCard } from "./cards/SubjectPickerCard";
 import { MaterialPickerCard } from "./cards/MaterialPickerCard";
@@ -63,8 +64,8 @@ export function TutorMessageBubble({
             ゆい先生
           </span>
           {message.text && (
-            <div className="rounded-2xl rounded-tl-md border border-border bg-card px-3.5 py-2.5 text-sm leading-relaxed text-card-foreground whitespace-pre-wrap">
-              {message.text}
+            <div className="rounded-2xl rounded-tl-md border border-border bg-card px-3.5 py-2.5 text-card-foreground">
+              <MarkdownText text={message.text} variant="card" />
             </div>
           )}
           {message.card && (
@@ -117,8 +118,8 @@ export function TutorMessageBubble({
   // learner
   return (
     <div className="flex justify-end">
-      <div className="max-w-[80%] rounded-2xl rounded-tr-md bg-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground whitespace-pre-wrap">
-        {message.text}
+      <div className="max-w-[80%] rounded-2xl rounded-tr-md bg-primary px-3.5 py-2.5 text-primary-foreground">
+        <MarkdownText text={message.text ?? ""} variant="bubble-primary" />
       </div>
     </div>
   );

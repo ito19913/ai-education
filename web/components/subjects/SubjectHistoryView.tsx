@@ -34,6 +34,7 @@ import {
   type SubjectHistoryItem,
 } from "@/lib/learn/subject-history";
 import { ROOT_NODE_TO_SUBJECT } from "@/lib/learn/mock-data";
+import { stripMarkdown } from "@/components/chat/MarkdownText";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -199,10 +200,13 @@ function HistoryItemCard({ item }: { item: SubjectHistoryItem }) {
   const role = item.message.role;
   const isTeacher = role === "assistant" || role === "teacher";
   // ChatMessage は `content`、IssueChatMessage は `text` (オプショナル)
-  const text =
+  // preview は line-clamp で 4 行制限。markdown レンダリングすると line-clamp が
+  // 期待通り動かないため、装飾記法を平文化して可読性だけ確保する。
+  const rawText =
     item.kind === "node-chat"
       ? item.message.content
       : (item.message.text ?? "（カード or 添付）");
+  const text = stripMarkdown(rawText);
   const dateLabel = formatDateTime(item.message.createdAt);
 
   const jumpHref =

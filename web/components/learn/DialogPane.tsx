@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Lightbulb, Mic, ZoomIn } from "lucide-react";
+import { MarkdownText } from "@/components/chat/MarkdownText";
 import type { ChatMessage, KnowledgeNode } from "@/lib/learn/types";
 import { cn } from "@/lib/utils";
 
@@ -102,13 +103,16 @@ function MessageBubble({
     >
       <div
         className={cn(
-          "max-w-[80%] whitespace-pre-line rounded-lg px-3 py-2 text-sm leading-relaxed",
+          "max-w-[80%] rounded-lg px-3 py-2",
           isUser
             ? "bg-primary text-primary-foreground"
             : "border border-border bg-card text-card-foreground",
         )}
       >
-        {message.content}
+        <MarkdownText
+          text={message.content}
+          variant={isUser ? "bubble-primary" : "card"}
+        />
       </div>
       {!isUser && (
         <div className="flex gap-2">

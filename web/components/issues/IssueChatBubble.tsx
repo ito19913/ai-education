@@ -8,6 +8,7 @@
  * TutorMessageBubble の双子だが、課題 chat 固有のカード種別を扱う。
  */
 import type { IssueChatMessage } from "@/lib/learn/types";
+import { MarkdownText } from "@/components/chat/MarkdownText";
 import { TriggerMessageQuoteCard } from "./cards/TriggerMessageQuoteCard";
 import { ResolveSuggestionCard } from "./cards/ResolveSuggestionCard";
 
@@ -38,8 +39,8 @@ export function IssueChatBubble({
             あおい先生（英語）
           </span>
           {message.text && (
-            <div className="rounded-2xl rounded-tl-md border border-border bg-card px-3.5 py-2.5 text-sm leading-relaxed text-card-foreground whitespace-pre-wrap">
-              {message.text}
+            <div className="rounded-2xl rounded-tl-md border border-border bg-card px-3.5 py-2.5 text-card-foreground">
+              <MarkdownText text={message.text} variant="card" />
             </div>
           )}
           {message.card && (
@@ -67,8 +68,8 @@ export function IssueChatBubble({
   // learner
   return (
     <div className="flex justify-end">
-      <div className="max-w-[80%] rounded-2xl rounded-tr-md bg-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground whitespace-pre-wrap">
-        {message.text}
+      <div className="max-w-[80%] rounded-2xl rounded-tr-md bg-primary px-3.5 py-2.5 text-primary-foreground">
+        <MarkdownText text={message.text ?? ""} variant="bubble-primary" />
       </div>
     </div>
   );

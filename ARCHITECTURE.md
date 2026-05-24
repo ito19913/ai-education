@@ -291,6 +291,30 @@
 - 「ゆい先生」クリック → `onSend("ゆい対話履歴")` → tutor-mock の検索意図検出にヒット → `tutor-archive` view
 - 科目の先生クリック → `onSend(teacher.displayName)` → tutor-mock の hub action → `subject-history` view
 
+### Phase 3 レビュー追従 (2026-05-24 着手)
+
+[REVIEW-2026-05-24.md](./REVIEW-2026-05-24.md) で最重要 3 つとされた項目への対応。独立コミット C1-C6 で順次実装。grill-me で着手順序を `1 markdown → 3 型追加 (γ UI 表示まで) → 2 ハードガード` と確定。
+
+#### C1: chat バブルの markdown レンダリング
+
+> 実装: `web/components/chat/MarkdownText.tsx`
+
+scripted mock の発話 (`**強調**` / 箇条書き / 引用 / 表) が生 `**...**` のまま表示されていた問題を解消。react-markdown + remark-gfm でラップした共通コンポーネントを chat 系で使用:
+
+| 箇所 | variant | 役割 |
+|---|---|---|
+| `TutorMessageBubble` (tutor) | card | ゆい先生発話 |
+| `TutorMessageBubble` (learner) | bubble-primary | 本人発話 |
+| `DialogPane` MessageBubble | card / bubble-primary | 葵先生 / 本人 ノード対話 |
+| `IssueChatBubble` (teacher) | card | 葵先生 課題 chat |
+| `IssueChatBubble` (learner) | bubble-primary | 本人 課題 chat |
+
+`SubjectHistoryView` の preview は `line-clamp: 4` 制約があり markdown レンダリングと相性が悪いため、`stripMarkdown()` ヘルパーで平文化のみ行う。
+
+`bubble-primary` variant は learner 発話用 (背景 = primary 色) で、`<strong>` / `<code>` / `<blockquote>` / リスト marker の色を反転して可読性を維持。HTML タグは react-markdown のデフォルトで通さない (XSS 防止)。
+
+Phase 6 (Claude API 化) で AI 発話が markdown 構造を返してきても、この 1 コンポーネントで全 chat の表示が揃う。
+
 ---
 
 ## ゆい→葵への申し送り（TutorHandoff）
@@ -835,6 +859,8 @@ components/
 │   └── HistoryCalendarView.tsx     # 月単位カレンダー
 ├── subjects/                       # ★Phase 3: 科目の先生 履歴ビュー
 │   └── SubjectHistoryView.tsx      # ノード対話 + 課題 chat の時系列集約タイムライン
+├── chat/                           # ★Phase 3 レビュー追従: chat 共通基盤
+│   └── MarkdownText.tsx            # ★C1: chat バブル用 markdown renderer + stripMarkdown
 ├── learn/                          # 学習画面（別ルート、4 ペイン）
 │   ├── LearnWorkspace.tsx          # 親 + state
 │   ├── LearnSidebar.tsx            # サイドバー（担任 / スケジュール / 課題 / 履歴 / 憲法 / 教材 / ゴミ箱）
