@@ -1040,6 +1040,7 @@ TutorHandoff ドキュメント作成 (mock では chat 内のカード)
 | `/tutor?view=history` | 右ペインに学習履歴 | Phase 3 |
 | `/tutor?view=material-new` | 右ペインに新規教材登録ウィザード（`MaterialEditWizard` を embed） | Phase 3 (※ 2026-05-25 grill で 3 step 化予定、本書「## 教材アップロード設計 (2026-05-25 grill)」参照) |
 | `/tutor?view=material-detail&id=xxx` | **右ペインに教材詳細ページ** (体系図 + 葵評価コメント + 教材ごと独立葵 chat、本書「## 教材アップロード設計 (2026-05-25 grill)」参照) | Phase 6 (新規追加予定) |
+| `/tutor?view=subjects` | **右ペインに科目設定パネル** (`SubjectSettingsPanel`、ハードコード 5 教科一覧 + 手動追加フォーム、本書「## 科目追加設計 (2026-05-25 grill)」参照) | Phase 6/7 (新規追加予定) |
 | `/tutor?view=subject-history&subjectId=xxx` | 右ペインに科目の先生との対話履歴ビュー（ノード対話 + 課題 chat の時系列集約）| Phase 3 |
 | `/tutor?view=tutor-archive` | **右ペインにゆい先生対話アーカイブ**（日付セレクター + 話題フィルター、readonly） | ✓ Phase 3 中盤 |
 | `/tutor?view=tutor-archive&date=YYYY-MM-DD` | 上記で特定日を即表示（検索結果カードからのジャンプ） | ✓ Phase 3 中盤 |
@@ -1425,7 +1426,7 @@ TutorHandoff {
 | 含めるデータ | **ノード対話 (`ChatMessage`) + 課題 chat (`IssueChatMessage`) の 2 種類のみ**（サマリー類は別画面）|
 | 起動点 | **LearnSidebar 上部「先生」セクション**（ゆい先生の下に並列）+ ゆい chat の keyword 分岐（「あおい先生」「英語履歴」等）|
 | subjectId 逆引き | `KnowledgeNode` は `parentId` のみ持つため、root を辿って `ROOT_NODE_TO_SUBJECT` で解決。`lib/learn/subject-resolver.ts` で実装 |
-| 科目の先生 persona | `Subject.teacher: SubjectTeacher` で固有名 / アバター / サブタイトルを保持。MVP は **あおい先生（英語）** のみ |
+| 科目の先生 persona | `Subject.teacher: SubjectTeacher` で固有名 / アバター / サブタイトルを保持。MVP は **あおい先生（英語）** のみ (※ 2026-05-25 追加 grill 2 で **主要 5 教科ハードコード展開** + 手動追加経路を設計確定、本書「## 科目追加設計 (2026-05-25 grill)」参照、実装は Phase 6/7) |
 
 ### コーチング設計（Phase 3 拡張）
 
@@ -1652,8 +1653,133 @@ type MaterialReview = {
 - 本書 1404-1413 (教材追加ゆいハブ化)
 - 本書 1514-1551 (Phase 4 grill 確定、教材ウィザード関連の Q3-Q11)
 - 本書 1287 (Phase 6 ロードマップ「教材 PDF → roadmap 自動生成」)
+- 本書「## 科目追加設計 (2026-05-25 grill)」 (姉妹 grill、同日、共通設計原則あり)
 - `TUTOR-ROLE.md` (ゆい / 葵の境界)
 - `PHILOSOPHY.md` 中核 2 (ツール化) / 中核 5 (体系の骨格)
+
+---
+
+## 科目追加設計 (2026-05-25 grill)
+
+2026-05-25 追加 grill 2 回目 (教材アップロード設計 grill と同日)。計画立案・教材ウィザードの `SubjectPickerCard` が **英語 1 科目のみ表示** という UX 状態 (`MOCK_SUBJECTS` には subj-english しかハードコードされていないため) をきっかけに、「**科目**」エンティティの追加動線設計を 9 個の確定で固めた。MVP 範囲は英語 1 科目のみ継続、本セクションは設計の SSoT、実装は Phase 6/7 以降。
+
+### 9 確定事項
+
+| # | 確定 |
+|---|---|
+| S1 | MVP は英語のみ継続、本 grill は設計確定のみ、実装は Phase 6/7 以降 |
+| S2 | **主要科目はハードコードでデフォルトセット**、先生キャラも同時に決め打ち (S9 で 5 教科に確定) |
+| S3 | ハードコード外 (技術家庭・道徳 等) は **手動追加** (科目名 + 先生名を入力) |
+| S4 | 「科目の設定」専用入口が必要 |
+| S5 | 計画立案フローで「科目がない」と気づいた時、ゆいが「科目設定に行こう」と誘導する発話を実装 |
+| S6 | 入口 = **ゆいハブメニュー「科目を追加」主動線 + `/admin/subjects` バックアップ動線** (教材追加と同じ二重構造、本書 1404-1413 と同パターン) |
+| S7 | 追加主体 = **親 + 娘さん両方** (教材アップ確定 4 と同じ、admin/learner 区別なし)。削除運用は実装時に詰める (ハードコード 5 教科は削除不可、手動追加分は管理画面で削除可 を予定) |
+| S8 | 各「科目を選ぶ」UI (SubjectPickerCard / ウィザード Step1 科目ドロップダウン) に **「+ 新規科目」リンク**、クリックで **ゆいハブの科目設定画面に遷移**、追加完了後元のフローに戻る (追加処理ロジックは 1 箇所に統一) |
+| S9 | ハードコードデフォルト = **主要 5 教科 (英・数・国・理・社)**。AI 学習に親和性高い座学教科に限定、実技 (体育・音楽・美術) は対象外、必要なら S3 で手動追加 |
+
+### データモデル現状と変更
+
+```
+現状 (mock-data.ts:554-574):
+- MOCK_SUBJECTS: [subj-english (あおい先生)] 1 件のみ
+- ROOT_NODE_TO_SUBJECT: { grammar: "subj-english" } のみ
+
+S9 後 (ハードコード拡張):
+- MOCK_SUBJECTS: [英語(あおい), 数学(?), 国語(?), 理科(?), 社会(?)] 5 件
+- ROOT_NODE_TO_SUBJECT: { grammar: "subj-english", math-root: "subj-math", ... } 5 件
+- KnowledgeNode root: 各教科の root ノードを新規追加
+- (先生キャラ命名は ito19 さんが実装時に提示)
+
+S3 (手動追加分):
+- MOCK_SUBJECTS に動的 push (Phase 7 で Supabase 永続化)
+```
+
+### 設計の流れ図
+
+```
+[科目選択 UI: SubjectPickerCard or ウィザード Step1]
+        ↓
+候補リスト: ハードコード 5 教科 + 手動追加分
+        ↓
+  ┌─────────────┴─────────────┐
+  ↓                            ↓
+既存科目から選ぶ           [+ 新規科目] リンク
+  ↓                            ↓
+元のフロー続行              ゆいハブ「科目を追加」画面に遷移
+                              (右ペインに embedded)
+                              ↓
+                          科目名 + 先生名入力フォーム
+                              ↓
+                          MOCK_SUBJECTS に push
+                              ↓
+                          ゆいが「追加したよ」発話
+                              ↓
+                          元のフローに戻る (科目選択肢に新科目登場)
+```
+
+### 入口の二重構造 (S6)
+
+| 動線 | 説明 | 想定ユーザー |
+|---|---|---|
+| 主動線 | ゆいハブメニュー「もっと ▼」→「科目を追加」 → 右ペインに科目設定パネル embedded | 親 + 娘さん両方 |
+| バックアップ動線 | `/admin/subjects` (URL バー直入力、サイドバーには出さない) | 親が一括設定する時 (学校シラバス見ながら等) |
+
+### 影響を受ける既存実装
+
+| 既存実装 | 影響 |
+|---|---|
+| `MOCK_SUBJECTS` (mock-data.ts:554) | 1 件 → 5 件 (主要 5 教科ハードコード、各先生キャラ命名) |
+| `ROOT_NODE_TO_SUBJECT` (mock-data.ts:572) | `grammar` のみ → 5 教科分追加 |
+| `KnowledgeNode` root (mock-data.ts) | 各教科の root ノードを新規追加 |
+| `SubjectPickerCard` (Phase 5 実装) | 候補リスト末尾に **「+ 新規科目」リンク** 追加、クリックで `/tutor?view=subjects` 遷移 (S8) |
+| `Step1MetaAndUpload` (Phase 4 実装、教材ウィザード) | 科目選択ドロップダウンの末尾に **「+ 新規科目」オプション** 追加、選択で同上の遷移 |
+| ゆい mock (`tutor-mock.ts`) | 「科目を追加」 keyword 分岐 + 計画立案中の「科目がない」分岐 (S5) + 科目設定完了 onComplete 発話 |
+| 新規 UI コンポーネント | `SubjectSettingsPanel` (右ペインに embedded、リスト + 追加フォーム) |
+| 新規ルート | `/tutor?view=subjects` (科目設定パネル) + `/admin/subjects` (一括管理画面、S6 バックアップ動線) |
+
+### Phase 6/7 で実装する具体タスク (本 grill が決めたもの)
+
+- MOCK_SUBJECTS 拡張 (5 教科ハードコード、先生キャラ命名、Phase 6 で着手可能)
+- 各教科 root KnowledgeNode 追加
+- ゆいハブメニュー「科目を追加」分岐 + `SubjectSettingsPanel` 新規実装
+- SubjectPickerCard / Step1MetaAndUpload に「+ 新規科目」リンク追加
+- `/admin/subjects` バックアップ動線実装
+- 計画立案フローでの「科目がない」検出 + ゆい誘導発話 (S5)
+- Phase 7 Supabase: `subjects` テーブル + RLS (家族のみアクセス) + 削除運用 (ハードコード保護 + 手動追加分削除時の関連データ整合)
+
+### 未決事項 (実装着手時に詰める)
+
+- 5 教科の先生キャラ命名 (英語=葵既存、残り 4 教科 = ito19 さん命名)
+- 科目追加 UI の入力項目 (科目名 / 先生名 + アバター文字 / 色 / subtitle 等)
+- 削除運用の細部 (ハードコード 5 教科は削除不可、手動追加分削除時の関連 Material / LearningPlan の扱い)
+- `SubjectSettingsPanel` の UI 細部 (リスト + 追加フォーム + 編集機能の有無)
+- 「+ 新規科目」リンクのビジュアル (ボタン / リンク / アイコン付きカード)
+- ゆい mock の「科目を追加」 keyword 分岐パターン (「科目追加」「教科追加」「英語以外もやりたい」等)
+
+### 教材アップロード設計 (本書 1554 セクション) との関係
+
+| 観点 | 教材アップロード | 科目追加 |
+|---|---|---|
+| 主体 | 親 + 娘さん両方 (確定 4) | 親 + 娘さん両方 (S7) |
+| 入口 | ゆいハブ + `/admin/materials/new` バックアップ | ゆいハブ + `/admin/subjects` バックアップ |
+| 「+ 新規」誘導 | 教材一覧 / 詳細遷移時 | SubjectPickerCard / Step1 ドロップダウン |
+| AI 処理 | **葵が読む** (体系図 + 評価コメント生成) | **AI 処理なし** (人間入力のみ、純粋な設定追加) |
+| 出力 | 体系図 + 評価コメント + 教材ごと chat | MOCK_SUBJECTS に push、それだけ |
+
+### PHILOSOPHY / TUTOR-ROLE との整合
+
+- **PHILOSOPHY.md 本文**: 修正不要 (中2 5 教科全てが学習対象になり得るが、MVP は英語のみという縮約は維持、PHILOSOPHY「広く浅くは NG」と整合)
+- **TUTOR-ROLE.md**: 修正不要 (科目ごとに先生 = 葵パターンの拡張、葵は英語、他教科に同様の専門先生を配置)
+- **境界違反 NG**: 「葵 1 人が複数科目を兼任」は禁止 (キャラ崩壊、TUTOR-ROLE「科目専門性」違反)
+
+### 関連箇所
+
+- 本書「## 教材アップロード設計 (2026-05-25 grill)」 (姉妹 grill、同日、共通設計原則あり)
+- 本書 1404-1413 (教材追加ゆいハブ化、入口の二重構造の原型)
+- 本書 1425 (MVP は あおい先生 (英語) のみ — 本 grill S1 で再確認)
+- `web/lib/learn/mock-data.ts:554-574` (MOCK_SUBJECTS / ROOT_NODE_TO_SUBJECT 現状)
+- `web/components/tutor/cards/SubjectPickerCard.tsx` (Phase 5 実装、「+ 新規科目」リンク追加対象)
+- `web/components/admin/steps/Step1MetaAndUpload.tsx` (Phase 4 実装、科目ドロップダウン拡張対象)
 
 ---
 
