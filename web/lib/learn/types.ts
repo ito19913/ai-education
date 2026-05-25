@@ -410,6 +410,26 @@ export type TutorCard =
       }>;
     }
   | {
+      /**
+       * Phase 5 P5-Q4 確定: 上ノード復習提案カード。
+       * NodeComprehension 低下検出 or テスト失敗 (failureAction: "review-parent")
+       * 時に生成された NodeReviewSuggestion を、ゆい chat 冒頭で 3 択提示する。
+       *
+       * accept → 復習 GT 生成 (mode: "review", nodeId: parentNodeId) → 即時 SI 挿入
+       * dismiss → status: "dismissed"
+       * deferred → pending のまま、次セッションで再提示
+       */
+      kind: "node-review-suggestion";
+      /** 対象 NodeReviewSuggestion.id */
+      suggestionId: string;
+      /** 失敗した子ノード名 (例: 「副詞的用法」) */
+      failedNodeName: string;
+      /** 戻る先の親ノード名 (例: 「不定詞」) */
+      parentNodeName: string;
+      /** ゆいの所感 (なぜ戻った方がいいか) */
+      reason: string;
+    }
+  | {
       /** Phase 3 拡張: 「あの話したよね?」検索ヒット候補のリスト */
       kind: "chat-search-result";
       /** AI が抽出 or 本人が指定したクエリ */

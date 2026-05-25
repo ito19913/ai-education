@@ -26,11 +26,13 @@ import type {
   TutorTopic,
 } from "./types";
 import {
+  MOCK_GENERATED_TASKS,
   MOCK_HANDOFFS,
   MOCK_ISSUES,
   MOCK_LEARNING_PLANS,
   MOCK_MATERIALS,
   MOCK_NODE_COMPREHENSIONS,
+  MOCK_NODE_REVIEW_SUGGESTIONS,
   MOCK_REFLECTION_LOGS,
   MOCK_SCHEDULE_TODAY,
   MOCK_SCHOOL_DAILY_REPORTS,
@@ -141,6 +143,35 @@ export function buildInitialTutorThread(
       createdAt: now.toISOString(),
     },
   ];
+
+  // C18 Phase 5 P5-Q4: pending な NodeReviewSuggestion があれば冒頭で提示
+  // (本日 1 件まで、複数 pending は最新 1 件のみ提示。多重提示は鬱陶しい)
+  const pendingSuggestion = getOldestPendingSuggestion();
+  if (pendingSuggestion) {
+    const failedNode = MOCK_TREE.find(
+      (n) => n.id === pendingSuggestion.failedNodeId,
+    );
+    const parentNode = MOCK_TREE.find(
+      (n) => n.id === pendingSuggestion.suggestedParentNodeId,
+    );
+    if (failedNode && parentNode) {
+      messages.push({
+        id: "t-1-suggestion",
+        role: "tutor",
+        topic: "morning-reflection",
+        text: `あ、ちょっと提案あるんだけど。\n\n**葵先生から**: **${failedNode.name}** が浅めだったから、**${parentNode.name}** に戻って整理し直すと定着しやすいかも、って。\n\nどうする?`,
+        card: {
+          kind: "node-review-suggestion",
+          suggestionId: pendingSuggestion.id,
+          failedNodeName: failedNode.name,
+          parentNodeName: parentNode.name,
+          reason: pendingSuggestion.reason,
+        },
+        quickReplies: ["復習する", "あとで考える", "いらない"],
+        createdAt: new Date(now.getTime() + 1000).toISOString(),
+      });
+    }
+  }
 
   return {
     id: "tutor-thread-default",
@@ -622,6 +653,88 @@ function computeWeakNodeCandidates(): Array<{
 
   // 上位 5 件まで (Phase 4 Q10 「上位 3 件 + 浅いノード 2 件」と整合)
   return candidates.slice(0, 5);
+}
+
+/**
+ * C18 Phase 5 P5-Q4: pending な NodeReviewSuggestion を 1 件取得。
+ * 最新の pending を返す (mock では 1 件しかない想定だが将来複数対応)。
+ */
+function getOldestPendingSuggestion() {
+  return MOCK_NODE_REVIEW_SUGGESTIONS.find((s) => s.status === "pending");
+}
+
+/**
+ * C18 Phase 5 P5-Q4: NodeReviewSuggestion を accept する副作用。
+ *
+ * 1. Suggestion.status を "accepted" に更新
+ * 2. 復習 GT を生成して MOCK_GENERATED_TASKS に push
+ * 3. 復習 SI を生成して MOCK_SCHEDULE_TODAY に push (今日 = 即時挿入)
+ *
+ * 戻り値: 復習 GT/SI の情報 (chat メッセージで言及するため)
+ */
+function acceptNodeReviewSuggestion(suggestionId: string): {
+  parentNodeName: string;
+  gtId: string;
+  siId: string;
+} | null {
+  const s = MOCK_NODE_REVIEW_SUGGESTIONS.find((x) => x.id === suggestionId);
+  if (!s || s.status !== "pending") return null;
+  const parentNode = MOCK_TREE.find((n) => n.id === s.suggestedParentNodeId);
+  if (!parentNode) return null;
+
+  const nowIso = new Date().toISOString();
+  s.status = "accepted";
+  s.acceptedAt = nowIso;
+
+  const today = formatLocalDate(new Date());
+  const gtId = makeDerivedId("gtask-review");
+  // 復習 GT (mode: review、親ノードに対して、resource: note か textbook)
+  MOCK_GENERATED_TASKS.push({
+    id: gtId,
+    learnerId: "girl",
+    planId: MOCK_LEARNING_PLANS[0]?.id ?? "plan-english-2026-05",
+    nodeId: s.suggestedParentNodeId,
+    mode: "review",
+    resource: { type: "note" }, // 自分のノートで復習
+    estimatedMinutes: 20,
+    priority: 5,
+    dueDate: today,
+    status: "todo",
+    scheduledDate: today,
+    rationale: `Suggestion accept: ${parentNode.name} に戻って復習。理由: ${s.reason}`,
+    generatedAt: nowIso,
+  });
+
+  // 復習 SI (P5-Q1 1 GT : 1 SI 紐付け、generatedTaskId 埋め込み)
+  const siId = makeDerivedId("sched-review");
+  MOCK_SCHEDULE_TODAY.push({
+    id: siId,
+    type: "lesson-review",
+    sourceId: gtId,
+    nodeId: s.suggestedParentNodeId,
+    title: `復習: ${parentNode.name} (上ノード復習提案)`,
+    detail: `${s.failedNodeId} の浅さから親ノード ${parentNode.name} に戻って整理する復習。`,
+    date: today,
+    estimateMinutes: 20,
+    status: "todo",
+    aiRationale: `NodeReviewSuggestion accept で自動追加 (P5-Q4 即時挿入)`,
+    source: "ad-hoc", // 元 plan SI じゃないので ad-hoc 扱い (今週空きに割り込み)
+    generatedTaskId: gtId,
+    tags: ["復習", "上ノード復習"],
+  });
+
+  return { parentNodeName: parentNode.name, gtId, siId };
+}
+
+/**
+ * C18 Phase 5 P5-Q4: NodeReviewSuggestion を dismiss する副作用。
+ */
+function dismissNodeReviewSuggestion(suggestionId: string): boolean {
+  const s = MOCK_NODE_REVIEW_SUGGESTIONS.find((x) => x.id === suggestionId);
+  if (!s || s.status !== "pending") return false;
+  s.status = "dismissed";
+  s.dismissedAt = new Date().toISOString();
+  return true;
 }
 
 /**
@@ -1371,6 +1484,71 @@ function buildNextTutorReplyInner(args: {
         createdAt: now,
       },
     };
+  }
+
+  // C18 Phase 5 P5-Q4: NodeReviewSuggestion 3 択発話分岐
+  // 冒頭で提示された Suggestion カードの quickReplies に対する応答。
+  // 「復習する」/「やる」 = accept、「いらない」 = dismiss、「あとで」 = pending のまま
+  const pendingForResponse = getOldestPendingSuggestion();
+  if (pendingForResponse) {
+    const wantsAccept =
+      lower.includes("復習する") ||
+      lower === "やる" ||
+      lower.includes("やってみる") ||
+      lower.includes("やろう") ||
+      lower === "accept";
+    const wantsDismiss =
+      lower.includes("いらない") ||
+      lower.includes("いいかな") ||
+      lower.includes("やらない") ||
+      lower === "dismiss";
+    const wantsDefer =
+      lower.includes("あとで") || lower.includes("後で考える");
+
+    if (wantsAccept) {
+      const result = acceptNodeReviewSuggestion(pendingForResponse.id);
+      if (result) {
+        return {
+          nextState: state,
+          reply: {
+            id: makeId(),
+            role: "tutor",
+            text: `OK、**${result.parentNodeName} の復習** を今週のスケジュールに入れたよ。\n\n他のタスクが押し出されたら、carry-over で翌週に回すから安心してね。次どうする?`,
+            quickReplies: [
+              "スケジュール見せて",
+              "学習を始める",
+              "別の話",
+            ],
+            createdAt: now,
+          },
+        };
+      }
+    }
+    if (wantsDismiss) {
+      dismissNodeReviewSuggestion(pendingForResponse.id);
+      return {
+        nextState: state,
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: "OK、今回は見送るね。また必要そうな時に提案するよ。",
+          quickReplies: ["別の話", "学習を始める"],
+          createdAt: now,
+        },
+      };
+    }
+    if (wantsDefer) {
+      return {
+        nextState: state,
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: "OK、保留しておくね。次にゆいの chat 開いた時にまた聞くよ。",
+          quickReplies: ["別の話", "学習を始める"],
+          createdAt: now,
+        },
+      };
+    }
   }
 
   // C17 Phase 5 P5-Q5: PlanType 明示発話分岐

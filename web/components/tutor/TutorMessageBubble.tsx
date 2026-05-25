@@ -25,6 +25,7 @@ import { ChatSearchResultCard } from "./cards/ChatSearchResultCard";
 import { DurationPickerCard } from "./cards/DurationPickerCard";
 import { RoadmapPreviewCard } from "./cards/RoadmapPreviewCard";
 import { WeakNodePickerCard } from "./cards/WeakNodePickerCard";
+import { NodeReviewSuggestionCard } from "./cards/NodeReviewSuggestionCard";
 import { TopicChip } from "./topic-display";
 
 type Props = {
@@ -131,6 +132,9 @@ export function TutorMessageBubble({
                   card={message.card}
                   onPick={onPickWeakNodes}
                 />
+              )}
+              {message.card.kind === "node-review-suggestion" && (
+                <NodeReviewSuggestionCard card={message.card} />
               )}
             </div>
           )}
