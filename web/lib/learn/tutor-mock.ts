@@ -618,7 +618,7 @@ function derivePlanFromInputs(args: {
  *
  * Phase 6 で AI 判定強化、現状は固定閾値 + Issue 一覧の素直な抽出。
  */
-function computeWeakNodeCandidates(): Array<{
+export function computeWeakNodeCandidates(): Array<{
   nodeId: string;
   nodeName: string;
   reason: string;
@@ -790,8 +790,10 @@ function dismissNodeReviewSuggestion(suggestionId: string): boolean {
  * 当月遅延を検出: アクティブな plan の今月の SI のうち、
  * dueDate 過ぎてて status: "todo" な件数。
  * (実装簡略: replanRules.delayThresholdDays を超えてたら Replan 候補)
+ *
+ * C20 で WeeklyMonthlyReportView から呼び出すため export 化。
  */
-function detectPlanDelay(): {
+export function detectPlanDelay(): {
   plan: LearningPlan;
   delayedItemCount: number;
 } | null {
@@ -814,8 +816,10 @@ function detectPlanDelay(): {
 /**
  * Replan の自動 draft を生成。triggeredBy + replanKind で文面を切り分ける。
  * 実際の GT[] 書き換えは commitReplan で実行。本関数は提案テキストのみ。
+ *
+ * C20 で WeeklyMonthlyReportView から呼び出すため export 化。
  */
-function buildReplanDraft(args: {
+export function buildReplanDraft(args: {
   plan: LearningPlan;
   replanKind: "carry-over" | "pace-change" | "material-change";
   triggeredBy: "weekly-review" | "interrupt" | "manual";

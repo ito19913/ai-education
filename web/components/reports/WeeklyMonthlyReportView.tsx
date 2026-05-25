@@ -25,11 +25,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  ArrowUpRight,
   BookOpen,
   CalendarDays,
   CheckCircle2,
   Flag,
   Heart,
+  Plus,
+  RefreshCw,
   Send,
   Sparkles,
   Target,
@@ -39,14 +42,22 @@ import {
 import {
   MOCK_ACHIEVEMENT_BADGES,
   MOCK_ISSUES,
+  MOCK_LEARNING_PLANS,
   MOCK_NODE_COMPREHENSIONS,
+  MOCK_NODE_REVIEW_SUGGESTIONS,
   MOCK_REFLECTION_LOGS,
   MOCK_SCHOOL_DAILY_REPORTS,
   MOCK_SHARED_TO_PARENT,
 } from "@/lib/learn/mock-data";
+import {
+  buildReplanDraft,
+  computeWeakNodeCandidates,
+  detectPlanDelay,
+} from "@/lib/learn/tutor-mock";
 import type {
   AchievementBadge,
   KnowledgeNode,
+  NodeReviewSuggestion,
   SharedToParent,
   Subject,
   WeeklyMonthlyReport,
@@ -432,14 +443,167 @@ function WeakSpotsSection({
             </div>
           </div>
         )}
+
+        {/* C20 Phase 5 P5-Q4 副提示: pending NodeReviewSuggestion 一覧 */}
+        <PendingSuggestionsList nodes={nodes} />
+
+        {/* C20 Phase 5 P5-Q2: WeakNodes 追加候補 + [追加] ボタン */}
+        <WeakNodeAddSection currentWeakNodeIds={w.weakNodeIds} />
       </CardContent>
     </Card>
   );
 }
 
-/** セクション 4: 来週/来月の計画 + Action */
+/**
+ * C20 Phase 5 P5-Q4 副提示: pending な NodeReviewSuggestion 一覧。
+ * ゆい chat 主提示で見逃しても、ここで拾えるようにする。
+ * クリックでゆい chat に飛ばす動線 (C18 で chat 冒頭提示) を将来追加予定。
+ */
+function PendingSuggestionsList({ nodes }: { nodes: KnowledgeNode[] }) {
+  const pending = MOCK_NODE_REVIEW_SUGGESTIONS.filter(
+    (s) => s.status === "pending",
+  );
+  if (pending.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-[11px] font-medium text-amber-700 dark:text-amber-400">
+        ゆいから 復習提案 ({pending.length} 件、未対応)
+      </p>
+      <div className="flex flex-col gap-1.5">
+        {pending.map((s) => {
+          const failed = nodes.find((n) => n.id === s.failedNodeId);
+          const parent = nodes.find((n) => n.id === s.suggestedParentNodeId);
+          if (!failed || !parent) return null;
+          return <SuggestionItem key={s.id} suggestion={s} failedName={failed.name} parentName={parent.name} />;
+        })}
+      </div>
+      <Link
+        href="/tutor"
+        className="text-[10px] text-amber-700 underline hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+      >
+        ゆいに見せてもらう →
+      </Link>
+    </div>
+  );
+}
+
+function SuggestionItem({
+  failedName,
+  parentName,
+  suggestion,
+}: {
+  failedName: string;
+  parentName: string;
+  suggestion: NodeReviewSuggestion;
+}) {
+  return (
+    <div className="rounded-md border border-amber-300/40 bg-amber-50/60 px-3 py-2 text-[12px] dark:border-amber-900/60 dark:bg-amber-950/30">
+      <div className="flex items-center gap-1.5">
+        <span className="rounded bg-amber-100/60 px-1.5 py-0 text-[11px] font-medium dark:bg-amber-900/40">
+          {failedName}
+        </span>
+        <ArrowUpRight className="size-3 text-amber-600 dark:text-amber-400" />
+        <span className="rounded border border-amber-300 bg-card px-1.5 py-0 text-[11px] font-semibold dark:border-amber-700">
+          {parentName}
+        </span>
+      </div>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">
+        {suggestion.reason}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * C20 Phase 5 P5-Q2: WeakNodes 追加候補。
+ * computeWeakNodeCandidates() で Issue + Comprehension から候補抽出、
+ * 現在の weakNodeIds に含まれてない候補を「[追加] ボタン付き」で表示。
+ * クリックで MOCK_LEARNING_PLANS[0].weakNodeIds に push (ローカル反映)。
+ */
+function WeakNodeAddSection({
+  currentWeakNodeIds,
+}: {
+  currentWeakNodeIds: string[];
+}) {
+  // 候補から「既に weakNodeIds に入ってる」のを除く
+  const allCandidates = computeWeakNodeCandidates();
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  const novel = allCandidates.filter(
+    (c) => !currentWeakNodeIds.includes(c.nodeId) && !added.has(c.nodeId),
+  );
+
+  if (novel.length === 0 && added.size === 0) return null;
+
+  const handleAdd = (nodeId: string) => {
+    const plan = MOCK_LEARNING_PLANS.find((p) => p.status === "active");
+    if (!plan) return;
+    plan.weakNodeIds = [...(plan.weakNodeIds ?? []), nodeId];
+    plan.updatedAt = new Date().toISOString();
+    setAdded((prev) => new Set(prev).add(nodeId));
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+      <p className="text-[11px] font-medium text-muted-foreground">
+        Plan の重点練習に追加できる候補
+      </p>
+      {novel.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          {novel.map((c) => (
+            <div
+              key={c.nodeId}
+              className="flex items-start gap-2 rounded-md border border-border bg-card px-3 py-2 text-[12px]"
+            >
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="font-medium">{c.nodeName}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {c.reason}
+                </span>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 gap-1 px-2 text-[10px]"
+                onClick={() => handleAdd(c.nodeId)}
+              >
+                <Plus className="size-3" />
+                <span>追加</span>
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[10px] italic text-muted-foreground">
+          全候補が既に登録済み or 追加済み
+        </p>
+      )}
+      {added.size > 0 && (
+        <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
+          ✓ {added.size} 件を Plan の weakNodeIds に追加しました
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** セクション 4: 来週/来月の計画 + Action + Replan draft (C20) */
 function NextPlanSection({ report }: { report: WeeklyMonthlyReport }) {
   const n = report.nextPeriodPlan;
+
+  // C20 Phase 5 P5-Q3: 週次レポート weekly-review トリガーで Replan draft 自動生成
+  const replanInfo = (() => {
+    const delay = detectPlanDelay();
+    if (!delay) return null;
+    const draft = buildReplanDraft({
+      plan: delay.plan,
+      replanKind: "carry-over",
+      triggeredBy: "weekly-review",
+      delayedItemCount: delay.delayedItemCount,
+    });
+    return { plan: delay.plan, delayedItemCount: delay.delayedItemCount, draft };
+  })();
+
   return (
     <Card className="border-emerald-300/40 bg-emerald-50/30 dark:bg-emerald-950/20">
       <CardContent className="flex flex-col gap-3 py-4">
@@ -485,6 +649,31 @@ function NextPlanSection({ report }: { report: WeeklyMonthlyReport }) {
                 </p>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* C20 Phase 5 P5-Q3: Replan draft (weekly-review トリガー) */}
+        {replanInfo && (
+          <div className="rounded-md border border-sky-300/40 bg-sky-50/60 px-3 py-2 dark:border-sky-900/60 dark:bg-sky-950/30">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-sky-700 dark:text-sky-400">
+              <RefreshCw className="size-3" />
+              <span>Replan 提案 (週次判定)</span>
+              <span className="ml-auto rounded-full border border-sky-300 px-1.5 py-0 text-[9px] text-sky-700 dark:border-sky-700 dark:text-sky-400">
+                {replanInfo.delayedItemCount} 件遅延
+              </span>
+            </div>
+            <p className="mt-1 text-[12px] font-medium text-card-foreground">
+              {replanInfo.draft.proposedChange}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {replanInfo.draft.rationale}
+            </p>
+            <Link
+              href="/tutor"
+              className="mt-1 inline-flex items-center text-[10px] text-sky-700 underline hover:text-sky-900 dark:text-sky-400 dark:hover:text-sky-200"
+            >
+              ゆいに相談する →
+            </Link>
           </div>
         )}
       </CardContent>
