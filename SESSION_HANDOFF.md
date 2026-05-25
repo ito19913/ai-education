@@ -29,7 +29,7 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 
 ## §3. 今日のセッション (2026-05-25) 全成果
 
-**23 commit、約 +8500 行**。`7aaf7df`..`8899555` の範囲。**Phase 5 grill 確定 + 全実装完了**。
+**25 commit、約 +8600 行**。`7aaf7df`..`d89811e` の範囲。**Phase 5 grill 確定 + 全実装完了 + ARCHITECTURE 完全同期**。
 
 ### Phase 3 レビュー追従 (REVIEW-2026-05-24.md 対応)
 | # | SHA | 内容 |
@@ -71,6 +71,8 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 | C21 | `287ed83` | Plan Engine ダッシュボード (/tutor?view=plans 本実装) |
 | C22 | `c26a557` | view=schedule → view=today-tasks 全体リネーム |
 | C23 | `8899555` | 今日のタスク 進捗バー + 全 done CTA |
+| C24(終) | `7d4970d` | docs: SESSION_HANDOFF.md 最終更新 |
+| C25 | `d89811e` | docs: ARCHITECTURE.md Phase 5 本実装結果 SSoT 化 (ロードマップ表 + 本実装結果セクション) |
 
 ---
 
