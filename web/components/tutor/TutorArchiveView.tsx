@@ -296,6 +296,9 @@ export function TutorArchiveView({ nodes, issues, scheduleItems }: Props) {
                   onPickMaterial={() => {
                     /* archive: no-op */
                   }}
+                  onPickDuration={() => {
+                    /* archive: no-op (C8 計画立案 duration-picker) */
+                  }}
                   onSelectIssue={() => {
                     /* archive: no-op */
                   }}

@@ -495,7 +495,8 @@ ito19 さんの観察「**現状の仕組みは大人の学習方法に寄って
 
 **実装状況**:
 - **C7 (2026-05-25)**: 型 + 静的 mock 実装済 (`types.ts` / `mock-data.ts`)。`LearningPlan` / `SchoolDailyReport` / `WeeklyMonthlyReport` 等の新型 + `ScheduleItem.tags/source` / `ReflectionLog.weeklyMonthlyReport` 拡張 + mock データ (1 LearningPlan / 5 SchoolDailyReport / 1 AchievementBadge / 既存 weekly+monthly ReflectionLog に WeeklyMonthlyReport 追加)
-- **未実装 (次セッション)**: 計画立案ウィザード / 帰宅儀式 chat フロー / 週次月次レポート UI / 月次バッチロジック / 親共有 UI / 達成バッジ UI / tutor-mock 拡張
+- **C8 (2026-05-25)**: 計画立案 chat + カードハイブリッド実装済。tutor-mock に `plan-await-*` state + keyword 分岐 (「計画立て」「学習計画」)、`DurationPickerCard` / `RoadmapPreviewCard` 新規カード、`derivePlanFromInputs` / `expandPlanMonth` ヘルパーで動的 LearningPlan 生成 + 当月分 ScheduleItem 展開
+- **未実装 (次): C9 帰宅儀式 第 1 部 (学校レポート) / C10 帰宅儀式 第 2 部 + 自動起動 / C11 週次月次レポート UI / C12 達成バッジ UI + 親共有**
 
 ### 設計の核 (Q1-Q17 の上流)
 

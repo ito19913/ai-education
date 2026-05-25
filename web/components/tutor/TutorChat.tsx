@@ -53,6 +53,11 @@ type Props = {
    *  会話の状態を進めるためのフック */
   onPickSubject: (subjectId: string, label: string) => TutorMessage;
   onPickMaterial: (materialId: string, label: string) => TutorMessage;
+  /** C8 Phase 4: 計画立案の duration-picker 選択ハンドラ */
+  onPickDuration: (
+    monthsPerRotation: number,
+    rotations: number,
+  ) => TutorMessage;
   /** Phase 3: 課題カードクリック → 右ペインに IssueChat / IssueListView を出す */
   onSelectIssue?: (issueId: string) => void;
   onSeeAllIssues?: () => void;
@@ -75,6 +80,7 @@ export function TutorChat({
   generateReply,
   onPickSubject,
   onPickMaterial,
+  onPickDuration,
   onSelectIssue,
   onSeeAllIssues,
   onSelectIssueItem,
@@ -162,6 +168,27 @@ export function TutorChat({
     }, 600);
   };
 
+  // C8: 計画立案 duration-picker のハンドラ
+  const handlePickDuration = (
+    monthsPerRotation: number,
+    rotations: number,
+  ) => {
+    const label = `${monthsPerRotation} ヶ月 × ${rotations} 回転`;
+    const userMsg: TutorMessage = {
+      id: `u-${Date.now()}`,
+      role: "learner",
+      text: label,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setIsThinking(true);
+    window.setTimeout(() => {
+      const reply = onPickDuration(monthsPerRotation, rotations);
+      setMessages((prev) => appendReplyWithSection(prev, reply));
+      setIsThinking(false);
+    }, 600);
+  };
+
   const quickReplies =
     !isThinking && lastTutorMessage?.quickReplies
       ? lastTutorMessage.quickReplies
@@ -201,6 +228,7 @@ export function TutorChat({
               nodes={nodes}
               onPickSubject={handlePickSubject}
               onPickMaterial={handlePickMaterial}
+              onPickDuration={handlePickDuration}
               issues={issues}
               scheduleItems={scheduleItems}
               onSelectIssue={onSelectIssue ?? noop}

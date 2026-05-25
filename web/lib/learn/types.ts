@@ -346,6 +346,39 @@ export type TutorCard =
       seeAllLabel: string;
     }
   | {
+      /** Phase 4 C8: 計画立案フロー - 期間 + 回転数の選択カード */
+      kind: "duration-picker";
+      subjectId: string;
+      materialId: string;
+      /** 教材総ページ */
+      totalPages: number;
+      /** AI 推奨 (例: 「3 ヶ月で 1 回転 × 3 回 = 9 ヶ月」) */
+      recommendedMonthsPerRotation: number;
+      recommendedRotations: number;
+      /** 選択肢: 月数 (1 回転あたり) */
+      monthsOptions: number[];
+      /** 選択肢: 回転数 */
+      rotationsOptions: number[];
+    }
+  | {
+      /** Phase 4 C8: 計画立案フロー - AI 生成 roadmap の確認カード */
+      kind: "roadmap-preview";
+      subjectId: string;
+      materialId: string;
+      materialName: string;
+      totalPages: number;
+      monthsPerRotation: number;
+      rotations: number;
+      startDate: string; // YYYY-MM-DD
+      /** 月別 roadmap (PlanSegment 相当だが card 用にシンプル化) */
+      monthlyRoadmap: Array<{
+        month: string;
+        targetPages: number;
+        startPage?: number;
+        endPage?: number;
+      }>;
+    }
+  | {
       /** Phase 3 拡張: 「あの話したよね?」検索ヒット候補のリスト */
       kind: "chat-search-result";
       /** AI が抽出 or 本人が指定したクエリ */

@@ -266,9 +266,11 @@ export function TutorWorkspace({
 
   const onPickSubject = useCallback(
     (subjectId: string): TutorMessage => {
+      // C8: 計画立案フロー中なら plan-await-material へ、それ以外は subject-picked へ
+      const isPlanFlow = tutorStepRef.current.state === "plan-await-subject";
       tutorStepRef.current = {
         ...tutorStepRef.current,
-        state: "subject-picked",
+        state: isPlanFlow ? "plan-await-material" : "subject-picked",
         proposedSubjectId: subjectId,
       };
       const result = buildNextTutorReply({
@@ -286,10 +288,34 @@ export function TutorWorkspace({
 
   const onPickMaterial = useCallback(
     (materialId: string): TutorMessage => {
+      // C8: 計画立案フロー中なら plan-await-duration へ、それ以外は material-picked へ
+      const isPlanFlow = tutorStepRef.current.state === "plan-await-material";
       tutorStepRef.current = {
         ...tutorStepRef.current,
-        state: "material-picked",
+        state: isPlanFlow ? "plan-await-duration" : "material-picked",
         proposedMaterialId: materialId,
+      };
+      const result = buildNextTutorReply({
+        state: tutorStepRef.current,
+        userInput: "",
+      });
+      tutorStepRef.current = result.nextState;
+      if (result.reply.rightPaneAction) {
+        applyRightPaneAction(result.reply.rightPaneAction);
+      }
+      return result.reply;
+    },
+    [applyRightPaneAction],
+  );
+
+  // C8 Phase 4: 計画立案の duration-picker 選択ハンドラ
+  const onPickDuration = useCallback(
+    (monthsPerRotation: number, rotations: number): TutorMessage => {
+      tutorStepRef.current = {
+        ...tutorStepRef.current,
+        state: "plan-await-confirm",
+        proposedMonthsPerRotation: monthsPerRotation,
+        proposedRotations: rotations,
       };
       const result = buildNextTutorReply({
         state: tutorStepRef.current,
@@ -394,6 +420,7 @@ export function TutorWorkspace({
             generateReply={generateReply}
             onPickSubject={onPickSubject}
             onPickMaterial={onPickMaterial}
+            onPickDuration={onPickDuration}
             externallyLocked={tutorLocked}
             externalLockMessage={
               tutorLocked

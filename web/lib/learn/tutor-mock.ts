@@ -12,7 +12,10 @@
  */
 import type {
   Issue,
+  LearningPlan,
+  PlanSegment,
   ReflectionLog,
+  ScheduleItem,
   TutorHandoff,
   TutorMessage,
   TutorRightPaneAction,
@@ -22,6 +25,8 @@ import type {
 import {
   MOCK_HANDOFFS,
   MOCK_ISSUES,
+  MOCK_LEARNING_PLANS,
+  MOCK_MATERIALS,
   MOCK_REFLECTION_LOGS,
   MOCK_SCHEDULE_TODAY,
 } from "./mock-data";
@@ -139,7 +144,13 @@ type TutorState =
   // === 学習終了フロー（毎ターン要約を見せて気づきを誘発 → 終わり宣言で確認 → 終了）===
   | "ending-vent" // 自由発話ループ。毎ターン現状サマリーを返す
   | "ending-confirm" // 最終サマリー + 「これで終わりますか?」
-  | "ending-done"; // セッション終了完了
+  | "ending-done" // セッション終了完了
+  // === C8 Phase 4 計画立案フロー (chat + カードハイブリッド) ===
+  | "plan-await-subject" // 計画立案: subject-picker 表示中
+  | "plan-await-material" // 計画立案: material-picker 表示中
+  | "plan-await-duration" // 計画立案: duration-picker 表示中
+  | "plan-await-confirm" // 計画立案: roadmap-preview 表示中 (OK/速く/ゆっくり 待ち)
+  | "plan-done"; // 計画立案: LearningPlan push 済み
 
 export type TutorStep = {
   state: TutorState;
@@ -147,6 +158,12 @@ export type TutorStep = {
   proposedSubjectId?: string;
   proposedMaterialId?: string;
   proposedEntryNodeId?: string;
+  /** C8: 計画立案フローで本人が選んだ期間 (1 回転あたり何ヶ月) */
+  proposedMonthsPerRotation?: number;
+  /** C8: 計画立案フローで本人が選んだ回転数 */
+  proposedRotations?: number;
+  /** C8: 計画立案で確定した LearningPlan id */
+  confirmedLearningPlanId?: string;
   /** 掘り起こしで本人が言語化した不明事項（mock では 1 件まで保持） */
   excavationTopic?: string;
   /**
@@ -322,6 +339,168 @@ function deriveMorningReflectionLog(
 /** draft の初期化（reflection-yesterday から開始する初回ターン用）*/
 function emptyDraft(): ReflectionDraft {
   return { derivedIssueIds: [], derivedHandoffIds: [] };
+}
+
+// ============================================================================
+// C8 Phase 4 計画立案フロー — LearningPlan の動的生成と月次バッチ展開
+//
+// chat + カードハイブリッド (Q11 確定):
+//   subject-picker → material-picker → duration-picker → roadmap-preview → 確定
+//
+// ヘルパー:
+//   - buildRoadmapFromInputs: 期間 + 回転数 + 教材ページから monthlyRoadmap を生成
+//   - derivePlanFromInputs: LearningPlan を組み立てて MOCK に push
+//   - expandPlanMonth: 当月分の ScheduleItem を生成して MOCK_SCHEDULE_TODAY に追加
+// ============================================================================
+
+/** 教材の総ページ数を mock から取得 (mock では coveredNodeIds.length × 10 で擬似計算) */
+function getMaterialTotalPages(materialId: string): number {
+  const material = MOCK_MATERIALS.find((m) => m.id === materialId);
+  if (!material) return 200; // フォールバック
+  // mock: ノード数ベースで擬似的にページ計算 (1 ノード ≈ 10p)
+  // Phase 6 で AI が教材 PDF から目次自動読み込みに置換
+  return Math.max(50, material.coveredNodeIds.length * 10);
+}
+
+/** 教材の表示名を mock から取得 */
+function getMaterialName(materialId: string): string {
+  return MOCK_MATERIALS.find((m) => m.id === materialId)?.name ?? "教材";
+}
+
+/** "YYYY-MM" 形式の月を N ヶ月分生成 (startDate 起点) */
+function generateMonthList(startDate: Date, count: number): string[] {
+  const months: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const d = new Date(startDate);
+    d.setMonth(d.getMonth() + i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    months.push(`${y}-${m}`);
+  }
+  return months;
+}
+
+/** 月数 + 回転数 + 総ページから monthlyRoadmap を生成 */
+function buildRoadmapFromInputs(args: {
+  startDate: Date;
+  totalPages: number;
+  monthsPerRotation: number;
+  rotations: number;
+}): PlanSegment[] {
+  const { startDate, totalPages, monthsPerRotation, rotations } = args;
+  const totalMonths = monthsPerRotation * rotations;
+  const months = generateMonthList(startDate, totalMonths);
+  const pagesPerMonth = Math.ceil(totalPages / monthsPerRotation);
+
+  return months.map((month, idx) => {
+    const rotationIdx = Math.floor(idx / monthsPerRotation); // 0-based 回転番号
+    const monthIdxInRotation = idx % monthsPerRotation;
+    const startPage = monthIdxInRotation * pagesPerMonth + 1;
+    const endPage = Math.min((monthIdxInRotation + 1) * pagesPerMonth, totalPages);
+    return {
+      month,
+      targetPages: endPage - startPage + 1,
+      startPage,
+      endPage,
+      // 各回転の先頭月は前回転からの引継ぎなし、それ以外も初期は 0
+      ...(rotationIdx > 0 && monthIdxInRotation === 0
+        ? {} // 回転境界、繰り越しなし
+        : {}),
+    };
+  });
+}
+
+/** LearningPlan を組み立てて MOCK_LEARNING_PLANS に push、id を返す */
+function derivePlanFromInputs(args: {
+  subjectId: string;
+  materialId: string;
+  monthsPerRotation: number;
+  rotations: number;
+  startDate: Date;
+}): LearningPlan {
+  const { subjectId, materialId, monthsPerRotation, rotations, startDate } =
+    args;
+  const totalPages = getMaterialTotalPages(materialId);
+  const totalMonths = monthsPerRotation * rotations;
+
+  const endDate = new Date(startDate);
+  endDate.setMonth(endDate.getMonth() + totalMonths - 1);
+
+  const planId = makeDerivedId("plan");
+  const nowIso = new Date().toISOString();
+
+  const monthlyRoadmap = buildRoadmapFromInputs({
+    startDate,
+    totalPages,
+    monthsPerRotation,
+    rotations,
+  });
+
+  const plan: LearningPlan = {
+    id: planId,
+    learnerId: "girl",
+    subjectId,
+    title: `${getMaterialName(materialId)} ${rotations} 回転計画`,
+    scope: totalMonths >= 12 ? "year" : totalMonths >= 6 ? "semester" : "term",
+    startDate: formatLocalDate(startDate),
+    endDate: formatLocalDate(endDate),
+    materialIds: [materialId],
+    targetRotations: rotations,
+    currentRotation: 1,
+    totalPages,
+    monthlyRoadmap,
+    expandedMonths: [],
+    status: "active",
+    revisions: [],
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+
+  MOCK_LEARNING_PLANS.push(plan);
+  return plan;
+}
+
+/**
+ * LearningPlan の指定月を ScheduleItem に展開して MOCK_SCHEDULE_TODAY に push、
+ * expandedMonths にも記録。Phase 4 月次バッチの最小実装 (C8 では確定直後の 1 ヶ月分のみ)。
+ */
+function expandPlanMonth(plan: LearningPlan, monthYYYYMM: string): ScheduleItem[] {
+  const segment = plan.monthlyRoadmap.find((s) => s.month === monthYYYYMM);
+  if (!segment) return [];
+
+  // mock では月全体を「1 件の ScheduleItem」として作る (簡略化)。
+  // Phase 4 本格実装で日割り (1 日 N ページ) に分解する想定。
+  const expanded: ScheduleItem[] = [];
+  const today = formatLocalDate(new Date());
+  const item: ScheduleItem = {
+    id: makeDerivedId("sched-plan"),
+    type: "exam-prep", // mock では既存 type を再利用 (Phase 4 で plan 専用 type 検討)
+    sourceId: plan.id,
+    title: `${getMaterialName(plan.materialIds[0])} ${monthYYYYMM} 分 (p.${segment.startPage}-${segment.endPage})`,
+    detail: `${plan.title} の今月分`,
+    date: today,
+    estimateMinutes: 30,
+    status: "todo",
+    aiRationale: `LearningPlan ${plan.title} から月次展開`,
+    tags: ["計画"],
+    source: "plan",
+  };
+  MOCK_SCHEDULE_TODAY.push(item);
+  expanded.push(item);
+
+  plan.expandedMonths.push({
+    month: monthYYYYMM,
+    scheduleItemIds: [item.id],
+    expandedAt: new Date().toISOString(),
+  });
+
+  return expanded;
+}
+
+/** "YYYY-MM" を返す (現在の月) */
+function currentMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 /**
@@ -746,6 +925,207 @@ function buildNextTutorReplyInner(args: {
         role: "tutor",
         text: "OK、これまでの振り返りログ、右に出すね。\n日付ごとに、その日に話したことをまとめてあるよ。",
         rightPaneAction: { kind: "open-reflections" },
+        createdAt: now,
+      },
+    };
+  }
+
+  // C8: 「計画立て」「学習計画」 → 計画立案フロー開始 (subject-picker 表示)
+  // chat 内完結フロー (Q11 ハイブリッド: ゆい対話 + カード)
+  if (
+    lower.includes("計画立て") ||
+    lower.includes("計画作") ||
+    lower.includes("学習計画") ||
+    lower.includes("プラン作") ||
+    lower.includes("plan")
+  ) {
+    return {
+      nextState: { ...state, state: "plan-await-subject" },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、学習計画立てよう! まず科目から。\n（教材を 3 回まわす計画を立てるよ）",
+        card: {
+          kind: "subject-picker",
+          options: [{ subjectId: "subj-english", label: "英語" }],
+        },
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- C8 plan-await-material: subject 選択後、教材ピッカー ---
+  if (state.state === "plan-await-material") {
+    const subjectId = state.proposedSubjectId ?? "subj-english";
+    // 該当科目の active な教材を出す
+    const materialOptions = MOCK_MATERIALS.filter(
+      (m) => m.subjectId === subjectId && !m.deletedAt,
+    ).map((m) => ({ materialId: m.id, label: m.name, tag: m.label }));
+
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "**どの教材で進める?**",
+        card: {
+          kind: "material-picker",
+          subjectId,
+          options: materialOptions,
+        },
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- C8 plan-await-duration: material 選択後、期間 + 回転数ピッカー ---
+  if (state.state === "plan-await-duration") {
+    const materialId = state.proposedMaterialId ?? "";
+    const subjectId = state.proposedSubjectId ?? "subj-english";
+    const totalPages = getMaterialTotalPages(materialId);
+
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: `**全体で何ヶ月で 1 回転終わらせる? 何回転する?**\n（${getMaterialName(materialId)} は ${totalPages} ページだよ）`,
+        card: {
+          kind: "duration-picker",
+          subjectId,
+          materialId,
+          totalPages,
+          recommendedMonthsPerRotation: 3,
+          recommendedRotations: 3,
+          monthsOptions: [1, 2, 3, 4, 6, 12],
+          rotationsOptions: [1, 2, 3, 4],
+        },
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- C8 plan-await-confirm: duration 選択後、roadmap-preview を出す ---
+  // 初回 (onPickDuration から userInput="" で呼ばれる): roadmap-preview を初期表示
+  // 2 回目以降 (ユーザー発話): 「OK」で確定 / 「ゆっくり」「速く」で duration に戻る
+  if (state.state === "plan-await-confirm") {
+    const monthsPerRotation = state.proposedMonthsPerRotation ?? 3;
+    const rotations = state.proposedRotations ?? 3;
+    const subjectId = state.proposedSubjectId ?? "subj-english";
+    const materialId = state.proposedMaterialId ?? "";
+
+    // 初回 表示パス: userInput が空 (onPickDuration ハンドラ経由)
+    if (lower === "") {
+      const totalPages = getMaterialTotalPages(materialId);
+      const monthlyRoadmap = buildRoadmapFromInputs({
+        startDate: new Date(),
+        totalPages,
+        monthsPerRotation,
+        rotations,
+      });
+      return {
+        nextState: state,
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: `OK、${monthsPerRotation} ヶ月 × ${rotations} 回転で計画作ってみた、見て!`,
+          card: {
+            kind: "roadmap-preview",
+            subjectId,
+            materialId,
+            materialName: getMaterialName(materialId),
+            totalPages,
+            monthsPerRotation,
+            rotations,
+            startDate: formatLocalDate(new Date()),
+            monthlyRoadmap,
+          },
+          quickReplies: ["これで OK", "もう少しゆっくり", "もう少し速く"],
+          createdAt: now,
+        },
+      };
+    }
+
+    // 2 回目以降: ユーザー発話を判定
+    const wantsConfirm =
+      lower.includes("ok") ||
+      lower.includes("これで") ||
+      lower.includes("決定") ||
+      lower.includes("これでいい") ||
+      lower.includes("これがいい");
+    const wantsSlower =
+      lower.includes("ゆっくり") || lower.includes("もう少し時間");
+    const wantsFaster = lower.includes("速く") || lower.includes("早く");
+
+    if (wantsSlower || wantsFaster) {
+      // duration-picker に戻す (推奨値を 1 段調整)
+      const newMonths = wantsSlower
+        ? Math.min(monthsPerRotation + 1, 12)
+        : Math.max(monthsPerRotation - 1, 1);
+      return {
+        nextState: {
+          ...state,
+          state: "plan-await-duration",
+          proposedMonthsPerRotation: newMonths,
+        },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: wantsSlower
+            ? `OK、もう少しゆっくりめで作り直すね。1 回転を **${newMonths} ヶ月** にしてみる?`
+            : `OK、もう少し速めで作り直すね。1 回転を **${newMonths} ヶ月** にしてみる?`,
+          card: {
+            kind: "duration-picker",
+            subjectId: state.proposedSubjectId ?? "subj-english",
+            materialId: state.proposedMaterialId ?? "",
+            totalPages: getMaterialTotalPages(state.proposedMaterialId ?? ""),
+            recommendedMonthsPerRotation: newMonths,
+            recommendedRotations: rotations,
+            monthsOptions: [1, 2, 3, 4, 6, 12],
+            rotationsOptions: [1, 2, 3, 4],
+          },
+          createdAt: now,
+        },
+      };
+    }
+
+    if (wantsConfirm) {
+      // 確定: LearningPlan を MOCK に push + 当月分を ScheduleItem に展開
+      const plan = derivePlanFromInputs({
+        subjectId,
+        materialId,
+        monthsPerRotation,
+        rotations,
+        startDate: new Date(),
+      });
+      const month = currentMonth();
+      const expanded = expandPlanMonth(plan, month);
+
+      return {
+        nextState: {
+          ...state,
+          state: "plan-done",
+          confirmedLearningPlanId: plan.id,
+        },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: `OK、計画決まったよ！\n\n**${plan.title}** を作って、**${month} の分 ${expanded.length} 件** を今のスケジュールに出しておいたね。\n\n来月以降は月初に同じように展開していくよ。次どうする?`,
+          quickReplies: ["スケジュール見せて", "学習を始める", "別の話"],
+          createdAt: now,
+        },
+      };
+    }
+
+    // OK でも調整でもない発話 = ユーザーが roadmap を見て考え中
+    // → roadmap-preview を再表示 (or quickReplies で誘導)
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "どうする? 上のロードマップでよさそうなら「OK」、もう少し変えたいなら「ゆっくり」か「速く」を教えて。",
+        quickReplies: ["これで OK", "もう少しゆっくり", "もう少し速く"],
         createdAt: now,
       },
     };

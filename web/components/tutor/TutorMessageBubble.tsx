@@ -22,6 +22,8 @@ import { StartStudyCard } from "./cards/StartStudyCard";
 import { IssueListCard } from "./cards/IssueListCard";
 import { TodayScheduleCard } from "./cards/TodayScheduleCard";
 import { ChatSearchResultCard } from "./cards/ChatSearchResultCard";
+import { DurationPickerCard } from "./cards/DurationPickerCard";
+import { RoadmapPreviewCard } from "./cards/RoadmapPreviewCard";
 import { TopicChip } from "./topic-display";
 
 type Props = {
@@ -29,6 +31,8 @@ type Props = {
   nodes: KnowledgeNode[];
   onPickSubject: (subjectId: string, label: string) => void;
   onPickMaterial: (materialId: string, label: string) => void;
+  /** C8 Phase 4: 計画立案フローの期間 + 回転数選択 */
+  onPickDuration: (monthsPerRotation: number, rotations: number) => void;
   /** Phase 3: 課題カードクリック → 右ペインに IssueChat */
   issues: Issue[];
   scheduleItems: ScheduleItem[];
@@ -43,6 +47,7 @@ export function TutorMessageBubble({
   nodes,
   onPickSubject,
   onPickMaterial,
+  onPickDuration,
   issues,
   scheduleItems,
   onSelectIssue,
@@ -107,6 +112,15 @@ export function TutorMessageBubble({
               )}
               {message.card.kind === "chat-search-result" && (
                 <ChatSearchResultCard card={message.card} />
+              )}
+              {message.card.kind === "duration-picker" && (
+                <DurationPickerCard
+                  card={message.card}
+                  onPick={onPickDuration}
+                />
+              )}
+              {message.card.kind === "roadmap-preview" && (
+                <RoadmapPreviewCard card={message.card} />
               )}
             </div>
           )}
