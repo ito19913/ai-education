@@ -66,11 +66,31 @@ export const TUTOR_PERSONA = {
  * mode:
  *  - "morning"（既定）: 朝の振り返り 5 セクション (昨日 → 学校 → 気分 → 疑問 → 計画)
  *  - "ending": 学習終了の振り返り (思いつき発話 → AI 要約 → 課題抽出 → 繰り越し確認 → 終了)
+ *  - "evening" (C10 Phase 4): 帰宅儀式 第 1 部 (時限数 → 時限別ヒアリング)
  */
 export function buildInitialTutorThread(
   now: Date = new Date(),
-  mode: "morning" | "ending" = "morning",
+  mode: "morning" | "ending" | "evening" = "morning",
 ): TutorThread {
+  if (mode === "evening") {
+    // C10: 帰宅儀式 第 1 部開始 (時限数 quickReplies)
+    const messages: TutorMessage[] = [
+      {
+        id: "t-evening-1",
+        role: "tutor",
+        topic: "morning-reflection",
+        text: "おかえり! まず学校の話聞かせて。\n\n**今日は何時限まで授業あった?**",
+        quickReplies: ["1", "2", "3", "4", "5", "6"],
+        createdAt: now.toISOString(),
+      },
+    ];
+    return {
+      id: "tutor-thread-evening",
+      learnerId: "girl",
+      messages,
+    };
+  }
+
   if (mode === "ending") {
     // ito19 さん監修の canonical script（TUTOR-ROLE.md §終了振り返りの開始発話 参照）。
     // 「ふわっと → 具体化」というゆい先生の核を本人に明示的に伝えてから、
@@ -159,7 +179,12 @@ type TutorState =
   | "evening-await-period-subject" // 「N 時限目は何の科目?」科目入力待ち
   | "evening-await-period-content" // 「何習った?」内容入力待ち
   | "evening-await-extra-events" // 「他に学校で起こったことある?」入力待ち
-  | "evening-school-done"; // 第 1 部完了 (SchoolDailyReport push 済み、第 2 部は C10)
+  | "evening-school-done" // 第 1 部完了 (SchoolDailyReport push 済み)
+  // === C10 Phase 4 帰宅儀式 第 2 部: スケジュール確定 ===
+  | "evening-show-schedule" // 今日のスケジュール表示 + 「他に課題ある?」
+  | "evening-await-task-text" // ad-hoc タスク本文入力待ち
+  | "evening-await-more-tasks" // 「もう 1 件? OK 開始?」
+  | "evening-finalize"; // 帰宅儀式 完了 (今日のタスク確定)
 
 export type TutorStep = {
   state: TutorState;
@@ -516,6 +541,27 @@ function currentMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/**
+ * C10: 帰宅儀式の自動起動判定 (Q13 確定: 平日 16:00 以降の初回アクセスで自動)。
+ * - 土日 (0, 6) は skip
+ * - 16:00 未満は skip
+ * - 今日既に帰宅儀式やってたら skip (lastRitualDate と比較)
+ */
+export function shouldStartEveningRitual(
+  now: Date = new Date(),
+  lastRitualDate: string | null = null,
+): boolean {
+  const dayOfWeek = now.getDay(); // 0=日, 6=土
+  if (dayOfWeek === 0 || dayOfWeek === 6) return false; // 土日 skip
+  if (now.getHours() < 16) return false; // 16:00 未満 skip
+  const today = formatLocalDate(now);
+  if (lastRitualDate === today) return false; // 既に今日やった
+  return true;
+}
+
+export const EVENING_RITUAL_LAST_DATE_KEY =
+  "ai-education:evening-ritual-last-date";
+
 // ============================================================================
 // C9 Phase 4 帰宅儀式 第 1 部 — 学校レポート (時限別シーケンシャル)
 //
@@ -548,7 +594,7 @@ const SCHOOL_SUBJECT_QUICK_REPLIES = [
   "保健",
 ];
 
-function emptySchoolReportDraft(): SchoolReportDraft {
+export function emptySchoolReportDraft(): SchoolReportDraft {
   return { periods: [], currentPeriodIndex: 0 };
 }
 
@@ -579,6 +625,54 @@ function deriveSchoolDailyReport(
   };
   MOCK_SCHOOL_DAILY_REPORTS.push(report);
   return report;
+}
+
+/**
+ * C10: ad-hoc タスクのヒントテキストからタグを推定。
+ * 「宿題」「テスト」「提出」等のキーワードでマッチ。
+ * マッチしない場合は「課題」を返す (汎用)。
+ */
+function inferTaskTagFromHint(text: string): string {
+  const t = text.toLowerCase();
+  if (t.includes("宿題") || t.includes("ワーク") || t.includes("プリント"))
+    return "宿題";
+  if (t.includes("提出") || t.includes("レポート") || t.includes("作文"))
+    return "提出物";
+  if (
+    t.includes("テスト") ||
+    t.includes("試験") ||
+    t.includes("小テスト") ||
+    t.includes("中間") ||
+    t.includes("期末")
+  )
+    return "テスト範囲";
+  if (t.includes("親") || t.includes("お使い") || t.includes("塾"))
+    return "親・他";
+  return "課題";
+}
+
+/**
+ * C10: 帰宅儀式で本人が言った ad-hoc タスクを ScheduleItem として
+ * MOCK_SCHEDULE_TODAY に追加 (source: "ad-hoc", タグ付き)。
+ */
+function addAdHocScheduleItem(text: string, tag: string): ScheduleItem {
+  const today = formatLocalDate(new Date());
+  const truncated = text.length > 60 ? `${text.slice(0, 60)}…` : text;
+  const item: ScheduleItem = {
+    id: makeDerivedId("sched-adhoc"),
+    type: "homework", // mock では既存 type を最も近い "homework" にマップ
+    sourceId: makeDerivedId("homework-adhoc"),
+    title: truncated,
+    detail: text,
+    date: today,
+    estimateMinutes: 30,
+    status: "todo",
+    aiRationale: "帰宅儀式で本人がヒアリング時に追加",
+    tags: [tag],
+    source: "ad-hoc",
+  };
+  MOCK_SCHEDULE_TODAY.push(item);
+  return item;
 }
 
 /** "1" "2" "３" "六" 等から 1-6 の数値を抽出 (失敗時 null) */
@@ -718,6 +812,12 @@ export function deriveTutorTopic(
     case "evening-await-extra-events":
     case "evening-school-done":
       return "morning-reflection";
+    // C10: 第 2 部 (スケジュール確定) は schedule-check 系
+    case "evening-show-schedule":
+    case "evening-await-task-text":
+    case "evening-await-more-tasks":
+    case "evening-finalize":
+      return "schedule-check";
   }
   return "free-chat";
 }
@@ -1398,6 +1498,7 @@ function buildNextTutorReplyInner(args: {
   }
 
   // --- evening-await-extra-events: extraEvents を保存して SchoolDailyReport 確定 ---
+  // C10: 第 1 部完了後、第 2 部 (スケジュール確定) へ自動遷移
   if (state.state === "evening-await-extra-events") {
     const draft = state.schoolReportDraft ?? emptySchoolReportDraft();
     const hasExtra =
@@ -1411,20 +1512,110 @@ function buildNextTutorReplyInner(args: {
     };
     // SchoolDailyReport 確定 push
     const report = deriveSchoolDailyReport(finalDraft);
+
+    // C10: 今日のスケジュール (plan + carry-over) を集めて today-schedule カードを出す
+    const today = formatLocalDate(new Date());
+    const todayItems = MOCK_SCHEDULE_TODAY.filter((s) => s.date === today);
+
     return {
       nextState: {
         ...state,
-        state: "evening-school-done",
+        state: "evening-show-schedule",
         schoolReportDraft: finalDraft,
         confirmedSchoolReportId: report.id,
       },
       reply: {
         id: makeId(),
         role: "tutor",
-        text: hasExtra
-          ? `OK、覚えといたよ、それも。\n\n**今日の学校レポート、書いておいたよ。** 後でいつでも振り返れるからね。\n\n次は今日のスケジュール確認しよう (この部分は C10 で実装予定)。`
-          : `OK、じゃあ学校の話はここまで。\n\n**今日の学校レポート、書いておいたよ。**\n\n次は今日のスケジュール確認しよう (この部分は C10 で実装予定)。`,
-        quickReplies: ["スケジュール見せて", "学習を始める", "別の話"],
+        text:
+          (hasExtra
+            ? "OK、覚えといたよ、それも。\n\n**今日の学校レポート、書いておいたよ。**\n\n"
+            : "OK、じゃあ学校の話はここまで。\n\n**今日の学校レポート、書いておいたよ。**\n\n") +
+          `じゃあ今日のスケジュール確認しよう。\n計画と繰り越しから ${todayItems.length} 件あるね。\n\n**他に学校から宿題とか課題、出てない?**`,
+        card: {
+          kind: "today-schedule",
+          scheduleItemIds: todayItems.slice(0, 5).map((i) => i.id),
+          seeAllLabel: "スケジュールを全部見る",
+        },
+        quickReplies: ["特にない (始める)", "宿題出た", "提出物ある", "テスト発表あった"],
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- evening-show-schedule: 「特にない」で確定、それ以外で ad-hoc 入力へ ---
+  if (state.state === "evening-show-schedule") {
+    const noMoreTasks =
+      lower.includes("特にない") ||
+      lower.includes("ないかな") ||
+      lower.includes("始める") ||
+      lower.includes("はじめる");
+    if (noMoreTasks) {
+      return {
+        nextState: { ...state, state: "evening-finalize" },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: "OK、今日はこれで全部だね。\n\n**いい感じ、開始しよう!** どれからやる?",
+          quickReplies: ["学習を始める", "課題見せて", "別の話"],
+          createdAt: now,
+        },
+      };
+    }
+    // ad-hoc タスク入力へ。何の種類か推定するため userInput を見てタグを暫定設定
+    const inferredTag = inferTaskTagFromHint(userInput);
+    return {
+      nextState: { ...state, state: "evening-await-task-text" },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: `OK、${inferredTag}だね。**内容と期限を教えて。**\n\n例:「数学プリント p.20-25、明日まで」みたいな感じで一文で OK。`,
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- evening-await-task-text: ad-hoc タスクを ScheduleItem に追加 ---
+  if (state.state === "evening-await-task-text") {
+    const tag = inferTaskTagFromHint(userInput);
+    addAdHocScheduleItem(userInput, tag);
+    return {
+      nextState: { ...state, state: "evening-await-more-tasks" },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: `OK、「${userInput.slice(0, 30)}${userInput.length > 30 ? "…" : ""}」を **「${tag}」** タグで今日のスケジュールに入れたよ。\n\n**もう 1 件ある?**`,
+        quickReplies: ["もう 1 件ある", "もうない (始める)"],
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- evening-await-more-tasks: もう 1 件 or 確定 ---
+  if (state.state === "evening-await-more-tasks") {
+    const hasMore =
+      lower.includes("もう 1 件") ||
+      lower.includes("ある") && !lower.includes("ない");
+    if (hasMore) {
+      return {
+        nextState: { ...state, state: "evening-show-schedule" },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: "OK、何が出たか教えて。",
+          quickReplies: ["宿題出た", "提出物ある", "テスト発表あった"],
+          createdAt: now,
+        },
+      };
+    }
+    // 確定
+    return {
+      nextState: { ...state, state: "evening-finalize" },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、今日はこれで全部だね。\n\n**いい感じ、開始しよう!** どれからやる?",
+        quickReplies: ["学習を始める", "課題見せて", "別の話"],
         createdAt: now,
       },
     };

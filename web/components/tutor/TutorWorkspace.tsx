@@ -26,6 +26,9 @@ import { RightPaneRouter } from "./RightPaneRouter";
 import {
   buildInitialTutorThread,
   buildNextTutorReply,
+  EVENING_RITUAL_LAST_DATE_KEY,
+  emptySchoolReportDraft,
+  shouldStartEveningRitual,
   type TutorStep,
 } from "@/lib/learn/tutor-mock";
 import { formatLocalDate } from "@/lib/learn/session-storage";
@@ -138,6 +141,25 @@ export function TutorWorkspace({
       };
     }
 
+    // C10: 平日 16:00 以降 + 今日帰宅儀式やってない → 帰宅儀式モードで起動
+    let lastEveningRitualDate: string | null = null;
+    if (typeof window !== "undefined") {
+      lastEveningRitualDate = window.localStorage.getItem(
+        EVENING_RITUAL_LAST_DATE_KEY,
+      );
+    }
+    if (shouldStartEveningRitual(new Date(), lastEveningRitualDate)) {
+      const eveningMessages = buildInitialTutorThread(
+        new Date(),
+        "evening",
+      ).messages;
+      return {
+        messages: eveningMessages,
+        state: "evening-await-period-count" as TutorStep["state"],
+        endingVentItems: [] as string[],
+      };
+    }
+
     // 今日初めて: 朝の挨拶で新規 thread
     return {
       messages: buildInitialTutorThread(new Date(), "morning").messages,
@@ -152,6 +174,11 @@ export function TutorWorkspace({
   const tutorStepRef = useRef<TutorStep>({
     state: tutorInit.state,
     endingVentItems: tutorInit.endingVentItems,
+    // C10: 帰宅儀式モードで起動した場合は draft も初期化
+    schoolReportDraft:
+      tutorInit.state === "evening-await-period-count"
+        ? emptySchoolReportDraft()
+        : undefined,
   });
 
   // メッセージ or 状態が変化したら localStorage に保存（5 秒に 1 回程度で十分だが
@@ -165,6 +192,18 @@ export function TutorWorkspace({
       endingVentItems: tutorStepRef.current.endingVentItems,
       savedAt: new Date().toISOString(),
     });
+
+    // C10: 帰宅儀式 (evening-finalize) 到達時に localStorage に今日の日付を保存
+    // → 同日内の再起動で帰宅儀式が二重発火しない
+    if (
+      tutorStepRef.current.state === "evening-finalize" &&
+      typeof window !== "undefined"
+    ) {
+      window.localStorage.setItem(
+        EVENING_RITUAL_LAST_DATE_KEY,
+        formatLocalDate(),
+      );
+    }
   }, [tutorMessages]);
 
   // ----- Issue state（resolve / chatThread 追加を一元管理） -----
