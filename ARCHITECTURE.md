@@ -510,9 +510,8 @@ Phase 4 (中学生向け軌道修正) の上に乗る「学習戦略エンジン
 ito19 さん + 別 AI 議論で浮上した「学習 OS」概念を、grill-me で P5-Q1〜P5-Q7
 の 7 論点 (+ サブ問い計 11 問) として詰めた結果。
 
-**実装状況**: grill 確定済、実装中 (C15〜C24 予定)。
-C14 (2026-05-25) で型 + 静的 mock の試作実装あり (`web/lib/learn/types.ts`
-+ `web/lib/learn/mock-data.ts`)、本セクションで確定設計に基づき書き換え。
+**実装状況**: ✓ 完了 (C14 試作 + C15-C24 本実装、2026-05-25)。
+詳細な実装結果は本セクション末尾「### Phase 5 本実装結果 (C15-C24)」参照。
 
 ### 設計の核 (Phase 4 の上に乗る)
 
@@ -644,41 +643,64 @@ ScheduleItem の「実行カレンダー」のレイヤー分離を保つ。
 
 **理由**: 「同じボタンで違う画面」を避ける = 中学生に予測可能。「[今日のタスク] = 毎日の起点」(C13 哲学) に忠実。
 
-### Phase 5 試作 (C14、2026-05-25 — 設計叩き台、本実装で書き換え対象)
+### Phase 5 本実装結果 (C14 試作 + C15-C24、2026-05-25)
 
-> 実装: `web/lib/learn/types.ts` (試作型ブロック) + `web/lib/learn/mock-data.ts` (Phase 5 試作 mock)
+> 実装ファイル全体像:
+> - `web/lib/learn/types.ts` (Phase 5 型ブロック + Phase 5 TutorCard 3 種追加)
+> - `web/lib/learn/mock-data.ts` (Phase 5 mock、全期間 GT 化シンボル含む 12 件)
+> - `web/lib/learn/plan-mode-matrix.ts` ★C16 新規 (PLAN_MODE_DISTRIBUTION 定数)
+> - `web/lib/learn/tutor-mock.ts` (Phase 5 state + ヘルパー + 発話分岐多数)
+> - `web/components/tutor/cards/WeakNodePickerCard.tsx` ★C17 新規
+> - `web/components/tutor/cards/NodeReviewSuggestionCard.tsx` ★C18 新規
+> - `web/components/tutor/cards/ReplanDraftCard.tsx` ★C19 新規
+> - `web/components/plans/PlanEngineDashboard.tsx` ★C21 新規
+> - `web/components/today-tasks/TodayTaskDashboard.tsx` (旧 schedule からリネーム + 進捗バー/CTA 追加、C22+C23)
+> - `web/components/reports/WeeklyMonthlyReportView.tsx` (Suggestion 副提示 + Replan draft + weakNodes 追加 3 セクション拡張、C20)
 
-grill で詰めずに **手を動かしながら設計を可視化** するためのスナップショット。
-上記 P5-Q1〜P5-Q7 確定設計に基づき、C16 以降の本実装で書き換える。
+#### 確定型まとめ (試作 → 本実装でどう扱われたか)
 
-**新型 (試作 → 本実装で確定)**:
-
-| 型 | 試作 | grill 確定での扱い |
+| 型 | 試作 (C14) | 本実装での扱い (C15-C23) |
 |---|---|---|
-| `PlanType` | 5 種 | そのまま (homework-response 除外、5 種維持) |
-| `LearningMode` | 5 種 | そのまま (input/output/review/drill/test) |
-| `ResourceType` | 5 種 | そのまま |
-| `ReviewRules` | 復習間隔 + モード | そのまま |
-| `TestRules` | 間隔 + 閾値 + failureAction (`retry`/`review-parent`/`manual`) | そのまま (P5-Q4 で `review-parent` フローを実装) |
-| `ReplanRules` | 遅延閾値 + replanMode | P5-Q3 で 3 トリガー + 種類別影響範囲を実装ロジックに反映 |
-| `GeneratedTask` | planId + nodeId + mode + resource + 優先度 + 期限 | **pageStart/pageEnd 追加** (P5-Q1 で「1 GT = 1 日分、ページ範囲含む」確定) + `generatedTaskId` 紐付け |
-| `InterruptEvent` | type + 影響日 + replanTriggered フラグ | そのまま (P5-Q3 即時トリガー連動) |
-| `NodeReviewSuggestion` | 子→親ノード提案 + status | そのまま (P5-Q4 で `NodeReviewSuggestionCard` 連動) |
-| **新規** `PLAN_MODE_DISTRIBUTION` | — | C16 で `web/lib/learn/plan-mode-matrix.ts` に定数テーブル新設 |
+| `PlanType` | 5 種 | そのまま採用 |
+| `LearningMode` | 5 種 | そのまま採用 |
+| `ResourceType` | 5 種 | そのまま採用 |
+| `ReviewRules` / `TestRules` / `ReplanRules` | フィールド定義済 | C19 Replan で `ReplanRules.delayThresholdDays/replanMode` を実ロジックに接続 |
+| `GeneratedTask` | planId + nodeId + mode + resource + 優先度 + 期限 | 試作型をそのまま採用 (pageRange は `resource.pageRange` で既に持っており追加不要、C16 で確認) |
+| `InterruptEvent` | フィールド定義済 | C19 で `getUntriggeredInterrupt()` + 朝の morning モード冒頭で carry-over Replan draft 自動提示 |
+| `NodeReviewSuggestion` | 子→親ノード + status | C18 で 3 択フロー実装 (accept/dismiss/defer)、accept で復習 GT/SI を即時生成 |
+| **新規** `PLAN_MODE_DISTRIBUTION` | — | C16 で `plan-mode-matrix.ts` に新設、`getModeWeights()` ヘルパー + `PLAN_TYPE_LABELS` 同梱 |
+| **新規** TutorCard `weak-node-picker` | — | C17 で `WeakNodePickerCard` 連動 |
+| **新規** TutorCard `node-review-suggestion` | — | C18 で `NodeReviewSuggestionCard` 連動 |
+| **新規** TutorCard `replan-draft` | — | C19 で `ReplanDraftCard` 連動 |
+| **新規** TutorState `plan-await-weak-nodes` | — | C17 で立案フロー (duration → weak-nodes → confirm) に挿入 |
+| **新規** TutorStep `proposedPlanType / proposedWeakNodeIds / proposedReplanDraft` | — | C17/C19 で state machine 引継ぎに使用 |
+| **新規** RightPaneView `plans` | — | C21 で Plan Engine ダッシュボード経路 |
+| **既存変更** `ScheduleItem.generatedTaskId?` | — | C16 で追加 (P5-Q1 1 GT : 1 SI 紐付けの逆参照) |
+| **既存変更** `RightPaneView "schedule" → "today-tasks"` | — | C22 で全リネーム |
+| **既存変更** `TutorRightPaneAction "open-schedule" → "open-today-tasks"` | — | C22 で全リネーム |
 
-**`LearningPlan` 拡張** (P5-Q1〜Q5 で確定、本実装で required 昇格対象):
-- `planType` (デフォルト `regular-study`)
-- `weakNodeIds` (P5-Q2 半自動候補 + 本人確定)
-- `reviewRules` / `testRules` / `replanRules`
-- `dailyCapacityMinutes` (Plan Engine の負荷分散用)
+#### Plan Engine ヘルパー (tutor-mock.ts、export 化)
 
-**ScheduleItem 拡張** (P5-Q1 で確定):
-- `generatedTaskId?: string` (plan 由来 SI で必須、ad-hoc/carry-over は null)
+C19 で実装、C20 で再利用するため export 化:
+- `detectPlanDelay()`: アクティブ plan の今月 SI で dueDate 過ぎ todo 件数判定
+- `buildReplanDraft({ plan, replanKind, triggeredBy, ... })`: 種類別 (carry-over/pace-change/material-change) draft 文面生成
+- `commitReplan({ planId, replanKind, triggeredBy, reason })`: PlanRevision push、material-change は status: paused
+- `computeWeakNodeCandidates()`: Issue (open) + NodeComprehension (score<0.55) から候補抽出、上位 5 件
+- `acceptNodeReviewSuggestion(suggestionId)`: 復習 GT/SI 即時生成 + Suggestion status: accepted
+- `dismissNodeReviewSuggestion(suggestionId)`: Suggestion status: dismissed
+- `getOldestPendingSuggestion()` / `getUntriggeredInterrupt()`: 朝の morning モード冒頭提示用
 
-**mock データの本実装書き換え**:
-- `plan-english-2026-05` を全期間 GT 化 (~180 GT を立案時に生成済みとして mock)
-- `MOCK_GENERATED_TASKS` を 4 件 (試作) → 当月分 ~20 件 + 来月以降の薄い mock に拡張
-- `MOCK_NODE_REVIEW_SUGGESTIONS` の `pending` 1 件を維持、accept フロー mock 追加
+#### Phase 6 へ送った実装 (今は意図的に簡略化)
+
+- pace-change Replan の `monthlyRoadmap` 再計算 + 未来 GT[] 全再生成 (現状は PlanRevision 履歴のみ)
+- carry-over Replan の SI 日付付け替えロジック (現状は履歴のみ)
+- material-change Replan の新 LearningPlan 自動生成 (現状は旧 plan paused のみ)
+- WeakNodes / NodeReviewSuggestion の AI 自動判定 (現状は固定閾値 + 静的 mock)
+- Interrupt の自動生成 (現状は MOCK_INTERRUPT_EVENTS 固定 2 件)
+- 各 SI [開始] /learn 遷移の status: todo → doing 自動遷移 (C23 では UI のみ)
+- weakly-review Replan の自動発火後 chat への通知 (C20 では画面表示のみ)
+
+詳細な commit 内容と動作確認動線は `SESSION_HANDOFF.md` §3-§4 参照。
 
 ---
 
@@ -1261,7 +1283,7 @@ TutorHandoff {
 | **Phase 3 中盤の追加機能** | 1 日 1 chat 永続化 + 話題セクション + アーカイブ + 検索 + セッション pause/resume + 3 状態タイマー + ending dialogue（上記「Phase 3 中盤の実装スナップショット」参照） | ✓ 完了 |
 | **Phase 3.5** | 学習開始の儀式 + 経過時間計測 + 離席検知 + 終了儀式（下記 Phase 3.5 スコープ参照） | 中盤の追加機能で部分実装済 (auto-pause / ending dialogue / 3 状態タイマー)、残りは next |
 | **Phase 4** | **中学生向け設計軌道修正 (2026-05-25 grill)**: LearningPlan + 帰宅儀式 (2 部構成) + SchoolDailyReport + 週次/月次レポート (4 セクション) + 達成バッジ + 親共有 (本人同意制)。**既存 Phase 4 (宿題タスク) と旧 Phase 5 (授業の新しい学び) は本 Phase に統合** | ✓ 完了 (C7-C13、2026-05-25) |
-| **Phase 5** | **学習戦略エンジン (2026-05-25 grill)**: 4 軸分離 (Plan Type / Mode / Resource / Node) + GeneratedTask × ScheduleItem 並走 + WeakNodes 半自動 + Replan Engine (3 トリガー) + NodeReviewSuggestion 即時 accept + Plan Engine ダッシュボード + 今日のタスクルート整理 | grill 確定 (P5-Q1〜Q7)、実装中 (C14 試作 + C15-C24) |
+| **Phase 5** | **学習戦略エンジン (2026-05-25 grill)**: 4 軸分離 (Plan Type / Mode / Resource / Node) + GeneratedTask × ScheduleItem 並走 + WeakNodes 半自動 + Replan Engine (3 トリガー) + NodeReviewSuggestion 即時 accept + Plan Engine ダッシュボード + 今日のタスクルート整理 | ✓ 完了 (C14 試作 + C15-C24、2026-05-25) |
 | **Phase 6** | Claude API 接続、scripted mock を本物の対話に置換、コンテキスト圧縮（rolling summary / prompt cache）、ゆいによるサマリー読み込み、教材 PDF → roadmap 自動生成、WeakNodes 自動判定の AI 化 | 未着手 |
 | **Phase 7** | Supabase スキーマ + mock → 永続化 (LearningPlan / SchoolDailyReport / ScheduleItem 拡張 / GeneratedTask / バッジ等含む) | 未着手 |
 | **Phase 8** | Web Speech API（STT）+ OpenAI TTS で音声対話 | 未着手 |
