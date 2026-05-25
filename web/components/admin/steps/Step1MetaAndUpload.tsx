@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,9 @@ import type {
 } from "@/lib/learn/types";
 import { cn } from "@/lib/utils";
 
+/** Select で「+ 新規科目を追加…」が選ばれた時の特殊 value。2026-05-25 grill 2 S8 由来 */
+const ADD_NEW_SUBJECT_VALUE = "__ADD_NEW_SUBJECT__";
+
 type Props = {
   draft: MaterialDraft;
   subjects: Subject[];
@@ -36,6 +40,7 @@ export function Step1MetaAndUpload({
   onChange,
   onNext,
 }: Props) {
+  const router = useRouter();
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -73,9 +78,13 @@ export function Step1MetaAndUpload({
               <Label>科目 *</Label>
               <Select
                 value={draft.subjectId}
-                onValueChange={(v) =>
-                  onChange({ ...draft, subjectId: v ?? "" })
-                }
+                onValueChange={(v) => {
+                  if (v === ADD_NEW_SUBJECT_VALUE) {
+                    router.push("/tutor?view=subjects");
+                    return;
+                  }
+                  onChange({ ...draft, subjectId: v ?? "" });
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -86,6 +95,10 @@ export function Step1MetaAndUpload({
                       {s.name}
                     </SelectItem>
                   ))}
+                  <div className="my-1 border-t" />
+                  <SelectItem value={ADD_NEW_SUBJECT_VALUE} className="text-primary">
+                    + 新規科目を追加…
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
