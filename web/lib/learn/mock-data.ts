@@ -60,6 +60,32 @@ export const MOCK_TREE: KnowledgeNode[] = [
       "中2 で学ぶ英文法の全体。動詞・助動詞・受動態・比較・接続詞・文型などのツールを少しずつ揃えていく。",
   },
 
+  // ====== 他教科 root ノード (2026-05-25 grill 2 由来、MVP は英語のみ詳細展開) ======
+  {
+    id: "math-root",
+    name: "中2 数学",
+    parentId: null,
+    description: "中2 で学ぶ数学全体 (まだ詳細未展開、MVP は英語のみ)。",
+  },
+  {
+    id: "japanese-root",
+    name: "中2 国語",
+    parentId: null,
+    description: "中2 で学ぶ国語全体 (まだ詳細未展開、MVP は英語のみ)。",
+  },
+  {
+    id: "science-root",
+    name: "中2 理科",
+    parentId: null,
+    description: "中2 で学ぶ理科全体 (まだ詳細未展開、MVP は英語のみ)。",
+  },
+  {
+    id: "social-root",
+    name: "中2 社会",
+    parentId: null,
+    description: "中2 で学ぶ社会全体 (まだ詳細未展開、MVP は英語のみ)。",
+  },
+
   // ====== 大カテゴリ ======
   {
     id: "verb-tense",
@@ -562,6 +588,46 @@ export const MOCK_SUBJECTS: Subject[] = [
       subtitle: "英語の先生",
     },
   },
+  {
+    id: "subj-math",
+    name: "数学",
+    teacher: {
+      name: "かずや",
+      displayName: "かずや先生",
+      avatarLetter: "か",
+      subtitle: "数学の先生",
+    },
+  },
+  {
+    id: "subj-japanese",
+    name: "国語",
+    teacher: {
+      name: "みやび",
+      displayName: "みやび先生",
+      avatarLetter: "み",
+      subtitle: "国語の先生",
+    },
+  },
+  {
+    id: "subj-science",
+    name: "理科",
+    teacher: {
+      name: "さとし",
+      displayName: "さとし先生",
+      avatarLetter: "さ",
+      subtitle: "理科の先生",
+    },
+  },
+  {
+    id: "subj-social",
+    name: "社会",
+    teacher: {
+      name: "ゆうき",
+      displayName: "ゆうき先生",
+      avatarLetter: "ゆ",
+      subtitle: "社会の先生",
+    },
+  },
 ];
 
 /**
@@ -571,6 +637,10 @@ export const MOCK_SUBJECTS: Subject[] = [
  */
 export const ROOT_NODE_TO_SUBJECT: Record<string, string> = {
   grammar: "subj-english",
+  "math-root": "subj-math",
+  "japanese-root": "subj-japanese",
+  "science-root": "subj-science",
+  "social-root": "subj-social",
 };
 
 // ====== 学習セッション履歴 (mock) ======

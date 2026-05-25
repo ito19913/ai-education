@@ -2,9 +2,13 @@
 
 /**
  * SubjectPickerCard - 担任 chat 内で「何の教科にする?」を選ぶカード。
+ *
+ * 2026-05-25 grill 2 (科目追加設計) C28: Folder アイコン → SubjectTeacherAvatar (SVG) に置換、
+ * 5 教科ハードコード対応。手動追加された科目は fallback (avatarLetter) で表示。
  */
 import { Card } from "@/components/ui/card";
-import { Check, Folder } from "lucide-react";
+import { SubjectTeacherAvatar } from "@/components/ui/subject-teacher-avatar";
+import { Check } from "lucide-react";
 import type { TutorCard } from "@/lib/learn/types";
 import { cn } from "@/lib/utils";
 
@@ -38,9 +42,9 @@ export function SubjectPickerCard({ card, onPick }: Props) {
               )}
             >
               {picked ? (
-                <Check className="size-4" strokeWidth={3} />
+                <Check className="size-7 shrink-0" strokeWidth={3} />
               ) : (
-                <Folder className="size-4" />
+                <SubjectTeacherAvatar subjectId={opt.subjectId} size={28} className="shrink-0" />
               )}
               <span className="font-medium">{opt.label}</span>
             </button>
