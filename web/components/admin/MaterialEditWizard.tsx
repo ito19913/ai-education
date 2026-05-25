@@ -1,18 +1,21 @@
 "use client";
 
 /**
- * MaterialEditWizard - 教材登録の 4 ステップウィザード。
+ * MaterialEditWizard - 教材登録の 3 ステップウィザード。
+ *
+ * 2026-05-25 grill 1 確定 9 (C31): Step3Review (監修) を撤去して 4 step → 3 step に簡素化。
+ * Phase 6 で本物の葵先生 (Claude Opus) が体系図を生成するようになるが、
+ * grill 確定 9 (人間監修ステップ全廃) + 確定 10 (テキスト忠実) に従い、葵生成をそのまま保存。
+ * 誤りはチャットで気づいたら葵に修正させる方針。
  *
  * Step 1: メタ情報 + PDF アップロード
- * Step 2: AI 抽出（mock プログレス）
- * Step 3: 監修（承認 / 編集 / 削除）
- * Step 4: 保存（mock では state のみ）
+ * Step 2: AI 抽出（mock プログレス、Phase 6 で葵先生による体系図 + 評価コメント 2 レイヤに置換）
+ * Step 3: 保存（mock では state のみ、Phase 7 で Supabase 永続化）
  */
 
 import { useState } from "react";
 import { Step1MetaAndUpload } from "./steps/Step1MetaAndUpload";
 import { Step2Extraction } from "./steps/Step2Extraction";
-import { Step3Review } from "./steps/Step3Review";
 import { Step4Save } from "./steps/Step4Save";
 import { mockExtractNodes } from "@/lib/admin/mock-extraction";
 import type {
@@ -40,7 +43,8 @@ type Props = {
   onComplete?: (materialName: string, approvedNodeCount: number) => void;
 };
 
-const STEP_LABELS = ["メタ情報・PDF", "AI 抽出", "監修", "保存"];
+// C31 2026-05-25 grill 1 確定 9: 監修ステップ撤去で 4 step → 3 step
+const STEP_LABELS = ["メタ情報・PDF", "AI 抽出", "保存"];
 
 export function MaterialEditWizard({
   subjects,
@@ -66,15 +70,6 @@ export function MaterialEditWizard({
   const handleExtractionDone = () => {
     setExtracted(mockExtractNodes(existingNodes));
     goNext();
-  };
-
-  const handleUpdateNode = (
-    tempId: string,
-    patch: Partial<AiExtractedNode>,
-  ) => {
-    setExtracted((prev) =>
-      prev.map((n) => (n.tempId === tempId ? { ...n, ...patch } : n)),
-    );
   };
 
   return (
@@ -148,15 +143,6 @@ export function MaterialEditWizard({
         />
       )}
       {step === 2 && (
-        <Step3Review
-          extracted={extracted}
-          existingNodes={existingNodes}
-          onUpdateNode={handleUpdateNode}
-          onNext={goNext}
-          onBack={goPrev}
-        />
-      )}
-      {step === 3 && (
         <Step4Save
           draft={draft}
           extracted={extracted}
