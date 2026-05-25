@@ -15,7 +15,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { CalendarClock, Home } from "lucide-react";
+import { CalendarClock, CheckCircle2, Home, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type {
   ExamPrep,
   Homework,
@@ -117,6 +118,12 @@ export function TodayTaskDashboard({
     );
   };
 
+  // C23 Phase 5 P5-Q7: 進捗 N/M done と 全 done 判定
+  const doneCount = todayItems.filter((i) => i.status === "done").length;
+  const totalCount = todayItems.length;
+  const allDone = totalCount > 0 && doneCount === totalCount;
+  const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
   const body = (
     <>
       {/* 上ヘッダ */}
@@ -125,6 +132,27 @@ export function TodayTaskDashboard({
         issues={issues}
         thisWeekItems={thisWeekItems}
       />
+
+      {/* C23 Phase 5: 進捗バー (上部、メイン view 直前) */}
+      {totalCount > 0 && (
+        <div className="rounded-md border border-border bg-card px-3 py-2">
+          <div className="flex items-center justify-between text-[12px]">
+            <span className="font-medium text-card-foreground">今日の進捗</span>
+            <span className="font-semibold tabular-nums">
+              {doneCount} / {totalCount} done ({progressPct}%)
+            </span>
+          </div>
+          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                "h-full transition-all",
+                allDone ? "bg-emerald-500" : "bg-primary",
+              )}
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 中央: 今日のタスク + ミニカレンダー */}
       <div className="grid gap-4 md:grid-cols-[1fr_360px]">
@@ -139,6 +167,40 @@ export function TodayTaskDashboard({
           exams={exams}
         />
       </div>
+
+      {/* C23 Phase 5: 全 done CTA (お疲れさま、振り返ろう) */}
+      {allDone && (
+        <div className="rounded-md border border-emerald-300/60 bg-emerald-50/60 px-4 py-3 dark:border-emerald-900/60 dark:bg-emerald-950/30">
+          <div className="flex items-start gap-2.5">
+            <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <div className="flex flex-1 flex-col gap-1.5">
+              <p className="text-[13px] font-semibold text-emerald-900 dark:text-emerald-200">
+                <Sparkles className="mr-1 inline size-3.5 text-emerald-600 dark:text-emerald-400" />
+                今日のタスク、全部終わったよ! お疲れさま。
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                今日の学びを軽く振り返ろう。明日にちゃんと繋がる。
+              </p>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <Link href="/tutor?ending=1">
+                  <Button
+                    size="sm"
+                    className="h-7 gap-1 bg-emerald-600 px-3 text-[11px] hover:bg-emerald-700"
+                  >
+                    <Sparkles className="size-3" />
+                    <span>ゆいと振り返る</span>
+                  </Button>
+                </Link>
+                <Link href="/learn">
+                  <Button size="sm" variant="outline" className="h-7 px-3 text-[11px]">
+                    学習画面に戻る
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 下段: タスク登録パネル */}
       <div className="flex items-center gap-2 pt-2">
