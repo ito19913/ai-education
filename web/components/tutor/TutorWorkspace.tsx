@@ -260,6 +260,9 @@ export function TutorWorkspace({
         case "open-monthly-report":
           navigate("monthly-report");
           break;
+        case "open-plans":
+          navigate("plans");
+          break;
         case "open-material-new":
           navigate("material-new");
           break;

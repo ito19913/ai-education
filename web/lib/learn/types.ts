@@ -482,6 +482,7 @@ export type TutorRightPaneAction =
   | { kind: "open-reflections" } // C4: ReflectionLog 一覧
   | { kind: "open-weekly-report" } // C11 Phase 4: 週次レポート
   | { kind: "open-monthly-report" } // C11 Phase 4: 月次レポート
+  | { kind: "open-plans" } // C21 Phase 5 P5-Q6: Plan Engine ダッシュボード
   | { kind: "open-material-new" }
   | { kind: "open-subject-history"; subjectId: string }
   | { kind: "open-tutor-archive" }
@@ -528,6 +529,7 @@ export type RightPaneView =
   | "reflections" // C4: ReflectionLog 一覧
   | "weekly-report" // C11 Phase 4: 週次レポート
   | "monthly-report" // C11 Phase 4: 月次レポート
+  | "plans" // C21 Phase 5 P5-Q6: Plan Engine ダッシュボード
   | "material-new"
   | "subject-history"
   | "tutor-archive";

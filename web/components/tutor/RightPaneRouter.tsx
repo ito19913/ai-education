@@ -34,6 +34,7 @@ import { SubjectHistoryView } from "@/components/subjects/SubjectHistoryView";
 import { TutorArchiveView } from "@/components/tutor/TutorArchiveView";
 import { ReflectionListView } from "@/components/reflections/ReflectionListView";
 import { WeeklyMonthlyReportView } from "@/components/reports/WeeklyMonthlyReportView";
+import { PlanEngineDashboard } from "@/components/plans/PlanEngineDashboard";
 
 type Props = {
   view: RightPaneView;
@@ -169,6 +170,11 @@ export function RightPaneRouter({
     return (
       <WeeklyMonthlyReportView mode="monthly" nodes={nodes} subjects={subjects} />
     );
+  }
+
+  if (view === "plans") {
+    // C21 Phase 5 P5-Q6: Plan Engine ダッシュボード
+    return <PlanEngineDashboard nodes={nodes} />;
   }
 
   if (view === "material-new") {

@@ -470,13 +470,13 @@ function TutorHubMenu({
       {/* スペーサー: 「プラン」を右端に押し出す */}
       <div className="flex-1" />
 
-      {/* 「プラン」ボタン (右端): 計画立案フロー C8 起動 */}
+      {/* 「プラン」ボタン (右端): C21 Phase 5 P5-Q6 で Plan Engine ダッシュボード入口に変更 */}
       <button
         type="button"
         disabled={disabled}
-        onClick={() => onSend("計画立てよう")}
+        onClick={() => onSend("プラン見せて")}
         className="rounded-md border border-primary bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/15 disabled:opacity-50"
-        title="PDCA の P (計画立案)。毎日じゃない、節目で立てる。"
+        title="Plan Engine ダッシュボード (一覧 + 詳細)。新規立案は中の [新しい計画 +] から。"
       >
         プラン
       </button>

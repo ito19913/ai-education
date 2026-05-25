@@ -1917,6 +1917,30 @@ function buildNextTutorReplyInner(args: {
     }
   }
 
+  // C21 Phase 5 P5-Q6: Plan Engine ダッシュボードを開く発話
+  // 「プラン見せて」「計画一覧」「Plan Engine」 → 右ペインに /tutor?view=plans
+  // 「計画立て」「計画作る」等の立案系より先置き (具体的キーワード優先)
+  if (
+    lower.includes("プラン見せ") ||
+    lower.includes("プラン一覧") ||
+    lower.includes("計画一覧") ||
+    lower.includes("計画見せ") ||
+    lower.includes("plan engine") ||
+    lower.includes("plan-engine")
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "**Plan Engine ダッシュボード** を右に出したよ。一覧から計画を選んで詳細見れる。新規立案は右上の [新しい計画 +] から。",
+        rightPaneAction: { kind: "open-plans" },
+        quickReplies: ["新しい計画立てる", "別の話"],
+        createdAt: now,
+      },
+    };
+  }
+
   // C17 Phase 5 P5-Q5: PlanType 明示発話分岐
   // 「計画立て」一般発話より具体的なキーワードを先にマッチ
   // 該当した PlanType を state.proposedPlanType にセットして立案開始
@@ -1954,11 +1978,13 @@ function buildNextTutorReplyInner(args: {
   // C8: 「計画立て」「学習計画」 → 計画立案フロー開始 (subject-picker 表示)
   // chat 内完結フロー (Q11 ハイブリッド: ゆい対話 + カード)
   // C17 Phase 5: デフォルト planType: "regular-study" がセットされる
+  // C21 Phase 5: 「新しい計画立てる」も同フローに入る (Plan Engine ダッシュボードからの導線)
   if (
     lower.includes("計画立て") ||
     lower.includes("計画作") ||
     lower.includes("学習計画") ||
     lower.includes("プラン作") ||
+    lower.includes("新しい計画立") ||
     lower.includes("plan")
   ) {
     return {
