@@ -26,6 +26,7 @@ import { DurationPickerCard } from "./cards/DurationPickerCard";
 import { RoadmapPreviewCard } from "./cards/RoadmapPreviewCard";
 import { WeakNodePickerCard } from "./cards/WeakNodePickerCard";
 import { NodeReviewSuggestionCard } from "./cards/NodeReviewSuggestionCard";
+import { ReplanDraftCard } from "./cards/ReplanDraftCard";
 import { TopicChip } from "./topic-display";
 
 type Props = {
@@ -135,6 +136,9 @@ export function TutorMessageBubble({
               )}
               {message.card.kind === "node-review-suggestion" && (
                 <NodeReviewSuggestionCard card={message.card} />
+              )}
+              {message.card.kind === "replan-draft" && (
+                <ReplanDraftCard card={message.card} />
               )}
             </div>
           )}

@@ -430,6 +430,31 @@ export type TutorCard =
       reason: string;
     }
   | {
+      /**
+       * Phase 5 P5-Q3 確定: Replan draft カード。
+       * 3 トリガー (週次レポート時 / InterruptEvent 即時 / 明示発話) で
+       * AI が生成した Replan 提案を本人に提示。「OK」で PlanRevision コミット。
+       *
+       * 種類別影響範囲:
+       *   - "carry-over": 当月 GT[] 内で再配置 (来月以降に滲ませる)
+       *   - "pace-change": monthlyRoadmap 再計算 → 未来 GT[] 全再生成
+       *   - "material-change": 新 LearningPlan + 旧 paused
+       */
+      kind: "replan-draft";
+      /** 対象 LearningPlan.id */
+      planId: string;
+      /** 対象 plan のタイトル (表示用) */
+      planTitle: string;
+      /** Replan の種類 (影響範囲を決める) */
+      replanKind: "carry-over" | "pace-change" | "material-change";
+      /** トリガー */
+      triggeredBy: "weekly-review" | "interrupt" | "manual";
+      /** 変更内容の人間向け説明 (例:「1 回転 = 3 ヶ月 → 4 ヶ月に延長」)*/
+      proposedChange: string;
+      /** ゆいの所感 (なぜこの提案か) */
+      rationale: string;
+    }
+  | {
       /** Phase 3 拡張: 「あの話したよね?」検索ヒット候補のリスト */
       kind: "chat-search-result";
       /** AI が抽出 or 本人が指定したクエリ */

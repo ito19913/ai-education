@@ -28,6 +28,7 @@ import type {
 import {
   MOCK_GENERATED_TASKS,
   MOCK_HANDOFFS,
+  MOCK_INTERRUPT_EVENTS,
   MOCK_ISSUES,
   MOCK_LEARNING_PLANS,
   MOCK_MATERIALS,
@@ -144,6 +145,40 @@ export function buildInitialTutorThread(
     },
   ];
 
+  // C19 Phase 5 P5-Q3: 未処理 Interrupt があれば冒頭で Replan 提案
+  // (Suggestion より優先度高、急ぎだから先に処理)
+  const untriggeredInterrupt = getUntriggeredInterrupt();
+  if (untriggeredInterrupt) {
+    const activePlan = MOCK_LEARNING_PLANS.find((p) => p.status === "active");
+    if (activePlan) {
+      const draft = buildReplanDraft({
+        plan: activePlan,
+        replanKind: "carry-over",
+        triggeredBy: "interrupt",
+        interruptTitle: untriggeredInterrupt.title,
+      });
+      // フラグ立てて再提示防止
+      untriggeredInterrupt.replanTriggered = true;
+      messages.push({
+        id: "t-1-interrupt",
+        role: "tutor",
+        topic: "morning-reflection",
+        text: `**${untriggeredInterrupt.title}** が発生したから、計画ちょっと組み直そうか?`,
+        card: {
+          kind: "replan-draft",
+          planId: activePlan.id,
+          planTitle: activePlan.title,
+          replanKind: "carry-over",
+          triggeredBy: "interrupt",
+          proposedChange: draft.proposedChange,
+          rationale: draft.rationale,
+        },
+        quickReplies: ["OK 反映して", "あとで", "いらない"],
+        createdAt: new Date(now.getTime() + 500).toISOString(),
+      });
+    }
+  }
+
   // C18 Phase 5 P5-Q4: pending な NodeReviewSuggestion があれば冒頭で提示
   // (本日 1 件まで、複数 pending は最新 1 件のみ提示。多重提示は鬱陶しい)
   const pendingSuggestion = getOldestPendingSuggestion();
@@ -238,6 +273,16 @@ export type TutorStep = {
   proposedWeakNodeIds?: string[];
   /** C8: 計画立案で確定した LearningPlan id */
   confirmedLearningPlanId?: string;
+  /**
+   * C19 Phase 5 P5-Q3: 提示中の Replan draft。
+   * 「OK 反映して」発話で commitReplan に渡す。
+   */
+  proposedReplanDraft?: {
+    planId: string;
+    replanKind: "carry-over" | "pace-change" | "material-change";
+    triggeredBy: "weekly-review" | "interrupt" | "manual";
+    reason: string;
+  };
   /** C9: 帰宅儀式 第 1 部 (学校レポート) の draft */
   schoolReportDraft?: SchoolReportDraft;
   /** C9: 帰宅儀式で確定した SchoolDailyReport id */
@@ -735,6 +780,125 @@ function dismissNodeReviewSuggestion(suggestionId: string): boolean {
   s.status = "dismissed";
   s.dismissedAt = new Date().toISOString();
   return true;
+}
+
+// ============================================================================
+// C19 Phase 5 P5-Q3: Replan Engine (3 トリガー + 種類別影響範囲)
+// ============================================================================
+
+/**
+ * 当月遅延を検出: アクティブな plan の今月の SI のうち、
+ * dueDate 過ぎてて status: "todo" な件数。
+ * (実装簡略: replanRules.delayThresholdDays を超えてたら Replan 候補)
+ */
+function detectPlanDelay(): {
+  plan: LearningPlan;
+  delayedItemCount: number;
+} | null {
+  const activePlan = MOCK_LEARNING_PLANS.find((p) => p.status === "active");
+  if (!activePlan) return null;
+
+  const today = formatLocalDate(new Date());
+  const planSiIds = activePlan.expandedMonths.flatMap((m) => m.scheduleItemIds);
+  const delayedItems = MOCK_SCHEDULE_TODAY.filter(
+    (s) =>
+      planSiIds.includes(s.id) &&
+      s.status === "todo" &&
+      s.date < today, // 過去日付で todo
+  );
+
+  if (delayedItems.length === 0) return null;
+  return { plan: activePlan, delayedItemCount: delayedItems.length };
+}
+
+/**
+ * Replan の自動 draft を生成。triggeredBy + replanKind で文面を切り分ける。
+ * 実際の GT[] 書き換えは commitReplan で実行。本関数は提案テキストのみ。
+ */
+function buildReplanDraft(args: {
+  plan: LearningPlan;
+  replanKind: "carry-over" | "pace-change" | "material-change";
+  triggeredBy: "weekly-review" | "interrupt" | "manual";
+  delayedItemCount?: number;
+  interruptTitle?: string;
+}): {
+  proposedChange: string;
+  rationale: string;
+} {
+  const { plan, replanKind, triggeredBy, delayedItemCount, interruptTitle } =
+    args;
+
+  if (replanKind === "carry-over") {
+    return {
+      proposedChange: `${delayedItemCount ?? 0} 件の遅れタスクを来週に carry-over、当月残りで調整`,
+      rationale:
+        triggeredBy === "interrupt"
+          ? `${interruptTitle ?? "突発イベント"} で進めなかった分を、当月内で再配置するよ。来月以降には影響しない範囲で。`
+          : `今週の進捗から ${delayedItemCount ?? 0} 件遅れてる。来週で取り戻せる範囲なので carry-over で対応するのが軽い。`,
+    };
+  }
+  if (replanKind === "pace-change") {
+    const currentMonths = plan.monthlyRoadmap.length / plan.targetRotations;
+    const newMonths = currentMonths + 1;
+    return {
+      proposedChange: `1 回転 = ${currentMonths} ヶ月 → ${newMonths} ヶ月に延長、未来 GT[] 全再生成`,
+      rationale: `ペースを 1 段ゆっくりに。${plan.title} の monthlyRoadmap を再計算して、来月以降の GT を全部組み直すよ。`,
+    };
+  }
+  // material-change
+  return {
+    proposedChange: `現 plan を paused に、新 LearningPlan を新規作成`,
+    rationale: `教材変更は計画立案やり直し相当。既存 plan は履歴として paused で残し、新 plan を立てる流れになるよ。`,
+  };
+}
+
+/**
+ * Replan を実際に MOCK_LEARNING_PLANS にコミット。本人 OK 発話で呼ぶ。
+ * PlanRevision を必ず履歴に push。GT[] 書き換えは mock では簡略化。
+ */
+function commitReplan(args: {
+  planId: string;
+  replanKind: "carry-over" | "pace-change" | "material-change";
+  triggeredBy: "weekly-review" | "interrupt" | "manual";
+  reason: string;
+}): boolean {
+  const plan = MOCK_LEARNING_PLANS.find((p) => p.id === args.planId);
+  if (!plan) return false;
+
+  plan.revisions.push({
+    id: makeDerivedId("revision"),
+    revisedAt: new Date().toISOString(),
+    reason: args.reason,
+    changedFields:
+      args.replanKind === "carry-over"
+        ? ["expandedMonths", "scheduleItemDates"]
+        : args.replanKind === "pace-change"
+          ? ["monthlyRoadmap", "endDate", "generatedTasks(future)"]
+          : ["status", "newPlanCreated"],
+    triggeredBy:
+      args.triggeredBy === "weekly-review"
+        ? "monthly-review"
+        : args.triggeredBy === "interrupt"
+          ? "ai-suggestion"
+          : "manual",
+  });
+  plan.updatedAt = new Date().toISOString();
+
+  // material-change は plan を paused に (新 plan 作成は別フロー)
+  if (args.replanKind === "material-change") {
+    plan.status = "paused";
+  }
+  // 注: pace-change の monthlyRoadmap 再計算 + 未来 GT[] 書き換えは
+  // Phase 6 (Claude API) で本格実装、現状は PlanRevision のみで意図記録。
+  return true;
+}
+
+/**
+ * Interrupt で replanTriggered: false な未処理イベントを 1 件取得。
+ * 取得した時に flag を true に立ててもう一度提示しないようにする。
+ */
+function getUntriggeredInterrupt() {
+  return MOCK_INTERRUPT_EVENTS.find((e) => !e.replanTriggered);
 }
 
 /**
@@ -1484,6 +1648,204 @@ function buildNextTutorReplyInner(args: {
         createdAt: now,
       },
     };
+  }
+
+  // C19 Phase 5 P5-Q3: Replan 関連の発話分岐
+  // (a) Replan draft 提示後の「OK 反映して」「あとで」「いらない」3 択処理
+  // (b) 明示発話: 「ペース変えて」「教材変える」「再計画して」
+  // (a) を先に置く: draft が提示済みなら本人の応答を優先処理
+  if (state.proposedReplanDraft) {
+    const draft = state.proposedReplanDraft;
+    const wantsCommit =
+      lower.includes("ok") ||
+      lower.includes("反映") ||
+      lower.includes("やって") ||
+      lower.includes("お願い");
+    const wantsAbort =
+      lower.includes("いらない") ||
+      lower.includes("やめる") ||
+      lower.includes("やっぱ");
+    const wantsDefer = lower.includes("あとで");
+
+    if (wantsCommit) {
+      commitReplan({
+        planId: draft.planId,
+        replanKind: draft.replanKind,
+        triggeredBy: draft.triggeredBy,
+        reason: draft.reason,
+      });
+      const newState = { ...state, proposedReplanDraft: undefined };
+      const kindLabel =
+        draft.replanKind === "carry-over"
+          ? "今週の繰越調整"
+          : draft.replanKind === "pace-change"
+            ? "ペース変更"
+            : "教材変更 (新 plan 立案)";
+      return {
+        nextState: newState,
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: `OK、**${kindLabel}** で計画を更新したよ。修正履歴 (PlanRevision) に残してあるから、後から「いつ何を変えたか」見返せるよ。次どうする?`,
+          quickReplies:
+            draft.replanKind === "material-change"
+              ? ["新しい計画立てる", "別の話"]
+              : ["スケジュール見せて", "別の話"],
+          createdAt: now,
+        },
+      };
+    }
+    if (wantsAbort || wantsDefer) {
+      return {
+        nextState: { ...state, proposedReplanDraft: undefined },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: wantsDefer
+            ? "OK、保留しておくね。気が変わったらまた言って。"
+            : "OK、今回は見送るね。",
+          quickReplies: ["別の話", "学習を始める"],
+          createdAt: now,
+        },
+      };
+    }
+  }
+
+  // (b) 明示発話: ペース変更
+  if (
+    lower.includes("ペース変え") ||
+    lower.includes("ペース調整") ||
+    lower.includes("もっとゆっくり") ||
+    lower.includes("もっと速く")
+  ) {
+    const activePlan = MOCK_LEARNING_PLANS.find((p) => p.status === "active");
+    if (activePlan) {
+      const draft = buildReplanDraft({
+        plan: activePlan,
+        replanKind: "pace-change",
+        triggeredBy: "manual",
+      });
+      return {
+        nextState: {
+          ...state,
+          proposedReplanDraft: {
+            planId: activePlan.id,
+            replanKind: "pace-change",
+            triggeredBy: "manual",
+            reason: `本人発話「${userInput.slice(0, 30)}」によるペース変更要望`,
+          },
+        },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: `OK、**ペース調整** の Replan 案を作ったよ。`,
+          card: {
+            kind: "replan-draft",
+            planId: activePlan.id,
+            planTitle: activePlan.title,
+            replanKind: "pace-change",
+            triggeredBy: "manual",
+            proposedChange: draft.proposedChange,
+            rationale: draft.rationale,
+          },
+          quickReplies: ["OK 反映して", "あとで", "いらない"],
+          createdAt: now,
+        },
+      };
+    }
+  }
+
+  // (b) 明示発話: 教材変更
+  if (
+    lower.includes("教材変え") ||
+    lower.includes("教材を変") ||
+    lower.includes("テキスト変え")
+  ) {
+    const activePlan = MOCK_LEARNING_PLANS.find((p) => p.status === "active");
+    if (activePlan) {
+      const draft = buildReplanDraft({
+        plan: activePlan,
+        replanKind: "material-change",
+        triggeredBy: "manual",
+      });
+      return {
+        nextState: {
+          ...state,
+          proposedReplanDraft: {
+            planId: activePlan.id,
+            replanKind: "material-change",
+            triggeredBy: "manual",
+            reason: `本人発話「${userInput.slice(0, 30)}」による教材変更`,
+          },
+        },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: `**教材変更** は計画立案やり直し相当だよ。一旦今の plan を一時停止して、新しい plan を立てる流れになる。`,
+          card: {
+            kind: "replan-draft",
+            planId: activePlan.id,
+            planTitle: activePlan.title,
+            replanKind: "material-change",
+            triggeredBy: "manual",
+            proposedChange: draft.proposedChange,
+            rationale: draft.rationale,
+          },
+          quickReplies: ["OK 反映して", "あとで", "いらない"],
+          createdAt: now,
+        },
+      };
+    }
+  }
+
+  // (b) 明示発話: 再計画して (種類自動判定で carry-over をデフォルト)
+  if (
+    lower.includes("再計画") ||
+    lower.includes("リプラン") ||
+    lower === "replan"
+  ) {
+    const activePlan = MOCK_LEARNING_PLANS.find((p) => p.status === "active");
+    const delay = detectPlanDelay();
+    if (activePlan) {
+      const draft = buildReplanDraft({
+        plan: activePlan,
+        replanKind: "carry-over",
+        triggeredBy: "manual",
+        delayedItemCount: delay?.delayedItemCount,
+      });
+      return {
+        nextState: {
+          ...state,
+          proposedReplanDraft: {
+            planId: activePlan.id,
+            replanKind: "carry-over",
+            triggeredBy: "manual",
+            reason: `本人発話「${userInput.slice(0, 30)}」による再計画要望`,
+          },
+        },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: `OK、**当月内の調整** で再計画案を作ったよ (ペースや教材を変えたい時はそう言って)。`,
+          card: {
+            kind: "replan-draft",
+            planId: activePlan.id,
+            planTitle: activePlan.title,
+            replanKind: "carry-over",
+            triggeredBy: "manual",
+            proposedChange: draft.proposedChange,
+            rationale: draft.rationale,
+          },
+          quickReplies: [
+            "OK 反映して",
+            "ペース変えたい",
+            "教材変えたい",
+            "あとで",
+          ],
+          createdAt: now,
+        },
+      };
+    }
   }
 
   // C18 Phase 5 P5-Q4: NodeReviewSuggestion 3 択発話分岐
