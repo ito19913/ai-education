@@ -31,6 +31,10 @@ import { TodayTaskDashboard } from "@/components/today-tasks/TodayTaskDashboard"
 import { HistoryView } from "@/components/history/HistoryView";
 import { MaterialEditWizard } from "@/components/admin/MaterialEditWizard";
 import { SubjectHistoryView } from "@/components/subjects/SubjectHistoryView";
+import {
+  SubjectSettingsPanel,
+  type NewSubjectInput,
+} from "@/components/subjects/SubjectSettingsPanel";
 import { TutorArchiveView } from "@/components/tutor/TutorArchiveView";
 import { ReflectionListView } from "@/components/reflections/ReflectionListView";
 import { WeeklyMonthlyReportView } from "@/components/reports/WeeklyMonthlyReportView";
@@ -62,6 +66,11 @@ type Props = {
    * TutorWorkspace 側でゆいの完了発話を追加 + 右ペインを閉じる。
    */
   onMaterialAdded: (materialName: string, approvedNodeCount: number) => void;
+  /**
+   * 科目追加完了時のコールバック（subjects view 用、C30 2026-05-25 grill 2 S6）。
+   * TutorWorkspace 側で MOCK_SUBJECTS / subjects state に push + ゆいの完了発話 + 右ペイン閉じる。
+   */
+  onSubjectAdded: (input: NewSubjectInput) => void;
 };
 
 export function RightPaneRouter({
@@ -85,6 +94,7 @@ export function RightPaneRouter({
   onSelectIssueItem,
   onBack,
   onMaterialAdded,
+  onSubjectAdded,
 }: Props) {
   if (view === "default") {
     return <DefaultPane />;
@@ -186,6 +196,11 @@ export function RightPaneRouter({
         onComplete={onMaterialAdded}
       />
     );
+  }
+
+  if (view === "subjects") {
+    // C30 2026-05-25 grill 2 S6: 科目設定パネル
+    return <SubjectSettingsPanel subjects={subjects} onSubjectAdded={onSubjectAdded} />;
   }
 
   if (view === "tutor-archive") {

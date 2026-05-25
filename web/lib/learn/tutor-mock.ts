@@ -1501,6 +1501,30 @@ function buildNextTutorReplyInner(args: {
     };
   }
 
+  // C30 2026-05-25 grill 2 S6: 「科目を追加」「教科を追加」「科目設定」「英語以外」
+  // → 右ペインに SubjectSettingsPanel (view=subjects) 展開
+  if (
+    lower.includes("科目を追加") ||
+    lower.includes("科目追加") ||
+    lower.includes("教科を追加") ||
+    lower.includes("教科追加") ||
+    lower.includes("科目設定") ||
+    lower.includes("英語以外") ||
+    lower === "新しい科目" ||
+    lower.includes("新規科目")
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、科目設定を開くね。右で 5 教科の一覧と、新しい科目の追加フォームが見れるよ。\n標準 5 教科 (英・数・国・理・社) はあらかじめ用意してあって、それ以外を追加したい時は下のフォームから登録してね。",
+        rightPaneAction: { kind: "open-subjects" },
+        createdAt: now,
+      },
+    };
+  }
+
   // 「学習を開始」「学習を始める」「勉強する」「始める」
   // → 振り返りをスキップして直接 計画フェーズへ
   if (

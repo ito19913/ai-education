@@ -36,6 +36,7 @@ import {
   loadTutorThread,
   saveTutorThread,
 } from "@/lib/learn/tutor-thread-storage";
+import { MOCK_SUBJECTS } from "@/lib/learn/mock-data";
 import type {
   ChatMessage,
   ExamPrep,
@@ -81,6 +82,7 @@ function viewFromParam(raw: string | null): RightPaneView {
     raw === "monthly-report" ||
     raw === "plans" ||
     raw === "material-new" ||
+    raw === "subjects" || // C30 2026-05-25 grill 2 S6
     raw === "subject-history" ||
     raw === "tutor-archive"
   ) {
@@ -97,10 +99,13 @@ export function TutorWorkspace({
   exams,
   homeworks,
   lessonReviews,
-  subjects,
+  subjects: initialSubjects,
   sessions,
   chatMessages,
 }: Props) {
+  // C30 2026-05-25 grill 2 S7: 科目追加対応で subjects を useState 化
+  // SubjectSettingsPanel から動的 push される
+  const [subjects, setSubjects] = useState<Subject[]>(initialSubjects);
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = viewFromParam(searchParams.get("view"));
@@ -267,6 +272,9 @@ export function TutorWorkspace({
         case "open-material-new":
           navigate("material-new");
           break;
+        case "open-subjects":
+          navigate("subjects");
+          break;
         case "open-subject-history":
           navigate("subject-history", { subjectId: action.subjectId });
           break;
@@ -291,6 +299,37 @@ export function TutorWorkspace({
           approvedNodeCount > 0
             ? `「${materialName}」、登録できたよ！\n体系図に ${approvedNodeCount} 個のノードが追加されたよ。`
             : `「${materialName}」、登録できたよ！\n（承認ノードは 0 件だったから、体系図には追加されてないよ）`,
+        createdAt: new Date().toISOString(),
+      };
+      setTutorMessages((prev) => [...prev, reply]);
+      navigate("default");
+    },
+    [navigate],
+  );
+
+  // ----- C30 2026-05-25 grill 2: 科目追加完了時の処理 -----
+  // SubjectSettingsPanel から呼ばれる。新規 Subject を生成して subjects state に追加、
+  // ゆいに完了発話を追加して右ペインを閉じる (S7 主体: 親+娘さん両方が使う動線)。
+  // MOCK_SUBJECTS にも push して他画面 (admin 等) でも見えるようにする (in-memory mock)。
+  const handleSubjectAdded = useCallback(
+    (input: { name: string; teacherName: string; avatarLetter: string }) => {
+      const newSubject: Subject = {
+        id: `subj-manual-${Date.now()}`,
+        name: input.name,
+        teacher: {
+          name: input.teacherName,
+          displayName: `${input.teacherName}先生`,
+          avatarLetter: input.avatarLetter,
+          subtitle: `${input.name}の先生`,
+        },
+      };
+      setSubjects((prev) => [...prev, newSubject]);
+      // mock-data 側にも push (admin/materials/new など他経路から見える)
+      MOCK_SUBJECTS.push(newSubject);
+      const reply: TutorMessage = {
+        id: `t-subj-${Date.now()}`,
+        role: "tutor",
+        text: `「${input.name}」追加したよ！${input.teacherName}先生がこの教科を担当するよ。\nこれで計画立案や教材登録で選べるようになったよ。`,
         createdAt: new Date().toISOString(),
       };
       setTutorMessages((prev) => [...prev, reply]);
@@ -534,6 +573,7 @@ export function TutorWorkspace({
             onSelectIssueItem={(id) => navigate("issue", { issueId: id })}
             onBack={() => navigate("default")}
             onMaterialAdded={handleMaterialAdded}
+            onSubjectAdded={handleSubjectAdded}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
