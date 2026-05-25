@@ -18,7 +18,7 @@ import {
   TASK_TYPE_LABEL,
   TASK_TYPE_TONE,
   TaskTypeIcon,
-} from "@/components/schedule/ScheduleTaskTypeIcon";
+} from "@/components/today-tasks/ScheduleTaskTypeIcon";
 import { cn } from "@/lib/utils";
 
 type Props = {

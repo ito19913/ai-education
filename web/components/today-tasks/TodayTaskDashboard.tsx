@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * ScheduleDashboard - /schedule のメインビュー。
+ * TodayTaskDashboard - /today-tasks のメインビュー (C22 で /schedule からリネーム)。
  *
  * レイアウト（ito19 さん指定）:
  *   - 上ヘッダ: 試験まで / 未クリア課題 / 今週の予定
@@ -9,8 +9,8 @@
  *   - 中央 右: 今後 2 週間のミニカレンダー
  *   - 下段: タスク登録パネル（試験対策 / 宿題 / 授業 / 課題）
  *
- * Phase 1 では state はローカルのみ。Phase 2 以降で chat 作成 UI と
- * Supabase 永続化を順次追加。
+ * Phase 1 では state はローカルのみ、Phase 2 以降で chat 作成 UI、
+ * C23 (Phase 5) で進捗 N/M + 全 done CTA + 各 SI [開始] /learn 遷移 を追加。
  */
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -39,7 +39,7 @@ type Props = {
   issues: Issue[];
   /**
    * true の時、ヘッダと min-h-screen を出さずに右ペイン埋め込み用の表示にする。
-   * Phase 3 で /tutor 右ペイン (?view=schedule) で使う。
+   * Phase 3 で /tutor 右ペイン (?view=today-tasks、C22 でリネーム) で使う。
    */
   embedded?: boolean;
   /**
@@ -49,7 +49,7 @@ type Props = {
   onSelectIssueItem?: (issueId: string) => void;
 };
 
-export function ScheduleDashboard({
+export function TodayTaskDashboard({
   subjects,
   initialTodayItems,
   upcomingItems,

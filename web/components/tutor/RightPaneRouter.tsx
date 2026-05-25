@@ -6,7 +6,7 @@
  * - default: 空のプレースホルダ
  * - issues: IssueListView コア（embedded=true）
  * - issue: IssueChat
- * - schedule: ScheduleDashboard コア（embedded=true）
+ * - today-tasks: TodayTaskDashboard コア（embedded=true、C22 で schedule からリネーム）
  * - history: HistoryView コア（embedded=true）
  */
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,7 +27,7 @@ import type {
 } from "@/lib/learn/types";
 import { IssueListView } from "@/components/issues/IssueListView";
 import { IssueChat } from "@/components/issues/IssueChat";
-import { ScheduleDashboard } from "@/components/schedule/ScheduleDashboard";
+import { TodayTaskDashboard } from "@/components/today-tasks/TodayTaskDashboard";
 import { HistoryView } from "@/components/history/HistoryView";
 import { MaterialEditWizard } from "@/components/admin/MaterialEditWizard";
 import { SubjectHistoryView } from "@/components/subjects/SubjectHistoryView";
@@ -127,9 +127,9 @@ export function RightPaneRouter({
     );
   }
 
-  if (view === "schedule") {
+  if (view === "today-tasks") {
     return (
-      <ScheduleDashboard
+      <TodayTaskDashboard
         subjects={subjects}
         initialTodayItems={scheduleToday}
         upcomingItems={scheduleUpcoming}

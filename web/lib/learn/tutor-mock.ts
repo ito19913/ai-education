@@ -1218,7 +1218,7 @@ export function deriveTutorTopic(
       case "open-issues":
       case "open-issue":
         return "issue-check";
-      case "open-schedule":
+      case "open-today-tasks":
         return "schedule-check";
       case "open-history":
         return "history-check";
@@ -1476,7 +1476,7 @@ function buildNextTutorReplyInner(args: {
           scheduleItemIds: MOCK_SCHEDULE_TODAY.slice(0, 5).map((i) => i.id),
           seeAllLabel: "スケジュールを全部見る",
         },
-        rightPaneAction: { kind: "open-schedule" },
+        rightPaneAction: { kind: "open-today-tasks" },
         createdAt: now,
       },
     };

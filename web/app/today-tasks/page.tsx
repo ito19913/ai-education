@@ -1,10 +1,12 @@
 /**
- * /schedule — 学習スケジュールのダッシュボード（時間軸の集約画面）。
+ * /today-tasks — 今日のタスク ダッシュボード (時間軸の集約画面)。
+ * C22 (Phase 5 P5-Q7) で /schedule からリネーム。
  *
  * Phase 1 mock: ダッシュボード骨格 + 4 task type のサンプルデータ。
- * Phase 2 以降で AI chat による作成 UI と Supabase 永続化を順次追加。
+ * Phase 5 C23 で各 SI に [開始] /learn 遷移 + 進捗 N/M + 全 done CTA を追加。
+ * Phase 2 以降で AI chat による作成 UI、Phase 7 で Supabase 永続化。
  */
-import { ScheduleDashboard } from "@/components/schedule/ScheduleDashboard";
+import { TodayTaskDashboard } from "@/components/today-tasks/TodayTaskDashboard";
 import {
   MOCK_EXAM_PREPS,
   MOCK_HOMEWORKS,
@@ -16,12 +18,12 @@ import {
 } from "@/lib/learn/mock-data";
 
 export const metadata = {
-  title: "学習スケジュール",
+  title: "今日のタスク",
 };
 
-export default function SchedulePage() {
+export default function TodayTasksPage() {
   return (
-    <ScheduleDashboard
+    <TodayTaskDashboard
       subjects={MOCK_SUBJECTS}
       initialTodayItems={MOCK_SCHEDULE_TODAY}
       upcomingItems={MOCK_SCHEDULE_UPCOMING}

@@ -123,7 +123,7 @@ export function LearnSidebar({
                 TutorHubMenu のプルダウン「先生との対話」に集約（2026-05-24）。
                 サイドバーから並列リンクは撤去（重複動線回避）。
                 スケジュール / 憲法 / 課題一覧 / 学習履歴 も ゆい chat 経由に一本化済み。
-                緊急時は URL バーから /schedule, /issues, /history, /philosophy, /tutor?view=subject-history
+                緊急時は URL バーから /today-tasks, /issues, /history, /philosophy, /tutor?view=subject-history
                 にアクセス可能（ARCHITECTURE §バックアップ動線 参照）。
               */}
             </SidebarMenu>

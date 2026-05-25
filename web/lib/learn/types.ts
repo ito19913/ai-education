@@ -477,7 +477,7 @@ export type TutorCard =
 export type TutorRightPaneAction =
   | { kind: "open-issues" }
   | { kind: "open-issue"; issueId: string }
-  | { kind: "open-schedule" }
+  | { kind: "open-today-tasks" } // C22 Phase 5 P5-Q7 で "open-schedule" からリネーム
   | { kind: "open-history" }
   | { kind: "open-reflections" } // C4: ReflectionLog 一覧
   | { kind: "open-weekly-report" } // C11 Phase 4: 週次レポート
@@ -515,7 +515,7 @@ export type TutorMessage = {
  * - default: 空 or 今日のサマリー
  * - issues: 課題一覧（コア IssueListView）
  * - issue: 単一課題の chat（IssueChat、id クエリで指定）
- * - schedule: 今日のスケジュール（コア ScheduleDashboard）
+ * - today-tasks: 今日のタスク (コア TodayTaskDashboard、C22 で schedule からリネーム)
  * - history: 学習履歴（コア HistoryView）
  * - material-new: 新規教材登録ウィザード（コア MaterialEditWizard）
  * - subject-history: 科目の先生との対話履歴ビュー（SubjectHistoryView、subjectId クエリで指定）
@@ -524,7 +524,7 @@ export type RightPaneView =
   | "default"
   | "issues"
   | "issue"
-  | "schedule"
+  | "today-tasks" // C22 Phase 5 P5-Q7 で "schedule" からリネーム
   | "history"
   | "reflections" // C4: ReflectionLog 一覧
   | "weekly-report" // C11 Phase 4: 週次レポート

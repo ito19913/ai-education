@@ -5,7 +5,7 @@
  *
  * 構造:
  *   - 左ペイン: TutorChat（ゆい先生との会話）
- *   - 右ペイン: RightPaneRouter（?view= に応じて IssueListView / IssueChat / ScheduleDashboard / HistoryView を切替）
+ *   - 右ペイン: RightPaneRouter（?view= に応じて IssueListView / IssueChat / TodayTaskDashboard / HistoryView を切替）
  *
  * 状態:
  *   - URL ?view=...&id=... を権威として保持
@@ -74,11 +74,12 @@ function viewFromParam(raw: string | null): RightPaneView {
   if (
     raw === "issues" ||
     raw === "issue" ||
-    raw === "schedule" ||
+    raw === "today-tasks" ||
     raw === "history" ||
     raw === "reflections" ||
     raw === "weekly-report" ||
     raw === "monthly-report" ||
+    raw === "plans" ||
     raw === "material-new" ||
     raw === "subject-history" ||
     raw === "tutor-archive"
@@ -210,7 +211,7 @@ export function TutorWorkspace({
 
   // ----- Issue state（resolve / chatThread 追加を一元管理） -----
   const [issues, setIssues] = useState<Issue[]>(initialIssues);
-  // Today schedule（done トグル等は ScheduleDashboard 内で完結するが、
+  // Today schedule（done トグル等は TodayTaskDashboard 内で完結するが、
   // /tutor 右ペインでも同じ初期データを使う）
   const [scheduleToday] = useState<ScheduleItem[]>(initialScheduleToday);
 
@@ -245,8 +246,8 @@ export function TutorWorkspace({
         case "open-issue":
           navigate("issue", { issueId: action.issueId });
           break;
-        case "open-schedule":
-          navigate("schedule");
+        case "open-today-tasks":
+          navigate("today-tasks");
           break;
         case "open-history":
           navigate("history");
@@ -504,7 +505,7 @@ export function TutorWorkspace({
             onSelectIssue={(id) => navigate("issue", { issueId: id })}
             onSeeAllIssues={() => navigate("issues")}
             onSelectIssueItem={(id) => navigate("issue", { issueId: id })}
-            onSeeAllSchedule={() => navigate("schedule")}
+            onSeeAllSchedule={() => navigate("today-tasks")}
           />
         </ResizablePanel>
 
