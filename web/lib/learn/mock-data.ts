@@ -7,6 +7,7 @@
  * に充実したサンプルを置き、他ノードは空の状態。
  */
 import type {
+  AchievementBadge,
   ChatMessage,
   CurrentUser,
   ExamPrep,
@@ -15,6 +16,7 @@ import type {
   Issue,
   IssueCandidate,
   KnowledgeNode,
+  LearningPlan,
   LearningSession,
   LearnSubject,
   LessonReview,
@@ -25,6 +27,8 @@ import type {
   Note,
   ReflectionLog,
   ScheduleItem,
+  SchoolDailyReport,
+  SharedToParent,
   Subject,
   TutorHandoff,
   WeeklyGoal,
@@ -904,6 +908,7 @@ export const MOCK_REFLECTION_LOGS: ReflectionLog[] = [
     createdAt: "2026-05-23T09:00:00.000Z",
   },
   // ====== 5/18 週 weekly (5/24 日曜 = 今日に記録) ======
+  // C7: weeklyMonthlyReport を追加 (Phase 4 で確定した 4 セクション構造)
   {
     id: "ref-week-2026-05-18",
     learnerId: "girl",
@@ -918,9 +923,52 @@ export const MOCK_REFLECTION_LOGS: ReflectionLog[] = [
     todayPlan: "来週: 副詞的用法 3 種類を自分の言葉で言えるようにする。動名詞との使い分けも一緒に。",
     derivedIssueIds: ["issue-self-1"],
     derivedHandoffIds: ["handoff-2026-05-22-1"],
+    weeklyMonthlyReport: {
+      // 1. 達成度 (週次)
+      achievement: {
+        plannedPages: 16, // 今週 (5/18-5/24) の予定 (5 月 67p / 4.2 週 ≈ 16p)
+        actualPages: 12, // 実績
+        achievementPct: 75,
+        previousPeriodPct: undefined, // 先週データなし (mock 開始週)
+        consecutiveDays: 3, // 5/20, 5/21, 5/22 連続
+        badgeIds: ["badge-streak-3-1"],
+      },
+      // 2. 学校まとめ (SchoolDailyReport 集約)
+      schoolSummary: {
+        dailyReportIds: [
+          "school-2026-05-18",
+          "school-2026-05-19",
+          "school-2026-05-20",
+          "school-2026-05-21",
+          "school-2026-05-22",
+        ],
+        aiSummary:
+          "今週は **英語: 不定詞 3 用法**（名詞・形容詞・副詞）を月〜金で順に習得。**数学: 関数の応用**、**理科: 化学反応式 → イオン**、**社会: 鎌倉時代** が中心。短縮日 (水曜) もあった。",
+      },
+      // 3. 弱いところ (Issue 上位 + 浅いノード上位、Q10 ハイブリッド)
+      weakSpots: {
+        issueIds: ["issue-self-1", "issue-ai-1", "issue-ai-3"], // 未クリア 3 件
+        weakNodeIds: ["inf-adv", "passive-basic"], // 浅いノード 2 件
+      },
+      // 4. 来週の計画 + Action
+      nextPeriodPlan: {
+        plannedPages: 16,
+        carryOver: 4, // 今週積み残し
+        totalPages: 20,
+        actionProposals: [
+          {
+            kind: "time-increase",
+            detail: "月曜と水曜に +15 分早めに始める",
+            rationale: "今週 4p 遅れたので、来週で取り戻す。短縮日後の水曜が集中しやすい。",
+          },
+        ],
+      },
+      // 月末週ではないので nextMonthPlan は undefined
+    },
     createdAt: "2026-05-24T08:30:00.000Z",
   },
   // ====== 2026 年 5 月 monthly (5/24 日曜 = 今日に記録、中間まとめ) ======
+  // C7: weeklyMonthlyReport を追加 (月末週 = nextMonthPlan 込み)
   {
     id: "ref-month-2026-05",
     learnerId: "girl",
@@ -933,6 +981,67 @@ export const MOCK_REFLECTION_LOGS: ReflectionLog[] = [
       "学習開始の儀式や、終わりの「お疲れさま」のループがあると、サボった日も罪悪感少ない。前みたいに「今日もできなかった…」ってならない。",
     questionsAndDoubts: "覚えるんじゃなくて整理する、って感覚がまだ完全には掴めてない。",
     todayPlan: "6 月: 期末（6/3）までに不定詞をクリア、その後 ing 形と関係詞へ。",
+    weeklyMonthlyReport: {
+      // 1. 達成度 (月次 + 月末週なので月次達成度も併記)
+      achievement: {
+        plannedPages: 16, // この週 (5/18-5/24) の予定
+        actualPages: 12,
+        achievementPct: 75,
+        consecutiveDays: 3,
+        badgeIds: ["badge-streak-3-1"],
+        monthlyAchievement: {
+          plannedPages: 67, // 5 月計画
+          actualPages: 50, // 実績 (今日まで)
+          achievementPct: 75,
+        },
+      },
+      // 2. 学校まとめ (5 月全体)
+      schoolSummary: {
+        dailyReportIds: [
+          "school-2026-05-18",
+          "school-2026-05-19",
+          "school-2026-05-20",
+          "school-2026-05-21",
+          "school-2026-05-22",
+        ],
+        aiSummary:
+          "5 月は **不定詞** が英語の中心。**助動詞 → 受動態 → 比較 → 不定詞** と幅広く触れた月。葵先生との対話で自分の言葉で説明する練習が習慣化してきた。",
+      },
+      // 3. 弱いところ (月集計)
+      weakSpots: {
+        issueIds: ["issue-self-1", "issue-ai-1", "issue-ai-3"],
+        weakNodeIds: ["inf-adv", "passive-basic"],
+      },
+      // 4. 来週の計画 + Action (今週分と同じ)
+      nextPeriodPlan: {
+        plannedPages: 16,
+        carryOver: 4,
+        totalPages: 20,
+        actionProposals: [
+          {
+            kind: "time-increase",
+            detail: "月曜と水曜に +15 分早めに始める",
+            rationale: "今週 4p 遅れたので、来週で取り戻す。",
+          },
+        ],
+      },
+      // 5. 月末週なので nextMonthPlan あり (6 月 roadmap + 修正プラン draft)
+      nextMonthPlan: {
+        monthlyRoadmap: {
+          month: "2026-06",
+          targetPages: 67,
+          startPage: 68,
+          endPage: 134,
+          carryOverFromPrev: 17, // 5 月積み残し (67 - 50)
+        },
+        revisionDraft: {
+          reason:
+            "副詞的用法の弱さが今月明確になった。来月は副詞的用法をもう 1 回まわす時間を確保するべき。",
+          changedFields: ["monthlyRoadmap[6 月].carryOverFromPrev"],
+          triggeredBy: "monthly-review",
+        },
+      },
+    },
     createdAt: "2026-05-24T08:45:00.000Z",
   },
 ];
@@ -1289,4 +1398,163 @@ export const MOCK_MATERIALS: Material[] = [
       "conj-subordinate",
     ],
   },
+];
+
+// ============================================================================
+// Phase 4 mock データ (C7 で追加、2026-05-25)
+//
+// 軌道修正 grill Q1-Q17 で確定した中学生向け設計の静的 mock。UI / chat フロー /
+// 月次バッチロジックは次セッションで実装、本 commit は型 + 静的データのみ。
+//
+// 今日 = 2026-05-24 (日曜) 想定:
+//   - LearningPlan: 英語 教科書 9 ヶ月 3 回転 (5/1 開始、5 月分展開済み)
+//   - SchoolDailyReport: 5/18 (月) 〜 5/22 (金) の 5 日分 (土日は学校なし)
+//   - AchievementBadge: 連続 3 日バッジを 5/22 に獲得 (5/20, 5/21, 5/22 連続学習)
+//   - SharedToParent: 空 (本人まだ親に共有してない設定)
+// ============================================================================
+
+export const MOCK_LEARNING_PLANS: LearningPlan[] = [
+  {
+    id: "plan-english-2026-05",
+    learnerId: "girl",
+    subjectId: "subj-english",
+    title: "中2 英語 教科書 1 年計画 (3 回転)",
+    scope: "year",
+    startDate: "2026-05-01",
+    endDate: "2027-01-31", // 9 ヶ月で 3 回転完走
+    materialIds: ["mat-english-textbook-g8"],
+    targetRotations: 3,
+    currentRotation: 1,
+    totalPages: 200,
+    monthlyRoadmap: [
+      // === 1 回転目 (5-7 月) ===
+      { month: "2026-05", targetPages: 67, startPage: 1, endPage: 67 },
+      { month: "2026-06", targetPages: 67, startPage: 68, endPage: 134 },
+      { month: "2026-07", targetPages: 66, startPage: 135, endPage: 200 },
+      // === 2 回転目 (8-10 月) ===
+      { month: "2026-08", targetPages: 67 },
+      { month: "2026-09", targetPages: 67 },
+      { month: "2026-10", targetPages: 66 },
+      // === 3 回転目 (11-1 月) ===
+      { month: "2026-11", targetPages: 67 },
+      { month: "2026-12", targetPages: 67 },
+      { month: "2027-01", targetPages: 66 },
+    ],
+    expandedMonths: [
+      // 5 月分は展開済み (MOCK_SCHEDULE_TODAY / MOCK_SCHEDULE_UPCOMING の plan source 相当)
+      {
+        month: "2026-05",
+        scheduleItemIds: ["sched-today-1", "sched-today-2"],
+        expandedAt: "2026-05-01T00:00:00.000Z",
+      },
+    ],
+    status: "active",
+    revisions: [],
+    createdAt: "2026-05-01T00:00:00.000Z",
+    updatedAt: "2026-05-24T08:00:00.000Z",
+  },
+];
+
+export const MOCK_SCHOOL_DAILY_REPORTS: SchoolDailyReport[] = [
+  // ====== 5/18 (月) — 学校 6 時限 ======
+  {
+    id: "school-2026-05-18",
+    learnerId: "girl",
+    date: "2026-05-18",
+    periodCount: 6,
+    periods: [
+      { periodNumber: 1, subject: "国語", content: "現代文 評論の解説" },
+      { periodNumber: 2, subject: "数学", content: "平方完成のやり方" },
+      { periodNumber: 3, subject: "英語", content: "リスニング小テスト" },
+      { periodNumber: 4, subject: "理科", content: "化学反応式の書き方" },
+      { periodNumber: 5, subject: "社会", content: "鎌倉時代の政治" },
+      { periodNumber: 6, subject: "美術", content: "鉛筆デッサン (リンゴ)" },
+    ],
+    extraEvents: "リスニング、ちょっと聞き取れない単語あった。友達と昼休み楽しかった。",
+    createdAt: "2026-05-18T16:30:00.000Z",
+  },
+  // ====== 5/19 (火) — 学校 6 時限 ======
+  {
+    id: "school-2026-05-19",
+    learnerId: "girl",
+    date: "2026-05-19",
+    periodCount: 6,
+    periods: [
+      { periodNumber: 1, subject: "数学", content: "関数の応用問題" },
+      { periodNumber: 2, subject: "英語", content: "リーディング 不定詞の導入" },
+      { periodNumber: 3, subject: "体育", content: "バスケットボール" },
+      { periodNumber: 4, subject: "理科", content: "化学反応の量的関係" },
+      { periodNumber: 5, subject: "国語", content: "古文 助動詞" },
+      { periodNumber: 6, subject: "技術", content: "プログラミング 入門" },
+    ],
+    createdAt: "2026-05-19T16:30:00.000Z",
+  },
+  // ====== 5/20 (水) — 学校 4 時限 (短縮日) ======
+  {
+    id: "school-2026-05-20",
+    learnerId: "girl",
+    date: "2026-05-20",
+    periodCount: 4,
+    periods: [
+      { periodNumber: 1, subject: "英語", content: "不定詞 名詞的用法" },
+      { periodNumber: 2, subject: "数学", content: "関数の応用 続き" },
+      { periodNumber: 3, subject: "音楽", content: "合唱練習" },
+      { periodNumber: 4, subject: "保健", content: "生活習慣と健康" },
+    ],
+    extraEvents: "短縮日。午後はクラブ。",
+    createdAt: "2026-05-20T15:00:00.000Z",
+  },
+  // ====== 5/21 (木) — 学校 6 時限 ======
+  {
+    id: "school-2026-05-21",
+    learnerId: "girl",
+    date: "2026-05-21",
+    periodCount: 6,
+    periods: [
+      { periodNumber: 1, subject: "英語", content: "不定詞 形容詞的用法" },
+      { periodNumber: 2, subject: "国語", content: "現代文 物語" },
+      { periodNumber: 3, subject: "数学", content: "関数の応用 演習" },
+      { periodNumber: 4, subject: "理科", content: "イオン" },
+      { periodNumber: 5, subject: "社会", content: "鎌倉時代 続き" },
+      { periodNumber: 6, subject: "家庭科", content: "栄養素" },
+    ],
+    createdAt: "2026-05-21T16:30:00.000Z",
+  },
+  // ====== 5/22 (金) — 学校 6 時限 ======
+  {
+    id: "school-2026-05-22",
+    learnerId: "girl",
+    date: "2026-05-22",
+    periodCount: 6,
+    periods: [
+      {
+        periodNumber: 1,
+        subject: "英語",
+        content: "不定詞 副詞的用法 (目的・結果・原因の 3 種類)",
+      },
+      { periodNumber: 2, subject: "数学", content: "関数 単元テスト 返却" },
+      { periodNumber: 3, subject: "理科", content: "イオン 続き" },
+      { periodNumber: 4, subject: "体育", content: "バスケ 試合" },
+      { periodNumber: 5, subject: "国語", content: "古文 助動詞 続き" },
+      { periodNumber: 6, subject: "美術", content: "鉛筆デッサン 完成" },
+    ],
+    extraEvents: "副詞的用法、3 種類の違いがフワッとして置いてかれた感じ。",
+    createdAt: "2026-05-22T16:30:00.000Z",
+  },
+];
+
+export const MOCK_ACHIEVEMENT_BADGES: AchievementBadge[] = [
+  // 5/20, 5/21, 5/22 の連続学習で 5/22 に streak-3 獲得
+  // (MOCK_SESSIONS で 3 日連続セッションあり)
+  {
+    id: "badge-streak-3-1",
+    learnerId: "girl",
+    kind: "streak-3",
+    earnedAt: "2026-05-22T19:50:00.000Z",
+    description: "3 日続いたよ！🌱",
+  },
+];
+
+export const MOCK_SHARED_TO_PARENT: SharedToParent[] = [
+  // 空配列 (本人まだ親に共有してない設定、Q15: デフォルト OFF)
 ];

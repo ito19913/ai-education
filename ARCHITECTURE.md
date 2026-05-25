@@ -493,6 +493,10 @@ REVIEW-2026-05-24.md コーチング #1「最高」優先項目への対応。�
 
 ito19 さんの観察「**現状の仕組みは大人の学習方法に寄っている**」を受けて、grill-me で 17 問詰めた軌道修正パッケージ。中学生のリアル (タスクは外から降ってくる主体、自分で計画立てる能力がまだ無い) に合わせて、計画立案 / 帰宅儀式 / 週次月次レポート / 戻る仕組みを再設計。
 
+**実装状況**:
+- **C7 (2026-05-25)**: 型 + 静的 mock 実装済 (`types.ts` / `mock-data.ts`)。`LearningPlan` / `SchoolDailyReport` / `WeeklyMonthlyReport` 等の新型 + `ScheduleItem.tags/source` / `ReflectionLog.weeklyMonthlyReport` 拡張 + mock データ (1 LearningPlan / 5 SchoolDailyReport / 1 AchievementBadge / 既存 weekly+monthly ReflectionLog に WeeklyMonthlyReport 追加)
+- **未実装 (次セッション)**: 計画立案ウィザード / 帰宅儀式 chat フロー / 週次月次レポート UI / 月次バッチロジック / 親共有 UI / 達成バッジ UI / tutor-mock 拡張
+
 ### 設計の核 (Q1-Q17 の上流)
 
 | 哲学 | 内容 |

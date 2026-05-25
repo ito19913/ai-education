@@ -163,6 +163,14 @@ export type StudyTaskType =
 
 export type StudyTaskStatus = "todo" | "doing" | "done" | "skipped";
 
+/**
+ * Phase 4 拡張: ScheduleItem の出処を識別 (Q7 確定)。
+ * - "plan"       = LearningPlan の月次バッチ展開で生成された分
+ * - "carry-over" = 前日できなかった繰り越し
+ * - "ad-hoc"     = 帰宅儀式で当日追加された突発タスク
+ */
+export type ScheduleItemSource = "plan" | "carry-over" | "ad-hoc";
+
 /** ダッシュボードに並ぶ「今日のタスク」1 件 */
 export type ScheduleItem = {
   id: string;
@@ -185,6 +193,18 @@ export type ScheduleItem = {
   aiRationale?: string;
   /** 完了時刻 ISO */
   doneAt?: string;
+
+  // === Phase 4 追加 (Q7) ===
+  /**
+   * 自由タグ（「宿題」「提出物」「テスト範囲」「親に頼まれた」等）。
+   * 帰宅儀式で ad-hoc 追加された ScheduleItem に AI 提案 + 本人選択で付与される。
+   */
+  tags?: string[];
+  /**
+   * 出処識別。既存 mock は optional のままで「未指定 = "plan" 相当」と扱う。
+   * Phase 4 UI 実装で計画展開 / 繰り越し / 突発を厳密に区別する時に活用。
+   */
+  source?: ScheduleItemSource;
 };
 
 /** 試験対策プロジェクト（範囲を期日までに詰める器） */
@@ -585,10 +605,18 @@ export type ReflectionLog = {
   date: string;
   cadence: ReflectionCadence;
 
-  // 5 セクション（cadence で必要なものだけ埋まる）
+  // === 朝の振り返り (cadence: "daily") の 5→4 セクション ===
+  // Phase 3: 5 セクション。
+  // Phase 4 (Q8): schoolToday を撤去 → 4 セクションに縮退
+  //   (学校で何やったかは記憶が新鮮な帰宅儀式で聞く → SchoolDailyReport へ)。
+  // schoolToday フィールドは後方互換のため残す (既存 mock データ参照用)。
+
   /** 昨日（or 期間）の学習レビュー */
   yesterdayReview?: string;
-  /** 今日学校で習ったこと */
+  /**
+   * @deprecated Phase 4 で帰宅儀式 (SchoolDailyReport) に移行。
+   * 既存 mock データの後方互換のため残置。新規 ReflectionLog では設定しない。
+   */
   schoolToday?: string;
   /** 起きたこと、気分 */
   emotionsAndEvents?: string;
@@ -596,6 +624,14 @@ export type ReflectionLog = {
   questionsAndDoubts?: string;
   /** 今日（or 期間）の計画 */
   todayPlan?: string;
+
+  // === Phase 4 追加 (Q9): cadence: "weekly" | "monthly" で 4 セクションレポート ===
+  /**
+   * 週次/月次レポートの本体 (4 セクション + 月末週は + α)。
+   * cadence: "weekly" | "monthly" の場合に設定される。
+   * cadence: "daily" では未設定 (undefined)。
+   */
+  weeklyMonthlyReport?: WeeklyMonthlyReport;
 
   // 派生リンク（独立型のハイブリッド性の核心）
   /** ここから生まれた Issue */
@@ -707,6 +743,251 @@ export type TutorHandoff = {
   status: "unread" | "read";
   createdAt: string;
   readAt?: string;
+};
+
+// ============================================================================
+// Phase 4: 中学生向け設計軌道修正 (2026-05-25 grill) — 計画立案 / 帰宅儀式 /
+// 週次月次レポート / 達成バッジ / 親共有
+//
+// ARCHITECTURE.md「## Phase 4: 中学生向け設計軌道修正」セクションの実装。
+// grill-me Q1-Q17 の決定事項を型に落とし込む。C7 は型 + 静的 mock のみで止め、
+// UI / chat フロー / 月次バッチロジック等は次セッションで実装する。
+// ============================================================================
+
+// -------- LearningPlan (計画立案の中心、Q3) --------
+
+/** LearningPlan のスコープ (Q4: 全体通読 × 3 回 + ページ単位) */
+export type LearningPlanScope = "year" | "semester" | "term";
+
+/** LearningPlan の状態 */
+export type LearningPlanStatus = "active" | "completed" | "paused";
+
+/**
+ * 月次ロードマップの 1 セグメント。
+ * monthlyRoadmap の各要素。Q5: roadmap (全期間) + 月次バッチ展開。
+ */
+export type PlanSegment = {
+  /** "YYYY-MM" */
+  month: string;
+  /** この月の目標ページ数 */
+  targetPages: number;
+  /** 開始ページ (任意、累積から計算可) */
+  startPage?: number;
+  /** 終了ページ */
+  endPage?: number;
+  /** 前月からの繰り越し (Q5: 月末判定で繰り越し) */
+  carryOverFromPrev?: number;
+};
+
+/** 月次バッチで ScheduleItem 化した記録 (Q5/Q12) */
+export type ExpandedMonth = {
+  /** "YYYY-MM" */
+  month: string;
+  /** この月の ScheduleItem id 群 */
+  scheduleItemIds: string[];
+  /** 展開日時 (月初に AI が展開) */
+  expandedAt: string;
+};
+
+/** 計画見直し履歴 (PDCA の Action、Q17 修正プラン) */
+export type PlanRevision = {
+  id: string;
+  revisedAt: string;
+  /** 「テキスト使いにくい」「ペース速すぎ」等 */
+  reason: string;
+  /** 変更したフィールド名 */
+  changedFields: string[];
+  triggeredBy: "monthly-review" | "manual" | "ai-suggestion";
+};
+
+/**
+ * 科目ごとの長期計画。ExamPrep (試験対策、短期集中) と独立並走。
+ * Q3-Q5, Q11, Q12, Q17 を集約。
+ */
+export type LearningPlan = {
+  id: string;
+  learnerId: string;
+  subjectId: string;
+  /** 「中2 英語 教科書 計画」 */
+  title: string;
+  scope: LearningPlanScope;
+  /** YYYY-MM-DD */
+  startDate: string;
+  /** YYYY-MM-DD */
+  endDate: string;
+  /** 教材選択 (1 〜複数)、Material.id 群 */
+  materialIds: string[];
+  /** 回転数 (3 回推奨、Q4) */
+  targetRotations: number;
+  /** 今何回転目 */
+  currentRotation: number;
+  /** 教材総ページ */
+  totalPages: number;
+  /** 全期間 roadmap (必ず作る、Q5 ito19 さん念押し) */
+  monthlyRoadmap: PlanSegment[];
+  /** 月次展開済みの記録 (当月のみ展開、Q12) */
+  expandedMonths: ExpandedMonth[];
+  status: LearningPlanStatus;
+  /** PDCA Action の履歴 (Q17 修正プラン履歴) */
+  revisions: PlanRevision[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+// -------- SchoolDailyReport (帰宅儀式の学校レポート、Q8/Q14) --------
+
+/** 時限別エントリ */
+export type PeriodEntry = {
+  /** 1-6 (時限数は可変、Q14) */
+  periodNumber: number;
+  /** 「英語」「数学」「体育」等 */
+  subject: string;
+  /** 何を習ったか */
+  content: string;
+};
+
+/**
+ * 学校日報 (帰宅儀式の第 1 部で AI 対話を通じて確定)。
+ * 1 日 1 件。ReflectionLog.schoolToday の代替 (Phase 4 で移行)。
+ */
+export type SchoolDailyReport = {
+  id: string;
+  learnerId: string;
+  /** YYYY-MM-DD */
+  date: string;
+  /** この日の時限数 (1-6、可変、Q14) */
+  periodCount: number;
+  /** 時限別 */
+  periods: PeriodEntry[];
+  /** 学校での他の出来事・相談事 (任意) */
+  extraEvents?: string;
+  createdAt: string;
+};
+
+// -------- 週次/月次レポート (4 セクション、Q9) --------
+
+/**
+ * 達成バッジの種類 (Q16: 5-7 種類)。
+ */
+export type AchievementBadgeKind =
+  | "streak-3" // 連続 3 日 (1 日 5 分でも OK の軽め基準)
+  | "streak-7" // 連続 7 日
+  | "streak-30" // 連続 30 日
+  | "month-80" // 月達成 80%+
+  | "month-100" // 月達成 100%+
+  | "issue-5-cleared" // Issue 5 件クリア
+  | "reconstruction-perfect"; // 復元テスト全問正解
+
+/** 獲得した達成バッジ (プロフィールに静的に残る) */
+export type AchievementBadge = {
+  id: string;
+  learnerId: string;
+  kind: AchievementBadgeKind;
+  /** 獲得日時 (ISO) */
+  earnedAt: string;
+  /** 「3 日続いたよ」等の表示用テキスト */
+  description: string;
+};
+
+/** Q17 修正プランの種類 */
+export type ActionProposalKind =
+  | "time-increase" // 翌月の毎日時間を増やす
+  | "duration-extend" // 期間延長 (3 ヶ月 → 4 ヶ月)
+  | "rotation-reduce" // 回転数削減 (3 回 → 2 回)
+  | "material-change" // 教材変更
+  | "order-change"; // 順序変更 (難しい単元を後回し)
+
+/**
+ * 月末判定 / 来週計画で AI が提示する Action 提案。
+ * 本人が選択して採用 → PlanRevision に記録。
+ */
+export type ActionProposal = {
+  kind: ActionProposalKind;
+  /** 「月: +20 分早めに始める」等の具体内容 */
+  detail: string;
+  /** ゆいの所感 (なぜこの提案か) */
+  rationale: string;
+};
+
+/**
+ * 週次/月次レポートの本体 (4 セクション + 月末週は + α)。
+ * ReflectionLog.cadence: "weekly" | "monthly" の場合に
+ * ReflectionLog.weeklyMonthlyReport に格納される。
+ *
+ * セクション順序 (Q9): 達成度 → 学校 → 弱いところ → 来週計画 + Action。
+ * サンドイッチ構造 (最初と最後がポジティブ)、達成感最優先 (ito19 さん哲学)。
+ */
+export type WeeklyMonthlyReport = {
+  // 1. 達成度 (達成感を出す、最重要)
+  achievement: {
+    plannedPages: number;
+    actualPages: number;
+    /** 0-100 */
+    achievementPct: number;
+    /** 先週/先月比 (任意) */
+    previousPeriodPct?: number;
+    /** 連続学習日数 */
+    consecutiveDays: number;
+    /** この期間で獲得したバッジ */
+    badgeIds: string[];
+    /** 月末週のみ: 月次達成度も併記 */
+    monthlyAchievement?: {
+      plannedPages: number;
+      actualPages: number;
+      achievementPct: number;
+    };
+  };
+
+  // 2. 学校まとめ
+  schoolSummary: {
+    /** 当該期間の SchoolDailyReport.id 群 */
+    dailyReportIds: string[];
+    /** AI 生成「今週/今月の重要ポイント」 */
+    aiSummary: string;
+  };
+
+  // 3. 弱いところ (戻る候補、Q10 Issue + NodeComprehension ハイブリッド)
+  weakSpots: {
+    /** 未クリア Issue 上位 3 件 */
+    issueIds: string[];
+    /** 浅いノードの NodeComprehension 上位 2 件 (nodeId で参照) */
+    weakNodeIds: string[];
+  };
+
+  // 4. 来週/来月の計画 + Action
+  nextPeriodPlan: {
+    plannedPages: number;
+    /** 繰り越し */
+    carryOver: number;
+    /** 合計 (planned + carryOver) */
+    totalPages: number;
+    /** 時間配分・教材変更・ペース調整 等の提案 */
+    actionProposals: ActionProposal[];
+  };
+
+  // 5. 月末週のみ: 来月計画 + 修正プラン draft
+  nextMonthPlan?: {
+    /** 来月の roadmap (LearningPlan.monthlyRoadmap の翌月分) */
+    monthlyRoadmap: PlanSegment;
+    /** 修正プラン draft (AI 提案、本人確認待ち) */
+    revisionDraft?: Omit<PlanRevision, "id" | "revisedAt">;
+  };
+};
+
+// -------- 親 (admin) への共有 (Q15: 本人同意制) --------
+
+/**
+ * 週次/月次レポートを親 (admin) に共有した記録。
+ * デフォルト OFF、本人が選んだものだけ生成される。
+ */
+export type SharedToParent = {
+  id: string;
+  /** ReflectionLog.id (weekly/monthly) */
+  reportId: string;
+  /** 共有日時 (ISO) */
+  sharedAt: string;
+  /** "summary" = 数値のみ / "full" = フルレポート */
+  scope: "summary" | "full";
 };
 
 // ============================================================================
