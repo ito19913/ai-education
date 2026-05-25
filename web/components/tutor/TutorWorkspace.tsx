@@ -356,13 +356,36 @@ export function TutorWorkspace({
   );
 
   // C8 Phase 4: 計画立案の duration-picker 選択ハンドラ
+  // C17 Phase 5 P5-Q2: weak-node-picker を間に挟むため遷移先を変更
   const onPickDuration = useCallback(
     (monthsPerRotation: number, rotations: number): TutorMessage => {
       tutorStepRef.current = {
         ...tutorStepRef.current,
-        state: "plan-await-confirm",
+        state: "plan-await-weak-nodes",
         proposedMonthsPerRotation: monthsPerRotation,
         proposedRotations: rotations,
+      };
+      const result = buildNextTutorReply({
+        state: tutorStepRef.current,
+        userInput: "",
+      });
+      tutorStepRef.current = result.nextState;
+      if (result.reply.rightPaneAction) {
+        applyRightPaneAction(result.reply.rightPaneAction);
+      }
+      return result.reply;
+    },
+    [applyRightPaneAction],
+  );
+
+  // C17 Phase 5 P5-Q2: weak-node-picker 選択ハンドラ
+  // 本人がチェックボックスで弱いノードを選び終わると発火、確定して roadmap-preview へ
+  const onPickWeakNodes = useCallback(
+    (weakNodeIds: string[]): TutorMessage => {
+      tutorStepRef.current = {
+        ...tutorStepRef.current,
+        state: "plan-await-confirm",
+        proposedWeakNodeIds: weakNodeIds,
       };
       const result = buildNextTutorReply({
         state: tutorStepRef.current,
@@ -468,6 +491,7 @@ export function TutorWorkspace({
             onPickSubject={onPickSubject}
             onPickMaterial={onPickMaterial}
             onPickDuration={onPickDuration}
+            onPickWeakNodes={onPickWeakNodes}
             externallyLocked={tutorLocked}
             externalLockMessage={
               tutorLocked

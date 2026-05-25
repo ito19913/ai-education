@@ -15,6 +15,7 @@ import type {
   LearningPlan,
   PeriodEntry,
   PlanSegment,
+  PlanType,
   ReflectionLog,
   ScheduleItem,
   SchoolDailyReport,
@@ -29,9 +30,11 @@ import {
   MOCK_ISSUES,
   MOCK_LEARNING_PLANS,
   MOCK_MATERIALS,
+  MOCK_NODE_COMPREHENSIONS,
   MOCK_REFLECTION_LOGS,
   MOCK_SCHEDULE_TODAY,
   MOCK_SCHOOL_DAILY_REPORTS,
+  MOCK_TREE,
 } from "./mock-data";
 import { searchTutorThreads } from "./tutor-thread-storage";
 import {
@@ -169,9 +172,11 @@ type TutorState =
   | "ending-confirm" // 最終サマリー + 「これで終わりますか?」
   | "ending-done" // セッション終了完了
   // === C8 Phase 4 計画立案フロー (chat + カードハイブリッド) ===
+  // C17 Phase 5 で weak-node-picker を duration と roadmap-preview の間に挿入
   | "plan-await-subject" // 計画立案: subject-picker 表示中
   | "plan-await-material" // 計画立案: material-picker 表示中
   | "plan-await-duration" // 計画立案: duration-picker 表示中
+  | "plan-await-weak-nodes" // 計画立案: weak-node-picker 表示中 (P5-Q2)
   | "plan-await-confirm" // 計画立案: roadmap-preview 表示中 (OK/速く/ゆっくり 待ち)
   | "plan-done" // 計画立案: LearningPlan push 済み
   // === C9 Phase 4 帰宅儀式 第 1 部: 学校レポート (時限別シーケンシャル) ===
@@ -196,6 +201,10 @@ export type TutorStep = {
   proposedMonthsPerRotation?: number;
   /** C8: 計画立案フローで本人が選んだ回転数 */
   proposedRotations?: number;
+  /** C17 Phase 5 P5-Q5: 計画の目的 (試験対策/苦手克服/復習/長期記憶/通常)。明示発話で起動、デフォルト regular-study */
+  proposedPlanType?: PlanType;
+  /** C17 Phase 5 P5-Q2: 計画立案で本人がチェックした弱いノード id 群 */
+  proposedWeakNodeIds?: string[];
   /** C8: 計画立案で確定した LearningPlan id */
   confirmedLearningPlanId?: string;
   /** C9: 帰宅儀式 第 1 部 (学校レポート) の draft */
@@ -455,9 +464,20 @@ function derivePlanFromInputs(args: {
   monthsPerRotation: number;
   rotations: number;
   startDate: Date;
+  /** C17 Phase 5: 計画の目的 (デフォルト regular-study) */
+  planType?: PlanType;
+  /** C17 Phase 5: 本人がチェックした弱いノード id 群 (P5-Q2) */
+  weakNodeIds?: string[];
 }): LearningPlan {
-  const { subjectId, materialId, monthsPerRotation, rotations, startDate } =
-    args;
+  const {
+    subjectId,
+    materialId,
+    monthsPerRotation,
+    rotations,
+    startDate,
+    planType = "regular-study",
+    weakNodeIds = [],
+  } = args;
   const totalPages = getMaterialTotalPages(materialId);
   const totalMonths = monthsPerRotation * rotations;
 
@@ -492,10 +512,164 @@ function derivePlanFromInputs(args: {
     revisions: [],
     createdAt: nowIso,
     updatedAt: nowIso,
+    // C17 Phase 5 拡張
+    planType,
+    weakNodeIds: weakNodeIds.length > 0 ? weakNodeIds : undefined,
+    // Phase 5 デフォルトルール (本人がチューニングするまで)
+    reviewRules: { reviewIntervalDays: 7, reviewMode: "review" },
+    testRules: {
+      testIntervalDays: 7,
+      passingThreshold: 0.7,
+      failureAction: "review-parent",
+    },
+    replanRules: { delayThresholdDays: 3, replanMode: "ai-suggest" },
+    dailyCapacityMinutes: 30,
   };
 
   MOCK_LEARNING_PLANS.push(plan);
   return plan;
+}
+
+/**
+ * C17 Phase 5 P5-Q2: 弱いノード候補抽出。
+ *
+ * 候補ソース (mock の半自動候補):
+ *   - MOCK_ISSUES: status === "open" な Issue の nodeId
+ *   - MOCK_NODE_COMPREHENSIONS: score < 0.55 の nodeId
+ *
+ * 両方ヒット = source: "both"、preChecked: true (強い候補)
+ * 単一ヒット = preChecked: false (本人判断に委ねる)
+ *
+ * Phase 6 で AI 判定強化、現状は固定閾値 + Issue 一覧の素直な抽出。
+ */
+function computeWeakNodeCandidates(): Array<{
+  nodeId: string;
+  nodeName: string;
+  reason: string;
+  source: "issue" | "comprehension" | "both";
+  preChecked: boolean;
+}> {
+  const issueByNode = new Map<string, Issue>();
+  for (const issue of MOCK_ISSUES) {
+    if (issue.status !== "open") continue;
+    // 既に同 nodeId の Issue があれば優先度高い方 (ai-detected > self) を残す
+    const existing = issueByNode.get(issue.nodeId);
+    if (!existing || issue.source === "ai-detected") {
+      issueByNode.set(issue.nodeId, issue);
+    }
+  }
+
+  const compByNode = new Map<string, { score: number; reason: string }>();
+  for (const comp of MOCK_NODE_COMPREHENSIONS) {
+    if (comp.score >= 0.55) continue;
+    compByNode.set(comp.nodeId, { score: comp.score, reason: comp.reason });
+  }
+
+  const allNodeIds = new Set<string>([
+    ...issueByNode.keys(),
+    ...compByNode.keys(),
+  ]);
+
+  const candidates: Array<{
+    nodeId: string;
+    nodeName: string;
+    reason: string;
+    source: "issue" | "comprehension" | "both";
+    preChecked: boolean;
+  }> = [];
+
+  for (const nodeId of allNodeIds) {
+    const node = MOCK_TREE.find((n) => n.id === nodeId);
+    if (!node) continue; // 体系図にないノードはスキップ
+    const issue = issueByNode.get(nodeId);
+    const comp = compByNode.get(nodeId);
+
+    let reason: string;
+    let source: "issue" | "comprehension" | "both";
+    let preChecked: boolean;
+
+    if (issue && comp) {
+      source = "both";
+      reason = `${issue.title} / 理解度 ${Math.round(comp.score * 100)}%`;
+      preChecked = true;
+    } else if (issue) {
+      source = "issue";
+      reason = issue.title;
+      preChecked = false;
+    } else if (comp) {
+      source = "comprehension";
+      reason = `理解度 ${Math.round(comp.score * 100)}%: ${comp.reason.length > 40 ? `${comp.reason.slice(0, 40)}…` : comp.reason}`;
+      preChecked = comp.score < 0.5; // 0.5 未満は強い候補
+    } else {
+      continue;
+    }
+
+    candidates.push({
+      nodeId,
+      nodeName: node.name,
+      reason,
+      source,
+      preChecked,
+    });
+  }
+
+  // preChecked 優先で並べる (UI で目立つ順)
+  candidates.sort((a, b) => {
+    if (a.preChecked && !b.preChecked) return -1;
+    if (!a.preChecked && b.preChecked) return 1;
+    return 0;
+  });
+
+  // 上位 5 件まで (Phase 4 Q10 「上位 3 件 + 浅いノード 2 件」と整合)
+  return candidates.slice(0, 5);
+}
+
+/**
+ * C17 Phase 5 P5-Q5: 発話から PlanType を判定。
+ *
+ * 明示発話で PlanType を起動するための簡易キーワードマッチ:
+ *   - exam-prep:        試験対策 / 期末 / 中間 / テスト前 / exam
+ *   - weakness-grind:   苦手克服 / 弱いところ集中 / 弱点
+ *   - review:           復習 だけ / 復習計画 / 復習中心
+ *   - long-term-memory: 長期記憶 / 定着 / 忘れない
+ *   - regular-study:    一致なし (デフォルト、明示発話分岐の対象外)
+ *
+ * Phase 6 で LLM ベース分類に置換。
+ */
+function detectPlanTypeFromUtterance(lower: string): PlanType | null {
+  if (
+    lower.includes("試験対策") ||
+    lower.includes("期末") ||
+    lower.includes("中間") ||
+    lower.includes("テスト前") ||
+    lower.includes("exam")
+  ) {
+    return "exam-prep";
+  }
+  if (
+    lower.includes("苦手克服") ||
+    lower.includes("苦手をなくす") ||
+    lower.includes("弱いところ集中") ||
+    lower.includes("弱点克服")
+  ) {
+    return "weakness-grind";
+  }
+  // 「復習だけ」「復習中心」「復習計画」 (「復習する」だけだと広すぎるので限定)
+  if (
+    lower.includes("復習だけ") ||
+    lower.includes("復習中心") ||
+    lower.includes("復習計画")
+  ) {
+    return "review";
+  }
+  if (
+    lower.includes("長期記憶") ||
+    lower.includes("忘れない") ||
+    lower.includes("定着させ")
+  ) {
+    return "long-term-memory";
+  }
+  return null;
 }
 
 /**
@@ -804,6 +978,7 @@ export function deriveTutorTopic(
     case "plan-await-subject":
     case "plan-await-material":
     case "plan-await-duration":
+    case "plan-await-weak-nodes":
     case "plan-await-confirm":
     case "plan-done":
       return "start-study";
@@ -1198,8 +1373,43 @@ function buildNextTutorReplyInner(args: {
     };
   }
 
+  // C17 Phase 5 P5-Q5: PlanType 明示発話分岐
+  // 「計画立て」一般発話より具体的なキーワードを先にマッチ
+  // 該当した PlanType を state.proposedPlanType にセットして立案開始
+  const planTypeFromUtterance = detectPlanTypeFromUtterance(lower);
+  if (planTypeFromUtterance) {
+    const typeLabel =
+      planTypeFromUtterance === "exam-prep"
+        ? "試験対策"
+        : planTypeFromUtterance === "weakness-grind"
+          ? "苦手克服"
+          : planTypeFromUtterance === "review"
+            ? "復習"
+            : planTypeFromUtterance === "long-term-memory"
+              ? "長期記憶化"
+              : "通常学習";
+    return {
+      nextState: {
+        ...state,
+        state: "plan-await-subject",
+        proposedPlanType: planTypeFromUtterance,
+      },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: `OK、**${typeLabel}** の計画立てよう! まず科目から。`,
+        card: {
+          kind: "subject-picker",
+          options: [{ subjectId: "subj-english", label: "英語" }],
+        },
+        createdAt: now,
+      },
+    };
+  }
+
   // C8: 「計画立て」「学習計画」 → 計画立案フロー開始 (subject-picker 表示)
   // chat 内完結フロー (Q11 ハイブリッド: ゆい対話 + カード)
+  // C17 Phase 5: デフォルト planType: "regular-study" がセットされる
   if (
     lower.includes("計画立て") ||
     lower.includes("計画作") ||
@@ -1208,7 +1418,11 @@ function buildNextTutorReplyInner(args: {
     lower.includes("plan")
   ) {
     return {
-      nextState: { ...state, state: "plan-await-subject" },
+      nextState: {
+        ...state,
+        state: "plan-await-subject",
+        proposedPlanType: "regular-study",
+      },
       reply: {
         id: makeId(),
         role: "tutor",
@@ -1293,6 +1507,42 @@ function buildNextTutorReplyInner(args: {
           recommendedRotations: 3,
           monthsOptions: [1, 2, 3, 4, 6, 12],
           rotationsOptions: [1, 2, 3, 4],
+        },
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- C17 Phase 5 P5-Q2: plan-await-weak-nodes: 弱いノード候補ピッカー ---
+  // duration 選択直後に呼ばれる。userInput="" の初回 = カード表示、
+  // 確定は onPickWeakNodes ハンドラ経由で plan-await-confirm に遷移 (本ファイルは表示のみ)。
+  if (state.state === "plan-await-weak-nodes") {
+    const subjectId = state.proposedSubjectId ?? "subj-english";
+    const candidates = computeWeakNodeCandidates();
+
+    // 候補ゼロ = picker をスキップして plan-await-confirm に進める
+    if (candidates.length === 0) {
+      return {
+        nextState: { ...state, state: "plan-await-confirm" },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: "弱いところの候補がまだ見つからなかったよ。普通に進めるね。",
+          createdAt: now,
+        },
+      };
+    }
+
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: `この計画で **特に重点的に練習したいところ** はある? (なくても OK、その時は何もチェックせず確定してね)`,
+        card: {
+          kind: "weak-node-picker",
+          subjectId,
+          candidates,
         },
         createdAt: now,
       },
@@ -1385,15 +1635,23 @@ function buildNextTutorReplyInner(args: {
 
     if (wantsConfirm) {
       // 確定: LearningPlan を MOCK に push + 当月分を ScheduleItem に展開
+      // C17 Phase 5: planType / weakNodeIds を state から引き継いで反映
       const plan = derivePlanFromInputs({
         subjectId,
         materialId,
         monthsPerRotation,
         rotations,
         startDate: new Date(),
+        planType: state.proposedPlanType ?? "regular-study",
+        weakNodeIds: state.proposedWeakNodeIds ?? [],
       });
       const month = currentMonth();
       const expanded = expandPlanMonth(plan, month);
+
+      const weakNoteSuffix =
+        (state.proposedWeakNodeIds?.length ?? 0) > 0
+          ? `\n\n**弱いところ** に登録した ${state.proposedWeakNodeIds!.length} 件は、Plan Engine が drill / review を多めに入れて重点的に練習するよ。`
+          : "";
 
       return {
         nextState: {
@@ -1404,7 +1662,7 @@ function buildNextTutorReplyInner(args: {
         reply: {
           id: makeId(),
           role: "tutor",
-          text: `OK、計画決まったよ！\n\n**${plan.title}** を作って、**${month} の分 ${expanded.length} 件** を今のスケジュールに出しておいたね。\n\n来月以降は月初に同じように展開していくよ。次どうする?`,
+          text: `OK、計画決まったよ！\n\n**${plan.title}** を作って、**${month} の分 ${expanded.length} 件** を今のスケジュールに出しておいたね。${weakNoteSuffix}\n\n来月以降は月初に同じように展開していくよ。次どうする?`,
           quickReplies: ["スケジュール見せて", "学習を始める", "別の話"],
           createdAt: now,
         },

@@ -299,6 +299,9 @@ export function TutorArchiveView({ nodes, issues, scheduleItems }: Props) {
                   onPickDuration={() => {
                     /* archive: no-op (C8 計画立案 duration-picker) */
                   }}
+                  onPickWeakNodes={() => {
+                    /* archive: no-op (C17 Phase 5 weak-node-picker) */
+                  }}
                   onSelectIssue={() => {
                     /* archive: no-op */
                   }}

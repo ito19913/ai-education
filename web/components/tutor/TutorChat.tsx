@@ -58,6 +58,8 @@ type Props = {
     monthsPerRotation: number,
     rotations: number,
   ) => TutorMessage;
+  /** C17 Phase 5 P5-Q2: 計画立案の weak-node-picker 選択ハンドラ */
+  onPickWeakNodes: (selectedNodeIds: string[]) => TutorMessage;
   /** Phase 3: 課題カードクリック → 右ペインに IssueChat / IssueListView を出す */
   onSelectIssue?: (issueId: string) => void;
   onSeeAllIssues?: () => void;
@@ -81,6 +83,7 @@ export function TutorChat({
   onPickSubject,
   onPickMaterial,
   onPickDuration,
+  onPickWeakNodes,
   onSelectIssue,
   onSeeAllIssues,
   onSelectIssueItem,
@@ -189,6 +192,27 @@ export function TutorChat({
     }, 600);
   };
 
+  // C17 Phase 5 P5-Q2: weak-node-picker ハンドラ
+  const handlePickWeakNodes = (selectedNodeIds: string[]) => {
+    const label =
+      selectedNodeIds.length > 0
+        ? `重点練習に ${selectedNodeIds.length} 件 登録`
+        : "重点練習なしで進める";
+    const userMsg: TutorMessage = {
+      id: `u-${Date.now()}`,
+      role: "learner",
+      text: label,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setIsThinking(true);
+    window.setTimeout(() => {
+      const reply = onPickWeakNodes(selectedNodeIds);
+      setMessages((prev) => appendReplyWithSection(prev, reply));
+      setIsThinking(false);
+    }, 600);
+  };
+
   const quickReplies =
     !isThinking && lastTutorMessage?.quickReplies
       ? lastTutorMessage.quickReplies
@@ -229,6 +253,7 @@ export function TutorChat({
               onPickSubject={handlePickSubject}
               onPickMaterial={handlePickMaterial}
               onPickDuration={handlePickDuration}
+              onPickWeakNodes={handlePickWeakNodes}
               issues={issues}
               scheduleItems={scheduleItems}
               onSelectIssue={onSelectIssue ?? noop}

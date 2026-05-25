@@ -389,6 +389,27 @@ export type TutorCard =
       }>;
     }
   | {
+      /**
+       * Phase 5 P5-Q2 確定: 計画立案フロー - 弱いノード候補ピッカー。
+       * subject → material → duration の後、roadmap-preview の前に挟む。
+       * Plan Engine が候補抽出 (Issue open + 最近 7 日 + NodeComprehension<0.55)
+       * したものを表示、本人がチェックで weakNodeIds を確定する。
+       */
+      kind: "weak-node-picker";
+      subjectId: string;
+      /** 候補ノード (1 件 = 1 つの weak node 候補) */
+      candidates: Array<{
+        nodeId: string;
+        nodeName: string;
+        /** AI の所感: なぜ弱いと判断したか (Issue title or NodeComprehension reason) */
+        reason: string;
+        /** 抽出ソース */
+        source: "issue" | "comprehension" | "both";
+        /** デフォルトでチェック済みにするか (推奨度高い) */
+        preChecked: boolean;
+      }>;
+    }
+  | {
       /** Phase 3 拡張: 「あの話したよね?」検索ヒット候補のリスト */
       kind: "chat-search-result";
       /** AI が抽出 or 本人が指定したクエリ */

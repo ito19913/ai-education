@@ -24,6 +24,7 @@ import { TodayScheduleCard } from "./cards/TodayScheduleCard";
 import { ChatSearchResultCard } from "./cards/ChatSearchResultCard";
 import { DurationPickerCard } from "./cards/DurationPickerCard";
 import { RoadmapPreviewCard } from "./cards/RoadmapPreviewCard";
+import { WeakNodePickerCard } from "./cards/WeakNodePickerCard";
 import { TopicChip } from "./topic-display";
 
 type Props = {
@@ -33,6 +34,8 @@ type Props = {
   onPickMaterial: (materialId: string, label: string) => void;
   /** C8 Phase 4: 計画立案フローの期間 + 回転数選択 */
   onPickDuration: (monthsPerRotation: number, rotations: number) => void;
+  /** C17 Phase 5 P5-Q2: 計画立案フローの弱いノード選択 */
+  onPickWeakNodes: (selectedNodeIds: string[]) => void;
   /** Phase 3: 課題カードクリック → 右ペインに IssueChat */
   issues: Issue[];
   scheduleItems: ScheduleItem[];
@@ -48,6 +51,7 @@ export function TutorMessageBubble({
   onPickSubject,
   onPickMaterial,
   onPickDuration,
+  onPickWeakNodes,
   issues,
   scheduleItems,
   onSelectIssue,
@@ -121,6 +125,12 @@ export function TutorMessageBubble({
               )}
               {message.card.kind === "roadmap-preview" && (
                 <RoadmapPreviewCard card={message.card} />
+              )}
+              {message.card.kind === "weak-node-picker" && (
+                <WeakNodePickerCard
+                  card={message.card}
+                  onPick={onPickWeakNodes}
+                />
               )}
             </div>
           )}
