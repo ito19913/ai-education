@@ -489,6 +489,309 @@ REVIEW-2026-05-24.md コーチング #1「最高」優先項目への対応。�
 
 ---
 
+## Phase 4: 中学生向け設計軌道修正 (2026-05-25 grill)
+
+ito19 さんの観察「**現状の仕組みは大人の学習方法に寄っている**」を受けて、grill-me で 17 問詰めた軌道修正パッケージ。中学生のリアル (タスクは外から降ってくる主体、自分で計画立てる能力がまだ無い) に合わせて、計画立案 / 帰宅儀式 / 週次月次レポート / 戻る仕組みを再設計。
+
+### 設計の核 (Q1-Q17 の上流)
+
+| 哲学 | 内容 |
+|---|---|
+| **学習観の対比** | 小中学生は「前進だけ」(習う→復習→テスト→忘却)、会計士試験は「前進しつつ振り返る」が頻繁。**戻る仕組みを AI が支援する** のが核心 |
+| **2 軸並走** | 自走の **長期/中期計画** (LearningPlan、AI が伴走) と、外から降ってくる **突発タスク** (帰宅儀式の Inbox) を並走させる |
+| **PDCA フラクタル** | 週次 Check (来週調整) + 月次 Check (繰り越し or 修正プラン) の二層 PDCA |
+| **インプット 3 回転重視** | ito19 さんの会計士試験経験 = テキスト 1 冊を 3 回以上回す。ページ単位で機械的に配分、本人は「3 回読む」だけ理解 |
+| **達成感を最優先** | レポートは「達成度 → 学校 → 弱いところ → 来週」のサンドイッチ構造で、最初と最後がポジティブ |
+| **2 儀式分離** | 朝 = 既存振り返り (4 セクションに縮退) / 帰宅 = 新規 2 部構成。学校で何習ったかは記憶が新鮮な帰宅時に聞く |
+| **本人主体** | 計画立案・修正プラン・親共有、すべて本人意思を尊重 (コーチング原則 + 中2 女子の親共有神経質に配慮) |
+
+### LearningPlan (新型) — 計画立案の中心
+
+```ts
+// 科目ごとの長期計画。ExamPrep (試験対策、短期集中) と独立並走。
+LearningPlan {
+  id, learnerId, subjectId
+  title                        // 「中2 英語 教科書 計画」
+  scope: "year" | "semester" | "term"
+  startDate, endDate
+  materials: MaterialRef[]     // 教材選択 (1 〜複数)
+  targetRotations: number      // 回転数 (3 回推奨)
+  currentRotation: number      // 今何回転目
+  totalPages: number           // 教材総ページ
+
+  // === Roadmap (全期間プラン、必ず作る) ===
+  monthlyRoadmap: PlanSegment[]
+    // [{month: "2026-05", targetPages: 67}, {month: "2026-06", targetPages: 67}, ...]
+
+  // === 月次展開 (具体 ScheduleItem 化、当月のみ) ===
+  expandedMonths: ExpandedMonth[]
+    // [{month: "2026-05", scheduleItemIds: [...]}, ...]
+
+  status: "active" | "completed" | "paused"
+  revisions: PlanRevision[]    // PDCA Action の履歴 (修正プラン履歴)
+  createdAt, updatedAt
+}
+
+// 月次ロードマップの 1 セグメント
+PlanSegment {
+  month: string                // "YYYY-MM"
+  targetPages: number          // この月で読む目標ページ
+  startPage?: number           // 開始ページ (任意、計算可能)
+  endPage?: number             // 終了ページ
+  carryOverFromPrev?: number   // 前月からの繰り越し
+}
+
+// 月次展開の記録
+ExpandedMonth {
+  month: string
+  scheduleItemIds: string[]    // この月の ScheduleItem id 群
+  expandedAt: string           // 展開日時 (月初に AI が展開)
+}
+
+// 計画見直し履歴 (PDCA の A)
+PlanRevision {
+  id
+  revisedAt: string
+  reason: string               // 「テキスト使いにくい」「ペース速すぎ」等
+  changedFields: string[]      // 変更したフィールド名
+  triggeredBy: "monthly-review" | "manual" | "ai-suggestion"
+}
+```
+
+**「1 回転 = 教材通読 1 セット」「ページ単位で配分」(Q4 確定)**: シンプルさ最優先、本人説明「教科書を 3 回読むよ」で伝わる。1 回転目は自然に概観、2 回転目は自然に詳細、3 回転目は自然に定着、を **本人の中で起こす** 設計 (ツール化哲学整合)。
+
+### ScheduleItem 拡張 (帰宅儀式・突発タスク対応)
+
+```ts
+// 既存 ScheduleItem に Phase 4 で追加
+ScheduleItem {
+  ...既存フィールド...
+
+  // === Phase 4 追加 ===
+  tags?: string[]              // 自由タグ「宿題」「提出物」「テスト範囲」「親に頼まれた」等
+  source: "plan" | "carry-over" | "ad-hoc"
+    // plan       = LearningPlan からの月次バッチ展開
+    // carry-over = 前日できなかった繰り越し
+    // ad-hoc     = 帰宅儀式で当日追加された突発タスク
+}
+```
+
+**Inbox 型は作らない (Q7 確定)**: ito19 さんの判断「タグだけでいい、確定したら今日のスケジュールに並べる」。GTD 的な整理ステップは中学生の認知負荷が高すぎる。受信は ScheduleItem 直接追加、タグは自由テキスト。
+
+### SchoolDailyReport (新型) — 帰宅儀式の学校レポート
+
+```ts
+SchoolDailyReport {
+  id, learnerId
+  date                         // YYYY-MM-DD
+  periodCount: number          // この日の時限数 (1-6、可変)
+  periods: PeriodEntry[]       // 時限別
+  extraEvents?: string         // 学校での他の出来事・相談事 (任意)
+  createdAt
+}
+
+PeriodEntry {
+  periodNumber: number         // 1-6
+  subject: string              // 「英語」「数学」「体育」など
+  content: string              // 何を習ったか
+}
+```
+
+**時限数は可変 (Q14 確定)**: 中学生の現実 (短縮日、振替、行事日) で時限数バラバラ。毎日「今日何時限あった?」を 1 タップで聞く。
+
+### ReflectionLog 改訂 (5 → 4 セクション)
+
+```ts
+// schoolToday を撤去 (帰宅儀式の SchoolDailyReport に移行)
+ReflectionLog {
+  id, learnerId, date
+  cadence: "daily" | "weekly" | "monthly"
+
+  // === 朝の振り返り 4 セクション (cadence: "daily") ===
+  yesterdayReview?         // 昨日の学習レビュー
+  emotionsAndEvents?       // 起きたこと、気分
+  questionsAndDoubts?      // 疑問・不安 (掘り起こし入口)
+  todayPlan?               // 今日の計画
+
+  // === 週次/月次レポート (cadence: "weekly" | "monthly") ===
+  weeklyMonthlyReport?: WeeklyMonthlyReport   // 4 セクション構造 (下記)
+
+  // 派生リンク (既存通り)
+  derivedIssueIds?, derivedScheduleItemIds?, derivedHandoffIds?
+  weekStart?, goalIds?
+  createdAt
+}
+
+// 週次/月次レポートの 4 セクション (Q9 確定)
+WeeklyMonthlyReport {
+  // 1. 達成度 (達成感を出す、最重要)
+  achievement: {
+    plannedPages: number
+    actualPages: number
+    achievementPct: number       // 0-100
+    previousPeriodPct?: number   // 先週/先月比
+    consecutiveDays: number      // 連続学習日数
+    badges: AchievementBadge[]   // 獲得バッジ
+    // 月末週は + 月次達成度も
+    monthlyAchievement?: {
+      plannedPages, actualPages, achievementPct
+    }
+  }
+
+  // 2. 学校まとめ
+  schoolSummary: {
+    dailyReportRefs: string[]    // 当該期間の SchoolDailyReport.id 群
+    aiSummary: string            // AI 生成「今週/今月の重要ポイント」
+  }
+
+  // 3. 弱いところ (戻る候補)
+  weakSpots: {
+    issueIds: string[]           // 未クリア Issue 上位 3 件
+    nodeComprehensionIds: string[] // 浅いノード上位 2 件
+  }
+
+  // 4. 来週の計画 + Action
+  nextPeriodPlan: {
+    plannedPages: number
+    carryOver: number            // 繰り越し
+    totalPages: number           // 合計
+    actionProposals: ActionProposal[]
+      // 時間配分、教材変更、ペース調整 等の提案
+  }
+
+  // 月末週のみ
+  nextMonthPlan?: {
+    monthlyRoadmap: PlanSegment   // 来月の roadmap
+    revisionDraft?: PlanRevision  // 修正プラン draft (AI 提案、本人確認待ち)
+  }
+}
+
+AchievementBadge {
+  kind: "streak-3" | "streak-7" | "streak-30" | "month-80" | "month-100" | "issue-5-cleared" | "reconstruction-perfect"
+  earnedAt: string
+  description: string            // 「3 日続いたよ」など
+}
+
+ActionProposal {
+  kind: "time-increase" | "duration-extend" | "rotation-reduce" | "material-change" | "order-change"
+  detail: string                 // 「月: +20 分早めに始める」など
+  rationale: string              // ゆいの所感
+}
+
+// 親への共有設定 (Q15 確定: 本人同意制)
+SharedToParent {
+  reportId: string
+  sharedAt: string
+  scope: "summary" | "full"      // 数値のみ or フルレポート
+}
+```
+
+### 帰宅儀式 (2 部構成、Q8 確定)
+
+平日 16:00 以降の初回アクセスで自動起動 (Q13)。土日は通常モード。
+
+```
+第 1 部: 学校レポート (時限別シーケンシャル → SchoolDailyReport 保存)
+
+1. ゆい「おかえり! まず学校の話聞かせて。今日は何時限まで授業あった?」
+   → 本人 (タップ選択 1-6)
+2. ゆい「1 時限目は何の科目?」→ 本人「英語」
+3. ゆい「何習った?」→ 本人「不定詞」
+4. (時限数だけ繰り返し)
+5. ゆい「他に学校で起こったこと、相談したいことある?」
+   → なし: スキップ / あり: 自由テキスト (extraEvents)
+6. ゆい「OK、今日の学校レポート、書いておいたよ」(SchoolDailyReport 確定)
+
+第 2 部: スケジュール確定 (plan + carry-over + ad-hoc → 順番 → スタート)
+
+7. ゆい「じゃあ今日のスケジュール確認しよう」
+   - plan (今月計画から): 英語 教科書 p.58-60
+   - carry-over (前日積み残し): 英語 p.55-57 残り
+8. ゆい「他に学校から宿題とか課題、出てなかった?」
+   → あり: 内容 + 期限 + いつから開始 → ad-hoc ScheduleItem 化 (タグ付き)
+9. ゆい「OK、今日はこれ全部だね、開始しよう」
+```
+
+### 計画立案フロー (Q11 確定: ゆい対話 + カード ハイブリッド)
+
+PHILOSOPHY「AI と対話で全てが回る」整合。既存 subject-picker / material-picker カードを流用 + 新規 duration-picker / roadmap-preview カード。
+
+```
+ゆい「英語の計画、立てよう。教材選ぼうか」
+  ↓ [subject-picker] → 「英語」
+ゆい「どの教材で進める?」
+  ↓ [material-picker] → 「中2 英語 教科書」
+ゆい「全体で何ヶ月で 1 回転終わらせる? 何回転する?」
+  ↓ [duration-picker] → 「3 ヶ月で 1 回転 × 3 回 = 9 ヶ月」
+ゆい「教科書 200p だね。AI で計画作ってみた、見て」
+  ↓ [roadmap-preview]
+     ┌──────────────────────────┐
+     │ 英語 教科書 計画         │
+     │ 1 回転目: 5 月〜7 月     │
+     │   - 5 月: p.1-67  (67p) │
+     │   - 6 月: p.68-134 (67p)│
+     │   - 7 月: p.135-200 (66p)│
+     │ 2 回転目: 8 月〜10 月    │
+     │ 3 回転目: 11 月〜1 月    │
+     └──────────────────────────┘
+ゆい「これで OK? ペース変えたい?」
+  ↓ 「OK」/「もう少しゆっくり」/「もう少し速く」
+ゆい「OK、決まったよ。5 月の分を今からスケジュールに出すね」
+  → 月次バッチ実行 (5 月分の ScheduleItem 生成)
+```
+
+### 月次バッチ + 月末判定 = 月末週の週次レポートに統合 (Q12 確定)
+
+月末専用儀式は新設しない。**月末週 (例 5/25-5/31) の週次レポートを拡張版** にして月次レポート + 来月計画展開を一緒に出す。儀式の爆発を防ぐ。
+
+```
+週次レポート (5/25-5/31)
+──── 1. 達成度 (週) ────
+──── 1.5 達成度 (月) ★月末週のみ ────
+──── 2. 学校まとめ (週) ────
+──── 3. 弱いところ (週 + 月集計) ────
+──── 4. 来週の計画 + Action ────
+──── 5. 来月の計画 ★月末週のみ ────
+     6 月 roadmap (AI 自動生成)
+     繰り越し分の振り分け
+     修正プラン提案
+     ↓ 本人「OK」 / 「もう少しゆっくり」 / 「教材変える」 / 「考えさせて」
+     → 確定で 6 月分 ScheduleItem 生成 (月次バッチ実行)
+```
+
+### 弱いところの基盤: Issue (点) + NodeComprehension (面) ハイブリッド (Q10 確定)
+
+- **未クリア Issue 上位 3 件** (最近 chat で言及、今週発生したもの優先): 「具体的な詰まり」
+- **浅いノード 上位 2 件** (NodeComprehension.score < 0.55): 「体系の浅さ」
+- 重複 (同じノードに両方ヒット) は Issue 優先で 1 件として表示、サブテキストで「ノード全体としても浅め」
+
+ito19 さんの会計士試験的振り返り = 「具体的に詰まったところ (点) + 章全体として浅い (面)」の 2 段認識。
+
+### 親 (admin) への共有: 本人同意制 (Q15 確定)
+
+- デフォルト OFF
+- 週次/月次レポートに [親と共有] チェックボックス
+- チェック → SharedToParent 生成 → admin の /tutor に「娘さんから今週のレポート届いたよ」通知
+- 本人が選んだ項目だけ admin 可視 (プライバシー保護 + 能動的共有で達成感のもう 1 層)
+
+REVIEW コーチング指摘「中2 女子は親に何が伝わるか神経質」への構造的解答。
+
+### 達成バッジ (Q16 確定、5-7 種類)
+
+| バッジ | 条件 |
+|---|---|
+| 🌱 | 連続 3 日 (1 日 5 分でも OK の軽め基準) |
+| 🌿 | 連続 7 日 |
+| 🌳 | 連続 30 日 |
+| 🎯 | 月達成 80%+ |
+| 🏆 | 月達成 100%+ |
+| 🎓 | Issue 5 件クリア |
+| ⭐ | 復元テスト全問正解 |
+
+獲得バッジは週次レポートのセクション 1 + プロフィール的な場所に **静的に残る**。ゲーム的演出 (パーティクル等) は過剰、PHILOSOPHY「暗記モードへの逆戻り = 報酬目的化」リスクのため避ける。
+
+---
+
 ## ゆい→葵への申し送り（TutorHandoff）
 
 ARCHITECTURE 既存の「葵 → ゆい：`Issue.summary` 経由」の **逆方向**。
@@ -529,6 +832,11 @@ TutorHandoff ドキュメント作成 (mock では chat 内のカード)
 | `/tutor?view=tutor-archive` | **右ペインにゆい先生対話アーカイブ**（日付セレクター + 話題フィルター、readonly） | ✓ Phase 3 中盤 |
 | `/tutor?view=tutor-archive&date=YYYY-MM-DD` | 上記で特定日を即表示（検索結果カードからのジャンプ） | ✓ Phase 3 中盤 |
 | `/tutor?view=reflections` | **右ペインに振り返りログ一覧**（cadence フィルタ、派生リンク表示、readonly） | ✓ Phase 3 レビュー追従 C4 |
+| `/tutor?view=plan-new` | **右ペインに計画立案 (chat + カードハイブリッド)**: subject-picker → material-picker → duration-picker → roadmap-preview | Phase 4 |
+| `/tutor?view=plans` | **右ペインに LearningPlan 一覧** (active / completed / paused) | Phase 4 |
+| `/tutor?view=weekly-report` | **右ペインに週次レポート** (4 セクション、月末週は + 月次 + 来月計画) | Phase 4 |
+| `/tutor?view=monthly-report` | **右ペインに月次レポート単独ビュー** (週次から抽出して見るバックアップ動線) | Phase 4 |
+| `/tutor` 帰宅モード | **平日 16:00 以降の初回アクセスで自動起動**、第 1 部 学校レポート → 第 2 部 スケジュール確定 | Phase 4 |
 | `/tutor?ending=1` | **学習終了振り返り (ending) モードでゆい起動**（`/learn` の「学習を終了」ボタンから） | ✓ Phase 3 中盤 |
 | `/schedule` | 学習スケジュール ダッシュボード（バックアップ動線、`/tutor?view=schedule` と同コンポーネント） | ✓ Phase 1 骨格 |
 | `/learn` | 学習画面（4 ペイン: サイドバー / 体系図 / 対話 / ノート + 課題）。`/tutor` 右ペインには収まらないため別ルート | ✓ |
@@ -604,11 +912,23 @@ ScheduleItem {
   status: "todo" | "doing" | "done" | "skipped"
   aiRationale?  // AI がこのタスクを今日入れた理由
   doneAt?
+
+  // === Phase 4 追加 (帰宅儀式 + 突発タスク + 月次バッチ source 識別) ===
+  tags?: string[]                              // 自由タグ「宿題」「提出物」「テスト範囲」「親」等
+  source: "plan" | "carry-over" | "ad-hoc"
+    // plan       = LearningPlan 月次バッチ展開
+    // carry-over = 前日積み残し
+    // ad-hoc     = 帰宅儀式で当日追加された突発タスク
 }
 
 ExamPrep      { id, subjectId, name, examDate, scopeNodeIds[], pageRangeNote?, ... }
 Homework      { id, subjectId, name, dueDate, materialIds[], amountNote? }
 LessonReview  { id, subjectId, lessonDate, topic, nodeIds[] }
+
+// LearningPlan / PlanSegment / SchoolDailyReport / PeriodEntry の詳細は
+// 上記「Phase 4: 中学生向け設計軌道修正」セクション参照。
+// ReflectionLog は Phase 4 で schoolToday を撤去 (SchoolDailyReport に移行)、
+// cadence: weekly/monthly は WeeklyMonthlyReport (4 セクション) を保持する形に再定義。
 ```
 
 ### 担任 chat
@@ -660,18 +980,24 @@ LearningSession {
 
 ```ts
 // 振り返りログ。日次 / 週次 / 月次 共通。
-// 中身は 5 セクション、加えて各既存型への派生リンク（ハイブリッド型）。
+// Phase 3 では 5 セクション、Phase 4 で schoolToday を撤去 → 4 セクションに縮退。
+// cadence: weekly/monthly は Phase 4 で WeeklyMonthlyReport (4 セクション) を保持する形に再定義。
+// 詳細は上記「Phase 4: 中学生向け設計軌道修正」セクション参照。
 ReflectionLog {
   id, learnerId
   date           // YYYY-MM-DD
   cadence: "daily" | "weekly" | "monthly"
 
-  // 5 セクション（cadence で必要なものだけ埋まる）
+  // === Phase 3: 5 セクション → Phase 4: 4 セクション (schoolToday 撤去) ===
   yesterdayReview?        // 昨日の学習レビュー
-  schoolToday?            // 今日学校で習ったこと
+  schoolToday?            // ★Phase 4 で撤去 (帰宅儀式の SchoolDailyReport に移行)
   emotionsAndEvents?      // 起きたこと、気分
   questionsAndDoubts?     // 疑問・不安・「先生の言ってる意味分からない」
   todayPlan?              // 今日の計画
+
+  // === Phase 4 追加 (cadence: weekly/monthly) ===
+  weeklyMonthlyReport?    // 4 セクション (達成度 / 学校 / 弱いところ / 来週計画+Action)
+                          //   月末週は + 月次達成度 + 来月計画 + 修正プラン draft
 
   // 派生リンク（独立型のハイブリッド性の核心）
   derivedIssueIds?: string[]              // ここから生まれた Issue
@@ -744,11 +1070,10 @@ TutorHandoff {
 | **Phase 3 (構造)** | /tutor 2 ペイン司令室化 + 課題 chat 統合 + ゆいハブカード | ✓ 完了 |
 | **Phase 3 拡張: コーチング設計** | ゆいを純粋コーチング エージェントに進化（下記 Phase 3 拡張スコープ 3a〜3g 参照） | 3a-3b + 拡張機能 多数 ✓、3c-3g 残 |
 | **Phase 3 中盤の追加機能** | 1 日 1 chat 永続化 + 話題セクション + アーカイブ + 検索 + セッション pause/resume + 3 状態タイマー + ending dialogue（上記「Phase 3 中盤の実装スナップショット」参照） | ✓ 完了 |
-| **Phase 3.5** | 学習開始の儀式 + 経過時間計測 + 離席検知 + 終了儀式（下記 Phase 3.5 スコープ参照） | 未着手 |
-| **Phase 4** | 宿題タスク + AI 伴走 chat（「考え方を一緒に確認しながら」）| 未着手 |
-| **Phase 5** | 授業の新しい学び（本人入力 → 復習タスク自動生成）| 未着手 |
-| **Phase 6** | Claude API 接続、scripted mock を本物の対話に置換、コンテキスト圧縮（rolling summary / prompt cache）、ゆいによるサマリー読み込み | 未着手 |
-| **Phase 7** | Supabase スキーマ + mock → 永続化 | 未着手 |
+| **Phase 3.5** | 学習開始の儀式 + 経過時間計測 + 離席検知 + 終了儀式（下記 Phase 3.5 スコープ参照） | 中盤の追加機能で部分実装済 (auto-pause / ending dialogue / 3 状態タイマー)、残りは next |
+| **Phase 4** | **中学生向け設計軌道修正 (2026-05-25 grill)**: LearningPlan + 帰宅儀式 (2 部構成) + SchoolDailyReport + 週次/月次レポート (4 セクション) + 達成バッジ + 親共有 (本人同意制)。**既存 Phase 4 (宿題タスク) と Phase 5 (授業の新しい学び) は本 Phase に統合** | grill 確定、実装は次セッション |
+| **Phase 6** | Claude API 接続、scripted mock を本物の対話に置換、コンテキスト圧縮（rolling summary / prompt cache）、ゆいによるサマリー読み込み、教材 PDF → roadmap 自動生成 | 未着手 |
+| **Phase 7** | Supabase スキーマ + mock → 永続化 (LearningPlan / SchoolDailyReport / ScheduleItem 拡張 / バッジ等含む) | 未着手 |
 | **Phase 8** | Web Speech API（STT）+ OpenAI TTS で音声対話 | 未着手 |
 
 ### Phase 3 スコープ
@@ -974,6 +1299,44 @@ ito19 さん指示により、ブラウザ閉じ / アイドル / 翌日復帰�
 - /tutor 起動時の「今日始める? お休み?」儀式（mount で自動開始してる）
 - 終了儀式 = `SessionEndDialog`（旧版あり、ゆい report への遷移と統合は未整理）
 
+### 中学生向け設計軌道修正 (Phase 4, 2026-05-25 grill)
+
+ito19 さん観察「現状の仕組みは大人の学習方法に寄っている」を受けた軌道修正。詳細設計は本書「## Phase 4: 中学生向け設計軌道修正」セクション参照。grill-me で 17 問詰めた結果:
+
+| Q | 論点 | 確定 |
+|---|---|---|
+| Q1 | 問題定義 | 「外から降ってくるタスク中心」「戻る仕組み欠落」「夕方の儀式空白」の整理で合意 |
+| Q3 | 計画立案の中心型 | **新型 `LearningPlan`** (ExamPrep と並走、独立) |
+| Q4 | 回転と最小単位 | **全体通読 × 3 回 + ページ単位** (「教科書を 3 回読む」と本人説明) |
+| Q5 | 落とし込み方式 | **roadmap (全期間プラン、3 ヶ月で 1 回転) + 月次バッチ展開 + 週次フィードバック + 月末繰り越し / 修正プラン** (PDCA フラクタル) |
+| Q6 | 帰宅儀式 | **朝 (既存振り返り) と帰宅を 2 儀式分離**、帰宅は時間帯トリガー |
+| Q7 | Inbox 設計 | **Inbox 型は作らない**、`ScheduleItem.tags` + `source` を追加 (タグだけで運用) |
+| Q8 | 帰宅儀式の中身 | **2 部構成**: 第 1 部 学校レポート (時限別シーケンシャル、新型 `SchoolDailyReport`) / 第 2 部 スケジュール確定 (plan + carry-over + ad-hoc) |
+| Q9 | 週次/月次レポート構成 | **4 セクション**: 達成度 → 学校 → 弱いところ → 来週計画+Action (サンドイッチ + **達成感最優先**) |
+| Q10 | 弱いところの基盤 | **Issue (点) + NodeComprehension (面) ハイブリッド** (会計士試験的振り返り) |
+| Q11 | 計画立案 UX | **ゆい対話 + カード ハイブリッド** (subject-picker / material-picker / duration-picker / roadmap-preview) |
+| Q12 | 月次バッチ + 月末判定 | **月末週の週次レポートに統合** (月次レポート + 来月計画展開を拡張版に被せる、儀式爆発を防ぐ) |
+| Q13 | 帰宅儀式起動 | **平日 16:00 以降 初回アクセスで自動 + 土日 skip + 緊急時 HubMenu 明示** |
+| Q14 | 時限数 | **可変** (毎回「何時限あった?」を 1 タップ選択、短縮日・行事日対応) |
+| Q15 | 親 (admin) への共有 | **本人同意制** (デフォルト OFF、本人が選んだ項目のみ admin 可視、プライバシー + 達成感のもう 1 層) |
+| Q16 | 達成バッジ | **5-7 種類** (連続 3/7/30 日、月達成 80%/100%、Issue 5 件、復元全問)、プロフィールに静的に残る。連続日数は「1 日 5 分でも OK」の軽め基準 |
+| Q17 | 月末修正プラン | **ゆい対話 + draft カード + 4-5 選択肢** (時間増 / 期間延長 / 教材変更 / 順序変更) + 「考えさせて」(中学生の決断疲れ回避) |
+
+**新型 / 既存型変更まとめ**:
+
+| 種別 | 型 |
+|---|---|
+| 新型 | `LearningPlan` / `PlanSegment` / `ExpandedMonth` / `PlanRevision` / `SchoolDailyReport` / `PeriodEntry` / `WeeklyMonthlyReport` / `AchievementBadge` / `ActionProposal` / `SharedToParent` |
+| 拡張 | `ScheduleItem.tags / source`、`ReflectionLog.weeklyMonthlyReport` 追加 |
+| 縮退 | `ReflectionLog.schoolToday` 撤去 (SchoolDailyReport に移行、4 セクションに縮退) |
+
+**未決事項** (実装中 or 後で詰める):
+- バッジの具体的ビジュアル (絵文字 / SVG / ステッカー風)
+- 親への通知方法 (admin 側 UI、メール等)
+- 月末週の判定ロジック細部 (「最終週」の判定基準)
+- 計画立案の AI による教材目次自動読み込み (Phase 6 で実装、現状は手動入力 mock)
+- 教材変更時の roadmap 再計算ロジック
+
 ---
 
 ## コンポーネント構成
@@ -1037,6 +1400,23 @@ components/
 │   └── MarkdownText.tsx            # ★C1: chat バブル用 markdown renderer + stripMarkdown
 ├── reflections/                    # ★Phase 3 レビュー追従 C4
 │   └── ReflectionListView.tsx      # ★C4: 振り返りログの日付別一覧 + cadence フィルタ + 派生リンク
+├── plans/                          # ★Phase 4: LearningPlan 関連
+│   ├── PlanWizard.tsx              # 計画立案 (chat + カード) のハブ
+│   ├── PlanListView.tsx            # /tutor?view=plans 一覧
+│   └── cards/
+│       ├── DurationPickerCard.tsx  # 期間 + 回転数選択カード
+│       └── RoadmapPreviewCard.tsx  # AI 生成 roadmap のプレビューカード
+├── reports/                        # ★Phase 4: 週次/月次レポート (4 セクション)
+│   ├── WeeklyMonthlyReportView.tsx # 4 セクション表示の本体
+│   ├── AchievementSection.tsx      # セクション 1: 達成度 + バッジ
+│   ├── SchoolSummarySection.tsx    # セクション 2: 学校まとめ (SchoolDailyReport 集約)
+│   ├── WeakSpotsSection.tsx        # セクション 3: 弱いところ (Issue + NodeComprehension)
+│   ├── NextPlanSection.tsx         # セクション 4: 来週/来月計画 + Action
+│   └── badges/
+│       └── AchievementBadgeChip.tsx # 達成バッジ表示
+├── school/                         # ★Phase 4: 帰宅儀式の学校レポート
+│   ├── SchoolReportWizard.tsx      # 第 1 部 学校レポート対話 (時限別シーケンシャル)
+│   └── SchoolReportView.tsx        # SchoolDailyReport の閲覧 (履歴・アーカイブ)
 ├── learn/                          # 学習画面（別ルート、4 ペイン）
 │   ├── LearnWorkspace.tsx          # 親 + state
 │   ├── LearnSidebar.tsx            # サイドバー（担任 / スケジュール / 課題 / 履歴 / 憲法 / 教材 / ゴミ箱）
