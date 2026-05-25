@@ -205,6 +205,16 @@ export type ScheduleItem = {
    * Phase 4 UI 実装で計画展開 / 繰り越し / 突発を厳密に区別する時に活用。
    */
   source?: ScheduleItemSource;
+
+  // === Phase 5 追加 (P5-Q1: GT × SI 並走 + 紐付け) ===
+  /**
+   * 元の GeneratedTask.id への参照。
+   * source: "plan" の SI ではほぼ全て埋まる (1 GT : 1 SI、月初 expansion で生成)。
+   * source: "ad-hoc" (帰宅儀式) / "carry-over" (前日繰越) では null。
+   *
+   * 完了同期: SI を done にすると GT.status も done に同期 (Plan 全体進捗に反映)。
+   */
+  generatedTaskId?: string;
 };
 
 /** 試験対策プロジェクト（範囲を期日までに詰める器） */
@@ -1140,10 +1150,13 @@ export type ReplanRules = {
  * Plan Engine が自動生成する学習タスク (Phase 5 コア)。
  * 「今日のタスクは結果でしかない」(別 AI) を体現。
  *
- * 既存 ScheduleItem との関係:
- * - ScheduleItem は「時間軸上の view-model」(Phase 4 までの構造)
- * - GeneratedTask は「Plan Engine が計画から導出した実行単位」
- * - Phase 5 本実装で統合 or 並走を grill で決める (現状は叩き台)
+ * Phase 5 grill P5-Q1 確定設計:
+ * - GT は「計画の実行単位」、ScheduleItem (SI) は「今日のカレンダー view」
+ * - **1 GT : 1 SI** (cardinality 固定)、GT は 1 日分のタスク粒度、ページ範囲含む
+ * - **計画立案時に全期間 GT 化** (例: 9 ヶ月計画なら ~180 GT)
+ * - **月初 expansion** = 該当月の GT[] → SI[] 生成 (日付/status 付与)
+ * - SI.generatedTaskId で逆参照 (ad-hoc/carry-over は null)
+ * - Replan は GT[] 書き換え、未来 SI 再生成、履歴は PlanRevision[]
  */
 export type GeneratedTask = {
   id: string;

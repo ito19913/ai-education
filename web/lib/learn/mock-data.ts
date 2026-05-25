@@ -1581,19 +1581,26 @@ export const MOCK_SHARED_TO_PARENT: SharedToParent[] = [
 ];
 
 // ============================================================================
-// Phase 5 試作 mock データ (C14、2026-05-25)
+// Phase 5 mock データ (C14 試作 → C16 grill 確定で拡張、2026-05-25)
 //
-// 「学習戦略エンジン」設計の叩き台。後で書き換え前提。
-// ito19 さん + 別 AI 議論で浮上した:
-//   - GeneratedTask (Plan Engine から自動生成された実行単位)
+// 「学習戦略エンジン」grill 確定設計 (P5-Q1〜Q7) を反映した mock。
+// ARCHITECTURE.md「## Phase 5: 学習戦略エンジン」セクション参照。
+//
+// 主要型:
+//   - GeneratedTask (Plan Engine から自動生成された実行単位、1 GT : 1 SI)
 //   - InterruptEvent (割込みイベント、計画通り進まない事象)
 //   - NodeReviewSuggestion (上ノード復習提案、テスト失敗 → 親ノード復習)
 //
-// 既存 plan-english-2026-05 を Phase 5 拡張フィールド (planType /
-// weakNodeIds / reviewRules / testRules / replanRules / dailyCapacityMinutes)
-// で更新済み (上記 MOCK_LEARNING_PLANS 参照)。
+// 既存 plan-english-2026-05 は Phase 5 拡張フィールド (planType / weakNodeIds /
+// reviewRules / testRules / replanRules / dailyCapacityMinutes) で更新済み
+// (上記 MOCK_LEARNING_PLANS 参照)。
 //
-// 動作: 「弱いノード = inf-adv (副詞的用法) + passive-basic (過去分詞)」
+// **全期間 GT 化** (P5-Q1 確定): 立案時に 9 ヶ月 × 20 日 ≈ ~180 GT 生成される
+// 想定だが、mock では「主要日付の抜粋」のみ収録 (5/24 周辺の inf-adv 集中 +
+// 5/26-5/31 の各日サンプル + 6 月の 2 回転目導入予兆を 2 件)。
+// 実装ロジックでは GeneratedTask を全期間で生成 + 当月分のみ SI に展開する設計。
+//
+// 動作シナリオ: 「弱いノード = inf-adv (副詞的用法) + passive-basic (過去分詞)」
 // に対し、Plan Engine が「input → output → test」順の GeneratedTask を生成。
 // 5/22 に副詞的用法の小テスト発表 (InterruptEvent) があり、5/24 (今日) に
 // 「inf-adv テスト失敗 → inf 親ノード復習」の NodeReviewSuggestion が
@@ -1680,6 +1687,188 @@ export const MOCK_GENERATED_TASKS: GeneratedTask[] = [
     rationale:
       "過去分詞 (passive-basic) は語彙の問題 (handoff-2026-05-13-1)。drill で反復定着。",
     generatedAt: "2026-05-23T20:00:00.000Z",
+  },
+
+  // === 5/26 (月) inf-adv-purpose (副詞的用法 目的) input ===
+  // P5-Q1 全期間 GT 化のシンボル: 5/26 以降は立案時に Plan Engine が
+  // 既に生成済み (~180 件のうち 5 月後半分)。
+  {
+    id: "gtask-2026-05-26-1",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "inf-adv-purpose",
+    mode: "input",
+    resource: {
+      type: "textbook",
+      materialId: "mat-english-textbook-g8",
+      pageRange: { start: 63, end: 65 },
+    },
+    estimatedMinutes: 15,
+    priority: 3,
+    dueDate: "2026-05-26",
+    status: "todo",
+    scheduledDate: "2026-05-26",
+    rationale:
+      "副詞的用法 3 種類のうち「目的」から順に深掘り。月曜開始で集中力高い時間に input。",
+    generatedAt: "2026-05-01T00:00:00.000Z", // 立案時 (5/1) に生成済み
+  },
+  // === 5/27 (火) inf-adv-result (副詞的用法 結果) input + output ===
+  {
+    id: "gtask-2026-05-27-1",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "inf-adv-result",
+    mode: "input",
+    resource: {
+      type: "textbook",
+      materialId: "mat-english-textbook-g8",
+      pageRange: { start: 66, end: 67 },
+    },
+    estimatedMinutes: 10,
+    priority: 3,
+    dueDate: "2026-05-27",
+    status: "todo",
+    scheduledDate: "2026-05-27",
+    rationale: "副詞的用法 結果用法。短いページなので 10 分。",
+    generatedAt: "2026-05-01T00:00:00.000Z",
+  },
+  {
+    id: "gtask-2026-05-27-2",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "inf-adv-result",
+    mode: "output",
+    resource: {
+      type: "workbook",
+      materialId: "mat-english-workbook-g8",
+      pageRange: { start: 34, end: 35 },
+    },
+    estimatedMinutes: 15,
+    priority: 3,
+    dueDate: "2026-05-27",
+    status: "todo",
+    scheduledDate: "2026-05-27",
+    rationale: "input 直後に output、目的 → 結果の見分け演習。",
+    generatedAt: "2026-05-01T00:00:00.000Z",
+  },
+  // === 5/28 (水) inf-adv-emotion (感情の原因) input ===
+  {
+    id: "gtask-2026-05-28-1",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "inf-adv-emotion",
+    mode: "input",
+    resource: {
+      type: "textbook",
+      materialId: "mat-english-textbook-g8",
+      pageRange: { start: 68, end: 70 },
+    },
+    estimatedMinutes: 15,
+    priority: 3,
+    dueDate: "2026-05-28",
+    status: "todo",
+    scheduledDate: "2026-05-28",
+    rationale: "副詞的用法 3 種類完走。感情の原因は最後に入れて達成感へ。",
+    generatedAt: "2026-05-01T00:00:00.000Z",
+  },
+  // === 5/29 (木) review 復習 (副詞的用法全体) ===
+  {
+    id: "gtask-2026-05-29-1",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "inf-adv",
+    mode: "review",
+    resource: {
+      type: "note",
+    },
+    estimatedMinutes: 15,
+    priority: 4,
+    dueDate: "2026-05-29",
+    status: "todo",
+    scheduledDate: "2026-05-29",
+    rationale:
+      "副詞的用法 3 種類を 1 週間で習得 → 木曜に自分のノートで復習。reviewRules.reviewIntervalDays: 7 と整合。",
+    generatedAt: "2026-05-01T00:00:00.000Z",
+  },
+  // === 5/30 (金) drill 反復 + 過去分詞 drill ===
+  {
+    id: "gtask-2026-05-30-1",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "inf",
+    mode: "drill",
+    resource: {
+      type: "ai-generated",
+    },
+    estimatedMinutes: 10,
+    priority: 3,
+    dueDate: "2026-05-30",
+    status: "todo",
+    scheduledDate: "2026-05-30",
+    rationale: "不定詞 3 用法を drill で反復。短時間で混在問題を解く。",
+    generatedAt: "2026-05-01T00:00:00.000Z",
+  },
+  // === 5/31 (土) 週末テスト (testRules.testIntervalDays: 7) ===
+  {
+    id: "gtask-2026-05-31-1",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "inf",
+    mode: "test",
+    resource: {
+      type: "ai-generated",
+    },
+    estimatedMinutes: 20,
+    priority: 5,
+    dueDate: "2026-05-31",
+    status: "todo",
+    scheduledDate: "2026-05-31",
+    rationale:
+      "週末テスト (testRules.testIntervalDays: 7)。不定詞 3 用法 + 副詞的用法 3 種類の総合判定。合格 (>= 70%) で 2 回転目へ、失敗なら verb-form 親ノード復習を提案 (failureAction: 'review-parent')。",
+    generatedAt: "2026-05-01T00:00:00.000Z",
+  },
+  // === 6/1 (日) 2 回転目 開始 (review モード、grammar root から再構築) ===
+  // P5-Q1 全期間 GT 化のシンボル: 6 月分も立案時に生成済み。
+  {
+    id: "gtask-2026-06-01-1",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "grammar", // root から再スタート
+    mode: "review",
+    resource: {
+      type: "textbook",
+      materialId: "mat-english-textbook-g8",
+      pageRange: { start: 1, end: 5 },
+    },
+    estimatedMinutes: 20,
+    priority: 3,
+    dueDate: "2026-06-01",
+    status: "todo",
+    scheduledDate: "2026-06-01",
+    rationale:
+      "2 回転目 1 日目。root grammar から再スタート、3 ヶ月で 200p なので速読寄り。1 回転目の「定着」を確認しながら。",
+    generatedAt: "2026-05-01T00:00:00.000Z", // 立案時 (5/1) に全期間生成
+  },
+  // === 6/3 (火) — 試験対策と並走 (ad-hoc じゃなく plan として組み込み済) ===
+  {
+    id: "gtask-2026-06-03-1",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "verb-tense",
+    mode: "review",
+    resource: {
+      type: "textbook",
+      materialId: "mat-english-textbook-g8",
+      pageRange: { start: 6, end: 12 },
+    },
+    estimatedMinutes: 20,
+    priority: 3,
+    dueDate: "2026-06-03",
+    status: "todo",
+    scheduledDate: "2026-06-03",
+    rationale:
+      "2 回転目 動詞の時制を復習。期末試験当日でも plan は止めない (試験範囲確認のため逆に効く)。",
+    generatedAt: "2026-05-01T00:00:00.000Z",
   },
 ];
 
