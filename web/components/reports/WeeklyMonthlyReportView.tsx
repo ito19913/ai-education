@@ -19,15 +19,18 @@
  *   - mode="monthly" → cadence="monthly" の最新を表示
  *   - 日付セレクター (将来): URL ?date=YYYY-MM-DD で特定日にジャンプ可
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   BookOpen,
   CalendarDays,
   CheckCircle2,
   Flag,
+  Heart,
+  Send,
   Sparkles,
   Target,
   TrendingDown,
@@ -39,11 +42,12 @@ import {
   MOCK_NODE_COMPREHENSIONS,
   MOCK_REFLECTION_LOGS,
   MOCK_SCHOOL_DAILY_REPORTS,
+  MOCK_SHARED_TO_PARENT,
 } from "@/lib/learn/mock-data";
 import type {
   AchievementBadge,
   KnowledgeNode,
-  ReflectionLog,
+  SharedToParent,
   Subject,
   WeeklyMonthlyReport,
 } from "@/lib/learn/types";
@@ -85,7 +89,7 @@ export function WeeklyMonthlyReportView({ mode, nodes }: Props) {
 
   return (
     <div className="flex h-full w-full flex-col bg-canvas">
-      <Header mode={mode} date={log.date} />
+      <Header mode={mode} date={log.date} reportId={log.id} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-4 p-5">
           <AchievementSection report={report} />
@@ -99,23 +103,91 @@ export function WeeklyMonthlyReportView({ mode, nodes }: Props) {
   );
 }
 
-function Header({ mode, date }: { mode: "weekly" | "monthly"; date?: string }) {
+function Header({
+  mode,
+  date,
+  reportId,
+}: {
+  mode: "weekly" | "monthly";
+  date?: string;
+  reportId?: string;
+}) {
   return (
-    <header className="border-b border-border bg-background px-5 py-3">
-      <div className="flex items-center gap-2">
-        <Flag className="size-4 text-primary" />
-        <h2 className="text-sm font-semibold text-foreground">
-          {mode === "weekly" ? "週次レポート" : "月次レポート"}
-        </h2>
-        {date && (
-          <span className="text-[11px] text-muted-foreground">({date})</span>
-        )}
+    <header className="flex items-start gap-3 border-b border-border bg-background px-5 py-3">
+      <div className="flex flex-1 flex-col">
+        <div className="flex items-center gap-2">
+          <Flag className="size-4 text-primary" />
+          <h2 className="text-sm font-semibold text-foreground">
+            {mode === "weekly" ? "週次レポート" : "月次レポート"}
+          </h2>
+          {date && (
+            <span className="text-[11px] text-muted-foreground">({date})</span>
+          )}
+        </div>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          一緒に読もう。**達成 → 学校 → 弱いところ → 来週の計画** の順だよ。
+        </p>
       </div>
-      <p className="mt-1 text-[11px] text-muted-foreground">
-        一緒に読もう。**達成 → 学校 → 弱いところ → 来週の計画** の順だよ。
-      </p>
+      {reportId && <ShareToParentButton reportId={reportId} />}
     </header>
   );
+}
+
+/**
+ * C12: 親と共有 toggle ボタン (Q15 確定: 本人同意制、デフォルト OFF)。
+ *
+ * クリックで SharedToParent を MOCK_SHARED_TO_PARENT に push。
+ * 共有済の場合は「✓ 共有済 (date)」と表示、押せない。
+ * 「取り消す」アクションは Phase 7 永続化と合わせて実装する想定。
+ */
+function ShareToParentButton({ reportId }: { reportId: string }) {
+  const [shared, setShared] = useState<SharedToParent | null>(
+    MOCK_SHARED_TO_PARENT.find((s) => s.reportId === reportId) ?? null,
+  );
+
+  if (shared) {
+    return (
+      <div className="flex flex-col items-end gap-0.5">
+        <Badge
+          variant="outline"
+          className="gap-1 border-emerald-300/60 bg-emerald-50 text-[10px] text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
+        >
+          <Heart className="size-2.5" />
+          <span>親と共有済</span>
+        </Badge>
+        <span className="text-[9px] text-muted-foreground tabular-nums">
+          {formatShortDate(shared.sharedAt)}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="gap-1.5 border-pink-300/60 text-pink-700 hover:border-pink-500 hover:text-pink-800 dark:border-pink-900/60 dark:text-pink-300"
+      onClick={() => {
+        const entry: SharedToParent = {
+          id: `share-runtime-${Date.now()}`,
+          reportId,
+          sharedAt: new Date().toISOString(),
+          scope: "full",
+        };
+        MOCK_SHARED_TO_PARENT.push(entry);
+        setShared(entry);
+      }}
+      title="今週/今月のレポートを親に共有する (本人同意制、いつでも見せられる)"
+    >
+      <Send className="size-3" />
+      <span>親と共有</span>
+    </Button>
+  );
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 /** セクション 1: 達成度 */
