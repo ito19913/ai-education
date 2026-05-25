@@ -13,9 +13,11 @@
 import type {
   Issue,
   LearningPlan,
+  PeriodEntry,
   PlanSegment,
   ReflectionLog,
   ScheduleItem,
+  SchoolDailyReport,
   TutorHandoff,
   TutorMessage,
   TutorRightPaneAction,
@@ -29,6 +31,7 @@ import {
   MOCK_MATERIALS,
   MOCK_REFLECTION_LOGS,
   MOCK_SCHEDULE_TODAY,
+  MOCK_SCHOOL_DAILY_REPORTS,
 } from "./mock-data";
 import { searchTutorThreads } from "./tutor-thread-storage";
 import {
@@ -150,7 +153,13 @@ type TutorState =
   | "plan-await-material" // 計画立案: material-picker 表示中
   | "plan-await-duration" // 計画立案: duration-picker 表示中
   | "plan-await-confirm" // 計画立案: roadmap-preview 表示中 (OK/速く/ゆっくり 待ち)
-  | "plan-done"; // 計画立案: LearningPlan push 済み
+  | "plan-done" // 計画立案: LearningPlan push 済み
+  // === C9 Phase 4 帰宅儀式 第 1 部: 学校レポート (時限別シーケンシャル) ===
+  | "evening-await-period-count" // 時限数 (1-6) 選択待ち
+  | "evening-await-period-subject" // 「N 時限目は何の科目?」科目入力待ち
+  | "evening-await-period-content" // 「何習った?」内容入力待ち
+  | "evening-await-extra-events" // 「他に学校で起こったことある?」入力待ち
+  | "evening-school-done"; // 第 1 部完了 (SchoolDailyReport push 済み、第 2 部は C10)
 
 export type TutorStep = {
   state: TutorState;
@@ -164,6 +173,10 @@ export type TutorStep = {
   proposedRotations?: number;
   /** C8: 計画立案で確定した LearningPlan id */
   confirmedLearningPlanId?: string;
+  /** C9: 帰宅儀式 第 1 部 (学校レポート) の draft */
+  schoolReportDraft?: SchoolReportDraft;
+  /** C9: 帰宅儀式で確定した SchoolDailyReport id */
+  confirmedSchoolReportId?: string;
   /** 掘り起こしで本人が言語化した不明事項（mock では 1 件まで保持） */
   excavationTopic?: string;
   /**
@@ -503,6 +516,103 @@ function currentMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// ============================================================================
+// C9 Phase 4 帰宅儀式 第 1 部 — 学校レポート (時限別シーケンシャル)
+//
+// flow (Q8 確定):
+//   ゆい「おかえり! 今日は何時限まで授業あった?」(1-6 quickReplies)
+//   → 時限数選択 → ゆい「1 時限目は何の科目?」「何習った?」を時限数だけ繰り返し
+//   → ゆい「他に学校で起こったこと、相談したいことある?」
+//   → SchoolDailyReport を MOCK_SCHOOL_DAILY_REPORTS に push (第 1 部完了)
+//   → 第 2 部 (スケジュール確定) は C10 で実装
+// ============================================================================
+
+/** 帰宅儀式 第 1 部 (学校レポート) の draft */
+export type SchoolReportDraft = {
+  periodCount?: number;
+  periods: Array<{ subject?: string; content?: string }>;
+  currentPeriodIndex: number;
+  extraEvents?: string;
+};
+
+const SCHOOL_SUBJECT_QUICK_REPLIES = [
+  "英語",
+  "数学",
+  "国語",
+  "理科",
+  "社会",
+  "体育",
+  "音楽",
+  "美術",
+  "技術家庭",
+  "保健",
+];
+
+function emptySchoolReportDraft(): SchoolReportDraft {
+  return { periods: [], currentPeriodIndex: 0 };
+}
+
+/**
+ * SchoolReportDraft から SchoolDailyReport を組み立てて MOCK に push。
+ * draft.periods の subject/content が両方埋まっているもののみ採用。
+ */
+function deriveSchoolDailyReport(
+  draft: SchoolReportDraft,
+): SchoolDailyReport {
+  const validPeriods: PeriodEntry[] = draft.periods
+    .map((p, idx) => ({
+      periodNumber: idx + 1,
+      subject: p.subject ?? "未入力",
+      content: p.content ?? "未入力",
+    }))
+    .filter((p) => p.subject !== "未入力" && p.content !== "未入力");
+
+  const now = new Date();
+  const report: SchoolDailyReport = {
+    id: makeDerivedId("school"),
+    learnerId: "girl",
+    date: formatLocalDate(now),
+    periodCount: draft.periodCount ?? validPeriods.length,
+    periods: validPeriods,
+    extraEvents: draft.extraEvents,
+    createdAt: now.toISOString(),
+  };
+  MOCK_SCHOOL_DAILY_REPORTS.push(report);
+  return report;
+}
+
+/** "1" "2" "３" "六" 等から 1-6 の数値を抽出 (失敗時 null) */
+function extractPeriodCount(text: string): number | null {
+  // 半角数字
+  const matchHalf = text.match(/[1-6]/);
+  if (matchHalf) return parseInt(matchHalf[0], 10);
+  // 全角数字
+  const fullHalfMap: Record<string, number> = {
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+  };
+  for (const [full, n] of Object.entries(fullHalfMap)) {
+    if (text.includes(full)) return n;
+  }
+  // 漢数字
+  const kanjiMap: Record<string, number> = {
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+  };
+  for (const [k, n] of Object.entries(kanjiMap)) {
+    if (text.includes(k)) return n;
+  }
+  return null;
+}
+
 /**
  * C6: ハードガード hit から TutorHandoff draft を派生して push する。
  * Issue は作らない（本人が「葵先生に聞く」を選んだ場合に IssueChat で
@@ -593,6 +703,21 @@ export function deriveTutorTopic(
     case "ending-confirm":
     case "ending-done":
       return "ending";
+    // C8: 計画立案フローは start-study 系 (学習を始める準備)
+    case "plan-await-subject":
+    case "plan-await-material":
+    case "plan-await-duration":
+    case "plan-await-confirm":
+    case "plan-done":
+      return "start-study";
+    // C9: 帰宅儀式は morning-reflection と同系 (振り返り系) を流用
+    // 専用 topic を追加するなら ARCHITECTURE.md の 11 topic を改訂する
+    case "evening-await-period-count":
+    case "evening-await-period-subject":
+    case "evening-await-period-content":
+    case "evening-await-extra-events":
+    case "evening-school-done":
+      return "morning-reflection";
   }
   return "free-chat";
 }
@@ -954,6 +1079,32 @@ function buildNextTutorReplyInner(args: {
     };
   }
 
+  // C9: 「帰ってきた」「ただいま」「学校から帰った」「学校レポート」「学校の話」
+  // → 帰宅儀式 第 1 部 (学校レポート) 開始
+  if (
+    lower.includes("帰ってきた") ||
+    lower.includes("ただいま") ||
+    lower.includes("学校から帰") ||
+    lower.includes("学校レポート") ||
+    lower.includes("学校の話") ||
+    lower.includes("学校どうだった")
+  ) {
+    return {
+      nextState: {
+        ...state,
+        state: "evening-await-period-count",
+        schoolReportDraft: emptySchoolReportDraft(),
+      },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "おかえり! まず学校の話聞かせて。\n\n**今日は何時限まで授業あった?**",
+        quickReplies: ["1", "2", "3", "4", "5", "6"],
+        createdAt: now,
+      },
+    };
+  }
+
   // --- C8 plan-await-material: subject 選択後、教材ピッカー ---
   if (state.state === "plan-await-material") {
     const subjectId = state.proposedSubjectId ?? "subj-english";
@@ -1126,6 +1277,154 @@ function buildNextTutorReplyInner(args: {
         role: "tutor",
         text: "どうする? 上のロードマップでよさそうなら「OK」、もう少し変えたいなら「ゆっくり」か「速く」を教えて。",
         quickReplies: ["これで OK", "もう少しゆっくり", "もう少し速く"],
+        createdAt: now,
+      },
+    };
+  }
+
+  // ========================================================================
+  // C9 帰宅儀式 第 1 部 — 学校レポート (時限別シーケンシャル)
+  // ========================================================================
+
+  // --- evening-await-period-count: 時限数 (1-6) を受け取って各時限へ ---
+  if (state.state === "evening-await-period-count") {
+    const periodCount = extractPeriodCount(userInput);
+    if (periodCount === null) {
+      // 数値が抽出できない → 再質問
+      return {
+        nextState: state,
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: "1 から 6 の数字で教えてくれる? 今日の時限数。",
+          quickReplies: ["1", "2", "3", "4", "5", "6"],
+          createdAt: now,
+        },
+      };
+    }
+    const draft = state.schoolReportDraft ?? emptySchoolReportDraft();
+    return {
+      nextState: {
+        ...state,
+        state: "evening-await-period-subject",
+        schoolReportDraft: {
+          ...draft,
+          periodCount,
+          periods: Array.from({ length: periodCount }, () => ({})),
+          currentPeriodIndex: 0,
+        },
+      },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: `OK、${periodCount} 時限ね。\n\n**1 時限目は何の科目?**`,
+        quickReplies: SCHOOL_SUBJECT_QUICK_REPLIES,
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- evening-await-period-subject: N 時限目の科目を保存して content へ ---
+  if (state.state === "evening-await-period-subject") {
+    const draft = state.schoolReportDraft ?? emptySchoolReportDraft();
+    const idx = draft.currentPeriodIndex;
+    const newPeriods = [...draft.periods];
+    newPeriods[idx] = { ...newPeriods[idx], subject: userInput };
+    return {
+      nextState: {
+        ...state,
+        state: "evening-await-period-content",
+        schoolReportDraft: { ...draft, periods: newPeriods },
+      },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: `**${userInput} で何習った?**\n\n（短くて OK、覚えてる範囲で）`,
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- evening-await-period-content: N 時限目の内容を保存して次の時限 or extraEvents へ ---
+  if (state.state === "evening-await-period-content") {
+    const draft = state.schoolReportDraft ?? emptySchoolReportDraft();
+    const idx = draft.currentPeriodIndex;
+    const newPeriods = [...draft.periods];
+    newPeriods[idx] = { ...newPeriods[idx], content: userInput };
+    const nextIndex = idx + 1;
+    const periodCount = draft.periodCount ?? 0;
+
+    if (nextIndex >= periodCount) {
+      // 全時限完了 → extraEvents へ
+      return {
+        nextState: {
+          ...state,
+          state: "evening-await-extra-events",
+          schoolReportDraft: {
+            ...draft,
+            periods: newPeriods,
+            currentPeriodIndex: nextIndex,
+          },
+        },
+        reply: {
+          id: makeId(),
+          role: "tutor",
+          text: "全時限聞けた! ありがとう。\n\n**他に学校で起こったこと、相談したいことある?**\n\n（なければ「特にない」で OK）",
+          quickReplies: ["特にない", "話したい事ある"],
+          createdAt: now,
+        },
+      };
+    }
+
+    // 次の時限へ
+    return {
+      nextState: {
+        ...state,
+        state: "evening-await-period-subject",
+        schoolReportDraft: {
+          ...draft,
+          periods: newPeriods,
+          currentPeriodIndex: nextIndex,
+        },
+      },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: `OK、覚えといたよ。\n\n**${nextIndex + 1} 時限目は何の科目?**`,
+        quickReplies: SCHOOL_SUBJECT_QUICK_REPLIES,
+        createdAt: now,
+      },
+    };
+  }
+
+  // --- evening-await-extra-events: extraEvents を保存して SchoolDailyReport 確定 ---
+  if (state.state === "evening-await-extra-events") {
+    const draft = state.schoolReportDraft ?? emptySchoolReportDraft();
+    const hasExtra =
+      !lower.includes("特にない") &&
+      !lower.includes("ない") &&
+      !lower.includes("なし") &&
+      lower.length > 0;
+    const finalDraft: SchoolReportDraft = {
+      ...draft,
+      extraEvents: hasExtra ? userInput : undefined,
+    };
+    // SchoolDailyReport 確定 push
+    const report = deriveSchoolDailyReport(finalDraft);
+    return {
+      nextState: {
+        ...state,
+        state: "evening-school-done",
+        schoolReportDraft: finalDraft,
+        confirmedSchoolReportId: report.id,
+      },
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: hasExtra
+          ? `OK、覚えといたよ、それも。\n\n**今日の学校レポート、書いておいたよ。** 後でいつでも振り返れるからね。\n\n次は今日のスケジュール確認しよう (この部分は C10 で実装予定)。`
+          : `OK、じゃあ学校の話はここまで。\n\n**今日の学校レポート、書いておいたよ。**\n\n次は今日のスケジュール確認しよう (この部分は C10 で実装予定)。`,
+        quickReplies: ["スケジュール見せて", "学習を始める", "別の話"],
         createdAt: now,
       },
     };
