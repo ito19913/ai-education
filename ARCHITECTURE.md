@@ -520,6 +520,43 @@ ito19 さんの観察「**現状の仕組みは大人の学習方法に寄って
 これらは Phase 4 の上に乗る **「学習戦略エンジン Phase 5」** として独立扱い。
 詳細は次セッションの grill + 実装で詰める。
 
+#### C14 Phase 5 試作 (型 + 静的 mock、設計叩き台 2026-05-25)
+
+> 実装: `web/lib/learn/types.ts` (試作型ブロック) + `web/lib/learn/mock-data.ts` (Phase 5 試作 mock)
+
+grill で詰めずに **手を動かしながら設計を可視化** するためのスナップショット。**後で書き換え前提**。
+
+**新型 (試作)**:
+
+| 型 | 役割 |
+|---|---|
+| `PlanType` | 計画の目的: `exam-prep` / `weakness-grind` / `regular-study` / `review` / `long-term-memory` (ito19 さん指示で `homework-response` は除外、宿題は ad-hoc) |
+| `LearningMode` | 学習モード: `input` / `output` / `review` / `drill` / `test` |
+| `ResourceType` | 教材種別: `textbook` / `workbook` / `note` / `school-material` / `ai-generated` |
+| `ReviewRules` | 復習間隔 + 復習モード |
+| `TestRules` | テスト間隔 + 合格スコア + 失敗時アクション (`retry` / `review-parent` / `manual`)。**`review-parent` が ito19 さん「上ノード復習」の核** |
+| `ReplanRules` | 遅延閾値 + 再計画モード (`extend` / `drop` / `ai-suggest`) |
+| `GeneratedTask` | Plan Engine が自動生成する実行単位 (planId + nodeId + mode + resource + 優先度 + 期限) |
+| `InterruptEvent` | 割込みイベント: `homework` / `sick` / `school-event` / `unexpected-review` / `other` + `replanTriggered` フラグ |
+| `NodeReviewSuggestion` | 上ノード復習提案 (子ノード失敗 → 親ノード復習を提案、本人 accept 待ち) |
+
+**`LearningPlan` 拡張** (optional 追加で後方互換):
+- `planType` / `weakNodeIds` / `reviewRules` / `testRules` / `replanRules` / `dailyCapacityMinutes`
+
+**mock データ** (現在の英語計画を Phase 5 拡張):
+- `plan-english-2026-05` に `planType: "regular-study"` + 弱いノード 2 件 (`inf-adv` / `passive-basic`) + 週末テストルール (合格 70%、失敗時 `review-parent`) + 再計画 3 日遅れで AI 提案
+- `MOCK_GENERATED_TASKS`: 4 件 (英語 副詞的用法 input + output + test + 過去分詞 drill)
+- `MOCK_INTERRUPT_EVENTS`: 2 件 (5/22 副詞的用法 小テスト発表 / 5/19 急な提出物)
+- `MOCK_NODE_REVIEW_SUGGESTIONS`: 1 件 (`inf-adv` 浅さ → `inf` 親ノード復習提案、pending)
+
+**次セッションで議論する論点** (grill):
+- `GeneratedTask` と既存 `ScheduleItem` の統合 or 並走
+- `WeakNodes[]` の生成ロジック (Issue / NodeComprehension からの自動抽出)
+- Replan Engine の発火タイミング (週次 / 月次 / 即時)
+- `NodeReviewSuggestion` の accept フロー (ゆい chat で議論 → 受け入れで GeneratedTask 自動追加)
+- Plan Type と Learning Mode の組み合わせマトリクス (Plan Type × Mode で出力タスクの型が変わる)
+- UI: `/tutor?view=plan-engine` のような Plan Engine ダッシュボードを作るか
+
 ### 設計の核 (Q1-Q17 の上流)
 
 | 哲学 | 内容 |

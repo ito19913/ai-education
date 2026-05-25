@@ -11,8 +11,10 @@ import type {
   ChatMessage,
   CurrentUser,
   ExamPrep,
+  GeneratedTask,
   GoalReview,
   Homework,
+  InterruptEvent,
   Issue,
   IssueCandidate,
   KnowledgeNode,
@@ -24,6 +26,7 @@ import type {
   Material,
   Memo,
   NodeComprehension,
+  NodeReviewSuggestion,
   Note,
   ReflectionLog,
   ScheduleItem,
@@ -1452,6 +1455,24 @@ export const MOCK_LEARNING_PLANS: LearningPlan[] = [
     revisions: [],
     createdAt: "2026-05-01T00:00:00.000Z",
     updatedAt: "2026-05-24T08:00:00.000Z",
+
+    // === C14 Phase 5 試作拡張 (2026-05-25) ===
+    planType: "regular-study", // 通常学習 (定期テスト範囲含む)
+    weakNodeIds: ["inf-adv", "passive-basic"], // 副詞的用法 / 過去分詞
+    reviewRules: {
+      reviewIntervalDays: 7, // 週末復習
+      reviewMode: "review",
+    },
+    testRules: {
+      testIntervalDays: 7, // 週末テスト
+      passingThreshold: 0.7, // 70% 以上で合格
+      failureAction: "review-parent", // 失敗時は上ノード復習を提案
+    },
+    replanRules: {
+      delayThresholdDays: 3, // 3 日遅れたら再計画提案
+      replanMode: "ai-suggest", // AI (ゆい) が状況見て提案
+    },
+    dailyCapacityMinutes: 30, // 1 日 30 分想定 (中2 平日想定)
   },
 ];
 
@@ -1557,4 +1578,151 @@ export const MOCK_ACHIEVEMENT_BADGES: AchievementBadge[] = [
 
 export const MOCK_SHARED_TO_PARENT: SharedToParent[] = [
   // 空配列 (本人まだ親に共有してない設定、Q15: デフォルト OFF)
+];
+
+// ============================================================================
+// Phase 5 試作 mock データ (C14、2026-05-25)
+//
+// 「学習戦略エンジン」設計の叩き台。後で書き換え前提。
+// ito19 さん + 別 AI 議論で浮上した:
+//   - GeneratedTask (Plan Engine から自動生成された実行単位)
+//   - InterruptEvent (割込みイベント、計画通り進まない事象)
+//   - NodeReviewSuggestion (上ノード復習提案、テスト失敗 → 親ノード復習)
+//
+// 既存 plan-english-2026-05 を Phase 5 拡張フィールド (planType /
+// weakNodeIds / reviewRules / testRules / replanRules / dailyCapacityMinutes)
+// で更新済み (上記 MOCK_LEARNING_PLANS 参照)。
+//
+// 動作: 「弱いノード = inf-adv (副詞的用法) + passive-basic (過去分詞)」
+// に対し、Plan Engine が「input → output → test」順の GeneratedTask を生成。
+// 5/22 に副詞的用法の小テスト発表 (InterruptEvent) があり、5/24 (今日) に
+// 「inf-adv テスト失敗 → inf 親ノード復習」の NodeReviewSuggestion が
+// pending で残っている設定。
+// ============================================================================
+
+export const MOCK_GENERATED_TASKS: GeneratedTask[] = [
+  // === 5/24 (今日) の英語 input タスク ===
+  {
+    id: "gtask-2026-05-24-1",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "inf-adv", // 副詞的用法 (弱いノード)
+    mode: "input",
+    resource: {
+      type: "textbook",
+      materialId: "mat-english-textbook-g8",
+      pageRange: { start: 58, end: 62 },
+    },
+    estimatedMinutes: 15,
+    priority: 4,
+    dueDate: "2026-05-24",
+    status: "todo",
+    scheduledDate: "2026-05-24",
+    rationale:
+      "副詞的用法 (inf-adv) は浅いノード (NC score 0.45)。今週末テスト前に input でもう 1 回読み込み。",
+    generatedAt: "2026-05-23T20:00:00.000Z",
+  },
+  // === 5/24 (今日) の output タスク (問題集) ===
+  {
+    id: "gtask-2026-05-24-2",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "inf-adv",
+    mode: "output",
+    resource: {
+      type: "workbook",
+      materialId: "mat-english-workbook-g8",
+      pageRange: { start: 30, end: 33 },
+    },
+    estimatedMinutes: 15,
+    priority: 4,
+    dueDate: "2026-05-24",
+    status: "todo",
+    scheduledDate: "2026-05-24",
+    rationale:
+      "input の直後に output。「読んで分かる」→「自分で組み立てる」のセット。",
+    generatedAt: "2026-05-23T20:00:00.000Z",
+  },
+  // === 5/25 (明日) の test タスク (週末テスト、testRules.testIntervalDays: 7 から自動配置) ===
+  {
+    id: "gtask-2026-05-25-1",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "inf-adv",
+    mode: "test",
+    resource: {
+      type: "ai-generated", // AI が問題生成
+    },
+    estimatedMinutes: 10,
+    priority: 5,
+    dueDate: "2026-05-25",
+    status: "todo",
+    scheduledDate: "2026-05-25",
+    rationale:
+      "週末テスト (testRules.testIntervalDays: 7)。合格 (>= 70%) なら次週へ、失敗なら inf 親ノード復習提案。",
+    generatedAt: "2026-05-23T20:00:00.000Z",
+  },
+  // === 過去分詞の output タスク (もう 1 つの弱いノード) ===
+  {
+    id: "gtask-2026-05-24-3",
+    learnerId: "girl",
+    planId: "plan-english-2026-05",
+    nodeId: "passive-basic", // 過去分詞
+    mode: "drill", // 反復で語彙定着
+    resource: {
+      type: "ai-generated",
+    },
+    estimatedMinutes: 10,
+    priority: 3,
+    dueDate: "2026-05-24",
+    status: "todo",
+    scheduledDate: "2026-05-24",
+    rationale:
+      "過去分詞 (passive-basic) は語彙の問題 (handoff-2026-05-13-1)。drill で反復定着。",
+    generatedAt: "2026-05-23T20:00:00.000Z",
+  },
+];
+
+export const MOCK_INTERRUPT_EVENTS: InterruptEvent[] = [
+  // === 5/22 (金) の英語小テスト発表 (帰宅儀式 ad-hoc 由来想定) ===
+  {
+    id: "interrupt-2026-05-22-1",
+    learnerId: "girl",
+    type: "school-event",
+    occurredAt: "2026-05-22T16:30:00.000Z",
+    title: "英語 副詞的用法 小テスト (来週水曜)",
+    detail:
+      "5/27 (水) に副詞的用法の小テスト発表あり。範囲は 3 種類 (目的・結果・原因) の見分け。",
+    affectedDate: "2026-05-27",
+    affectedDurationDays: 1,
+    replanTriggered: true, // 既に Plan Engine が再計画して上記 GeneratedTask を生成済み
+  },
+  // === 5/19 (火) の急な提出物 (例) ===
+  {
+    id: "interrupt-2026-05-19-1",
+    learnerId: "girl",
+    type: "homework",
+    occurredAt: "2026-05-19T16:00:00.000Z",
+    title: "数学 平方完成プリント (明日提出)",
+    detail: "数学プリント p.5-6、明日朝までに提出。",
+    affectedDate: "2026-05-19",
+    affectedDurationDays: 1,
+    replanTriggered: false, // 宿題は計画じゃない (ito19 さん指示) → ad-hoc ScheduleItem に直接
+  },
+];
+
+export const MOCK_NODE_REVIEW_SUGGESTIONS: NodeReviewSuggestion[] = [
+  // === 副詞的用法 テスト失敗 → 不定詞 (親) 復習提案 (pending) ===
+  // ito19 さん発話「あまりにも理解が足りなかった場合はさらに上のノードの部分の復習を促す」の体現
+  {
+    id: "node-review-2026-05-24-1",
+    learnerId: "girl",
+    triggerType: "low-comprehension", // NC score 0.45 が閾値以下
+    failedNodeId: "inf-adv", // 子: 副詞的用法
+    suggestedParentNodeId: "inf", // 親: 不定詞 (全体)
+    reason:
+      "副詞的用法 (inf-adv) の理解度が 45% (浅め)。3 用法 (名詞・形容詞・副詞) を並べて比較する形で、不定詞全体 (inf) に戻って整理する方が定着しやすい。",
+    status: "pending", // 本人 + ゆいで議論待ち
+    createdAt: "2026-05-24T08:00:00.000Z",
+  },
 ];

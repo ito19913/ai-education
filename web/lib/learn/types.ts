@@ -869,6 +869,22 @@ export type LearningPlan = {
   revisions: PlanRevision[];
   createdAt: string;
   updatedAt: string;
+
+  // === Phase 5 試作 拡張 (C14、2026-05-25) ===
+  // 既存 mock 後方互換のため全て optional。Phase 5 本実装で required に
+  // 昇格を grill で議論する。
+  /** 計画の目的 (試験対策 / 苦手克服 / 通常学習 等) */
+  planType?: PlanType;
+  /** ターゲットの弱いノード id 群 (KnowledgeNode.id)。苦手克服計画で必須 */
+  weakNodeIds?: string[];
+  /** 復習ルール (テスト失敗 / 時間経過で復習タスク自動生成) */
+  reviewRules?: ReviewRules;
+  /** テストルール (定期テスト + 合格判定 + 失敗時アクション) */
+  testRules?: TestRules;
+  /** 再計画ルール (遅れた時の再計画モード) */
+  replanRules?: ReplanRules;
+  /** 1 日あたりの想定キャパシティ (分)、Plan Engine の負荷分散用 */
+  dailyCapacityMinutes?: number;
 };
 
 // -------- SchoolDailyReport (帰宅儀式の学校レポート、Q8/Q14) --------
@@ -1025,6 +1041,192 @@ export type SharedToParent = {
   sharedAt: string;
   /** "summary" = 数値のみ / "full" = フルレポート */
   scope: "summary" | "full";
+};
+
+// ============================================================================
+// Phase 5 試作型 — 学習戦略エンジン (C14、2026-05-25 設計叩き台)
+//
+// ito19 さんの「計画 = 課題と試験対策の 2 つ、毎日は計画じゃない」発話 +
+// 別 AI が提案した 4 軸分離 (Plan Type / Learning Mode / Resource / Node) +
+// Replan エンジン / 割込みイベント / 上ノード復習 を試作型として実装。
+//
+// **後で書き換え前提の叩き台**。grill で詰めて Phase 5 本実装時に再設計する。
+// 既存 LearningPlan には Phase 5 拡張フィールドを optional で追加することで
+// 後方互換を保つ (Phase 4 mock も動作継続)。
+// ============================================================================
+
+/**
+ * Plan Type (計画の目的、別 AI 提案より)。
+ * 「なぜこの計画を立てるか」の軸。
+ *
+ * 注: ito19 さん発話で「宿題は計画じゃない、突発」と確定したため、
+ * "homework-response" は外し、宿題は ad-hoc ScheduleItem (帰宅儀式) で扱う。
+ */
+export type PlanType =
+  | "exam-prep" // 試験対策 (期間有限・短期集中)
+  | "weakness-grind" // 苦手克服 (Issue や NodeComprehension の弱さを潰す)
+  | "regular-study" // 通常学習 (体系的に進める、定期テスト範囲含む)
+  | "review" // 復習 (過去分の再学習)
+  | "long-term-memory"; // 長期記憶化 (定着、間隔反復)
+
+/**
+ * Learning Mode (学習モード、別 AI 提案より)。
+ * 「どうやって学ぶか」の軸。GeneratedTask.mode に紐づく。
+ */
+export type LearningMode =
+  | "input" // 読む・理解 (テキスト読み込み)
+  | "output" // 解く・説明 (問題演習、口頭説明)
+  | "review" // 復習 (過去分の再読 / 再演習)
+  | "drill" // 反復 (短時間で大量に)
+  | "test"; // 確認 (理解度測定、合否判定あり)
+
+/**
+ * Resource Type (教材種別、別 AI 提案より)。
+ * GeneratedTask.resource.type に紐づく。
+ */
+export type ResourceType =
+  | "textbook" // 教科書
+  | "workbook" // 問題集
+  | "note" // ノート (本人作成 or AI 生成)
+  | "school-material" // 学校教材 (プリント等)
+  | "ai-generated"; // AI 生成問題
+
+/**
+ * 復習ルール (LearningPlan に組み込まれる)。
+ * テスト失敗 / 時間経過で復習タスクを自動生成する条件。
+ */
+export type ReviewRules = {
+  /** 復習間隔 (日数、例: 7 日後に再出題) */
+  reviewIntervalDays: number;
+  /** 復習時の学習モード */
+  reviewMode: LearningMode;
+};
+
+/**
+ * テストルール (LearningPlan に組み込まれる)。
+ * 週末/月末などの定期テスト + 合格判定 + 失敗時のアクション。
+ */
+export type TestRules = {
+  /** テスト間隔 (日数、例: 7 日 = 週末テスト) */
+  testIntervalDays: number;
+  /** 合格スコア (0-1、例: 0.7 = 70% 以上) */
+  passingThreshold: number;
+  /**
+   * 失敗時のアクション:
+   * - "retry": 同ノードを再度
+   * - "review-parent": 上のノード (親) の復習を提案 ← ito19 さん発話の核
+   * - "manual": 何もせず本人 + ゆいで判断
+   */
+  failureAction: "retry" | "review-parent" | "manual";
+};
+
+/**
+ * 再計画ルール (LearningPlan に組み込まれる)。
+ * 「死なないシステム」(別 AI 評価) のコア。
+ */
+export type ReplanRules = {
+  /** 何日遅れたら再計画提案するか (例: 3 日) */
+  delayThresholdDays: number;
+  /**
+   * 再計画モード:
+   * - "extend": 期間延長 (デフォルト)
+   * - "drop": 範囲削減
+   * - "ai-suggest": AI が状況見て提案 (ゆいから)
+   */
+  replanMode: "extend" | "drop" | "ai-suggest";
+};
+
+/**
+ * Plan Engine が自動生成する学習タスク (Phase 5 コア)。
+ * 「今日のタスクは結果でしかない」(別 AI) を体現。
+ *
+ * 既存 ScheduleItem との関係:
+ * - ScheduleItem は「時間軸上の view-model」(Phase 4 までの構造)
+ * - GeneratedTask は「Plan Engine が計画から導出した実行単位」
+ * - Phase 5 本実装で統合 or 並走を grill で決める (現状は叩き台)
+ */
+export type GeneratedTask = {
+  id: string;
+  learnerId: string;
+  /** 元の LearningPlan.id (どの計画から生成されたか) */
+  planId: string;
+  /** 対象 KnowledgeNode.id (何を学ぶか) */
+  nodeId: string;
+  /** 学習モード */
+  mode: LearningMode;
+  /** 使う教材 */
+  resource: {
+    type: ResourceType;
+    /** Material.id (あれば) */
+    materialId?: string;
+    /** ページ範囲 (textbook / workbook の場合) */
+    pageRange?: { start: number; end: number };
+  };
+  /** 見積もり時間 (分) */
+  estimatedMinutes: number;
+  /** 優先度 1-5 (5 が最優先) */
+  priority: number;
+  /** 期限 (YYYY-MM-DD) */
+  dueDate: string;
+  status: StudyTaskStatus;
+  /** 配置日 (YYYY-MM-DD)、未定なら undefined (Plan Engine の宙ぶらりん) */
+  scheduledDate?: string;
+  /** AI が「なぜこのタスクを今ここに置いたか」 */
+  rationale?: string;
+  generatedAt: string;
+  doneAt?: string;
+};
+
+/**
+ * 割込みイベント (Phase 5 試作、ito19 さん「割込み」発話 + 別 AI 提案)。
+ *
+ * 計画通りに進まない事象を正式型化:
+ *   宿題 / 体調不良 / 学校行事 / 想定外復習 等
+ *
+ * これが発生 → スケジューラが再計算 → 影響タスクの再配分 + 必要なら再計画提案。
+ */
+export type InterruptEvent = {
+  id: string;
+  learnerId: string;
+  type:
+    | "homework" // 急な宿題
+    | "sick" // 体調不良
+    | "school-event" // 学校行事 (体育祭 / 文化祭 / 修学旅行)
+    | "unexpected-review" // 想定外復習 (上ノード復習が降ってきた)
+    | "other";
+  occurredAt: string; // ISO
+  title: string;
+  detail?: string;
+  /** 影響を受ける日付 (YYYY-MM-DD)、複数日にまたがる場合は範囲の起点 */
+  affectedDate?: string;
+  /** 何日影響するか (1 日なら 1) */
+  affectedDurationDays?: number;
+  /** 再計画が走ったか (Replan Engine が処理した印) */
+  replanTriggered: boolean;
+};
+
+/**
+ * 上ノード復習提案 (Phase 5 試作、ito19 さん発話の核)。
+ *
+ * 子ノード (例: 不定詞 副詞的用法) のテスト失敗 / 浅い理解 → AI が
+ * 親ノード (例: 不定詞) の復習を提案。本人が accept すると
+ * 復習 GeneratedTask が自動追加される。
+ */
+export type NodeReviewSuggestion = {
+  id: string;
+  learnerId: string;
+  /** 提案のトリガー */
+  triggerType: "test-failure" | "low-comprehension" | "manual";
+  /** 失敗した子ノードの id */
+  failedNodeId: string;
+  /** 戻る先の親ノード id (KnowledgeNode.parentId 経由で決まる) */
+  suggestedParentNodeId: string;
+  /** ゆいの所感 (なぜ戻った方がいいか) */
+  reason: string;
+  status: "pending" | "accepted" | "dismissed";
+  createdAt: string;
+  acceptedAt?: string;
+  dismissedAt?: string;
 };
 
 // ============================================================================
