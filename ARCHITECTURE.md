@@ -500,7 +500,25 @@ ito19 さんの観察「**現状の仕組みは大人の学習方法に寄って
 - **C10 (2026-05-25)**: 帰宅儀式 第 2 部 + 自動起動 実装済。第 2 部は `evening-show-schedule` → `evening-await-task-text` → `evening-await-more-tasks` → `evening-finalize` の state machine。AI がタグ推定 (`inferTaskTagFromHint`: 宿題/提出物/テスト範囲/親・他/課題) で `addAdHocScheduleItem` を呼び ad-hoc ScheduleItem を MOCK_SCHEDULE_TODAY に push。`shouldStartEveningRitual` (平日 16:00 以降 + 今日未実施判定) で TutorWorkspace の lazy init から evening モード自動起動、`buildInitialTutorThread(now, "evening")` で初期挨拶。`evening-finalize` 到達時に `localStorage["ai-education:evening-ritual-last-date"]` に今日の日付を保存し二重発火を防ぐ。
 - **C11 (2026-05-25)**: 週次/月次レポート UI 実装済。`WeeklyMonthlyReportView` を `web/components/reports/` に新設、4 セクション (達成度 → 学校 → 弱いところ → 来週計画+Action) + 月末週は + nextMonthPlan セクション。`RightPaneView` に `weekly-report` / `monthly-report` 追加、`TutorRightPaneAction` に `open-weekly-report` / `open-monthly-report` 追加。tutor-mock の keyword 分岐に「週次レポート / 今週のレポート / weekly」「月次レポート / 今月のレポート / monthly」を追加。最新の cadence="weekly"/"monthly" な ReflectionLog の `weeklyMonthlyReport` を表示。AchievementBadge / SchoolDailyReport / Issue / NodeComprehension を ID 経由で MOCK から取得・展開。
 - **C12 (2026-05-25)**: 達成バッジ UI + 親共有 UI 実装済。達成バッジは AchievementSection 内の Badge 表示で完成 (C11 で実装、`AchievementBadge.description` を絵文字込みで表示)。親共有は `ShareToParentButton` を WeeklyMonthlyReportView のヘッダに追加: デフォルト未共有で「親と共有」ボタン表示、クリックで `SharedToParent` を `MOCK_SHARED_TO_PARENT` に push (scope: "full") → 「✓ 共有済 (date)」表示に切替。Q15 確定の「本人同意制」を体現 (デフォルト OFF、本人が能動的に「見せる」を選ぶ達成感のもう 1 層)。
-- **Phase 4 グランド完了**: C7-C12 で型 → mock → UI → tutor-mock 拡張まで全段階を実装。残りの **計画立案ウィザードの教材目次自動読み込み (Phase 6 LLM 統合)** / **親側 admin 通知 UI (admin ルート未着手)** / **バッジビジュアル強化** / **月末判定ロジック細部** などは未決事項として残るが、軌道修正 grill Q1-Q17 の確定事項は全て scripted mock として動作する状態。
+- **C13 (2026-05-25)**: メニュー整理 (ito19 さん指示 + 別 AI 意見統合)。`TutorHubMenu` を **[今日のタスク (強調)] [課題] [先生 ▼] [もっと ▼] [スペーサー] [プラン (強調 右端)]** に再構成。「学習を開始」「スケジュール確認」「教材を追加」「振り返り」「履歴」を撤去 (今日のタスク / プラン / もっと ▼ に統合)。「もっと ▼」は **アーカイブ** (振り返りログ / 今週レポート / 今月レポート / 学習履歴) + **緊急動線** (帰ってきた) を格納。「今日のタスク」「プラン」は primary emphasis スタイル (border-primary + bg-primary/10) で視覚的に主動線として強調。PDCA の P (プラン右端) と D (今日のタスク左端) を空間的に対比表示。
+
+### Phase 5 設計の予告 (ito19 さん + 別 AI 議論で浮上)
+
+軌道修正 grill (Q1-Q17) を超える「学習戦略エンジン」レベルの設計案が
+浮上したため、次セッション以降で詳細 grill + 実装する予定:
+
+| カテゴリ | 提案 |
+|---|---|
+| **概念分離 (4 軸)** | Plan Type (目的) / Learning Mode (Input/Output/Review/Drill/Test) / Resource (教材) / Node (知識単位) を明確に分離 |
+| **LearningPlan 拡張** | GoalType / WeakNodes[] / ReviewRules / TestRules / ReplanRules を追加 |
+| **GeneratedTask 新型** | ScheduleItem と並走 (or 統合)、Plan Engine から自動生成される実行単位 |
+| **Replan エンジン** | 「死なないシステム」のコア。週次チェック → 遅れ繰り越し / 理解度低下 → 上ノード復習タスク自動追加 |
+| **割込みイベント体系化** | 宿題 / 体調不良 / 学校行事 / 想定外復習 を Interrupt として正式型化、Scheduler が再計算 |
+| **ノードベース学習** | 「関係代名詞が弱い」というノードに対し、AI が教科書 p32-45 + 問題集 p88-93 + AI ドリル + 週末テスト を自動割当 |
+| **学習 OS の位置付け** | 「AI 先生」じゃなく「AI による学習戦略最適化エンジン」(別 AI 評価)|
+
+これらは Phase 4 の上に乗る **「学習戦略エンジン Phase 5」** として独立扱い。
+詳細は次セッションの grill + 実装で詰める。
 
 ### 設計の核 (Q1-Q17 の上流)
 

@@ -293,39 +293,64 @@ function TutorHubMenu({
   subjects: Subject[];
   disabled?: boolean;
 }) {
-  const items: Array<{ label: string; phrase: string }> = [
-    { label: "学習を開始", phrase: "学習を開始" },
-    { label: "課題を確認", phrase: "課題を確認" },
-    { label: "スケジュール確認", phrase: "スケジュール確認" },
-    { label: "教材を追加", phrase: "教材を追加" },
-    { label: "履歴を確認", phrase: "履歴を確認" },
+  // C13: メニュー整理 (2026-05-25)
+  // ito19 さん指示:
+  //   - 一番左に「今日のタスク」(毎日ここから、帰宅儀式の起動点も統合)
+  //   - 次に「課題」(残課題 + クリア履歴で達成感)
+  //   - 「先生 ▼」プルダウン (既存)
+  //   - 「もっと ▼」プルダウン (履歴 / レポート / アーカイブ / 帰宅 緊急)
+  //   - 一番右に「プラン」(毎日やるもんじゃないから右端、PDCA の P 入口)
+  //
+  // 撤去:
+  //   - 「学習を開始」: 「今日のタスク」から start するため不要
+  //   - 「スケジュール確認」: 「今日のタスク」にリネーム統合
+  //   - 「教材を追加」: 計画 (プラン) に紐づくので「プラン」内に統合
+  //   - 「振り返り」「履歴」: 「もっと ▼」内に格納
+  //   - 「帰ってきた」: 平日 16:00 自動起動 (C10) が主、明示は「もっと」内に
+  const primaryItems: Array<{
+    label: string;
+    phrase: string;
+    emphasis?: boolean;
+  }> = [
+    { label: "今日のタスク", phrase: "今日のタスク", emphasis: true },
+    { label: "課題", phrase: "課題を確認" },
   ];
 
   // teacher が設定されてる科目だけプルダウンに出す
   const teachersAvailable = subjects.filter((s) => s.teacher);
+
+  // 「もっと ▼」プルダウン (履歴・アーカイブ・緊急動線)
+  const archiveItems: Array<{ label: string; phrase: string }> = [
+    { label: "振り返りログ", phrase: "振り返りログ" },
+    { label: "今週のレポート", phrase: "今週のレポート" },
+    { label: "今月のレポート", phrase: "今月のレポート" },
+    { label: "学習履歴", phrase: "学習履歴" },
+  ];
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-muted/20 px-3 py-2">
       <span className="mr-1 text-[10px] font-medium text-muted-foreground">
         メニュー
       </span>
-      {items.map((it) => (
+
+      {/* 主動線 (左): 今日のタスク / 課題 */}
+      {primaryItems.map((it) => (
         <button
           key={it.phrase}
           type="button"
           disabled={disabled}
           onClick={() => onSend(it.phrase)}
-          className="rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+          className={
+            it.emphasis
+              ? "rounded-md border border-primary bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/15 disabled:opacity-50"
+              : "rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+          }
         >
           {it.label}
         </button>
       ))}
 
-      {/*
-        「先生との対話」プルダウン: ゆい先生（担任）+ 科目の先生 全員を列挙。
-        担任のゆいは「私との対話履歴」として常に最上位、その下に科目の先生（あおい等）。
-        Phase 3 拡張で tutor-archive view（ゆい）と subject-history view（科目）を別々に開く。
-      */}
+      {/* 「先生 ▼」プルダウン: 担任ゆい先生 + 科目の先生 (既存維持) */}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -336,14 +361,10 @@ function TutorHubMenu({
             />
           }
         >
-          <span>先生との対話</span>
+          <span>先生</span>
           <ChevronDown className="size-3" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-[220px]">
-          {/*
-            DropdownMenuLabel は base-ui の制約上 DropdownMenuGroup 内でしか
-            使えないので、ここは plain div でヘッダー風に表示。
-          */}
           <div className="border-b border-border px-1.5 py-1 text-[10px] font-medium text-muted-foreground">
             担任の先生
           </div>
@@ -381,6 +402,59 @@ function TutorHubMenu({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* 「もっと ▼」プルダウン: 履歴・アーカイブ・緊急動線 (C13 新規) */}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <button
+              type="button"
+              disabled={disabled}
+              className="flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+            />
+          }
+        >
+          <span>もっと</span>
+          <ChevronDown className="size-3" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-[200px]">
+          <div className="border-b border-border px-1.5 py-1 text-[10px] font-medium text-muted-foreground">
+            アーカイブ
+          </div>
+          <div className="py-1">
+            {archiveItems.map((it) => (
+              <DropdownMenuItem
+                key={it.phrase}
+                onClick={() => onSend(it.phrase)}
+              >
+                <span>{it.label}</span>
+              </DropdownMenuItem>
+            ))}
+          </div>
+          <div className="border-b border-t border-border px-1.5 py-1 text-[10px] font-medium text-muted-foreground">
+            緊急動線
+          </div>
+          <div className="py-1">
+            <DropdownMenuItem onClick={() => onSend("帰ってきた")}>
+              <span>帰ってきた (帰宅儀式)</span>
+            </DropdownMenuItem>
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* スペーサー: 「プラン」を右端に押し出す */}
+      <div className="flex-1" />
+
+      {/* 「プラン」ボタン (右端): 計画立案フロー C8 起動 */}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onSend("計画立てよう")}
+        className="rounded-md border border-primary bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/15 disabled:opacity-50"
+        title="PDCA の P (計画立案)。毎日じゃない、節目で立てる。"
+      >
+        プラン
+      </button>
     </div>
   );
 }
