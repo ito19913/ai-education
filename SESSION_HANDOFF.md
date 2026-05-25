@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-25 (Phase 4 完了 + **Phase 5 grill 確定 + C15-C24 全実装完了**)
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-25 (Phase 4 完了 + Phase 5 grill 確定 + C15-C24 全実装完了 + **2026-05-25 追加 grill: 教材アップロード設計 13 確定 (C26)**)
 
 ---
 
@@ -29,7 +29,7 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 
 ## §3. 今日のセッション (2026-05-25) 全成果
 
-**25 commit、約 +8600 行**。`7aaf7df`..`d89811e` の範囲。**Phase 5 grill 確定 + 全実装完了 + ARCHITECTURE 完全同期**。
+**26 commit、約 +8900 行**。`7aaf7df`..(C26 SHA) の範囲。**Phase 5 grill 確定 + 全実装完了 + ARCHITECTURE 完全同期 + 2026-05-25 追加 grill (教材アップロード設計 13 確定) を SSoT 同期**。
 
 ### Phase 3 レビュー追従 (REVIEW-2026-05-24.md 対応)
 | # | SHA | 内容 |
@@ -73,6 +73,39 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 | C23 | `8899555` | 今日のタスク 進捗バー + 全 done CTA |
 | C24(終) | `7d4970d` | docs: SESSION_HANDOFF.md 最終更新 |
 | C25 | `d89811e` | docs: ARCHITECTURE.md Phase 5 本実装結果 SSoT 化 (ロードマップ表 + 本実装結果セクション) |
+
+### 2026-05-25 追加 grill: 教材アップロード設計 (C26)
+
+Phase 5 完了直後に追加で実施した grill。教材ウィザード (Phase 4) / Plan Engine の MaterialPickerCard (Phase 5) / Phase 6 計画 (教材 PDF → roadmap) を貫く「教材という入力レイヤ」を 13 個の確定で固めた。
+
+| # | SHA | 内容 |
+|---|---|---|
+| C26 | (今 push) | docs: 教材アップロード設計 13 確定を ARCHITECTURE / SESSION_HANDOFF / memory に同期 |
+
+**13 確定 (ARCHITECTURE「## 教材アップロード設計 (2026-05-25 grill)」に集約)**:
+
+| # | 確定 |
+|---|---|
+| 1 | 順序: 教材アップロード → 計画 (現状実装維持) |
+| 2 | 計画主体: ゆい (担任) 提案 → 娘さん承認/修正 |
+| 3 | ゆいは教材選び提案禁止 (与えた教材に対する計画案のみ、「○○本を買って」は NG) |
+| 4 | アップロード主体: 親 + 娘さん両方 (ARCHITECTURE 1408 既設計) |
+| 5 | 教材アップ後の動線は計画と疎結合 (体系図見る / 計画で使う / 何もしない の 3 経路) |
+| 6 | 学校宿題は SchoolDailyReport 側で写真/PDF アップ可 (教材エンティティとは別) |
+| 7 | 教材は事前アップが基本 (同時アップ例外可) |
+| 8 | 教材 AI persona = 葵先生 (TUTOR-ROLE 境界: ゆい=教えない / 葵=教える より) |
+| 9 | **監修ステップ全廃** (どの場面でも人間が AI 出力を承認するステップは置かない) |
+| 10 | **葵生成はテキストに忠実** (AI 解釈・取捨選択禁止) |
+| 11 | 葵の教材出力 = 体系図 (忠実) + 評価コメント (葵の見解、coverage/difficulty/fit/notes) の 2 レイヤ |
+| 12 | 教材についての葵 chat = 教材ごと独立スレッド (教材詳細ページに集約) |
+| 13 | アップ完了動線 = ゆい hub 経由「葵が読んだよ、見る?」(hub 一貫性) |
+
+**未決 (実装時に詰める)**:
+- ウィザード簡素化後の入力タイプ UX (PDF / 写真 / スキャン)
+- 計画立案フローでの教材ピッカー動作細部
+- 学校宿題写真アップ時の葵介入度 (マルチモーダル解析の有無、Phase 6 議論)
+- 教材詳細ページ細部 UI
+- Phase 7 Supabase スキーマでの永続化 (Material / KnowledgeNode / MaterialReview / 教材 chat)
 
 ---
 
@@ -121,15 +154,17 @@ npm run dev
 
 ---
 
-## §5. 次セッションで進める論点 (Phase 5 完了、Phase 6 開始 or 細部改善)
+## §5. 次セッションで進める論点 (Phase 5 完了 + 2026-05-25 追加 grill 完了、次の着手選択)
 
-Phase 5 全実装 (C15-C24) 完了済み。**次セッションは以下のどれかから選択**:
+Phase 5 全実装 (C15-C24) + 2026-05-25 追加 grill (C26、教材アップロード設計 13 確定) 完了済み。**次セッションは以下のどれかから選択**:
 
 ### 選択肢 A: Phase 6 (Claude API 接続) 開始
 - ゆい先生の発話を scripted mock → Claude API に置換
+- **葵先生による教材読み込み (体系図テキスト忠実 + 評価コメント 2 レイヤ、2026-05-25 grill 確定 8, 10, 11)**
+- **教材詳細ページ (`/tutor?view=material-detail`) 新設 + 教材ごと独立葵 chat (確定 12)**
+- **MaterialEditWizard の 3 step 化 (監修ステップ撤去、確定 9)**
 - WeakNodes 自動判定の AI 化 (P5-Q2 の半自動 → 完全自動候補)
 - pace-change Replan の monthlyRoadmap 再計算 + 未来 GT[] 書き換え 本実装
-- 教材 PDF → roadmap 自動生成
 
 ### 選択肢 B: Phase 5 細部の改善 (運用上の不足を埋める)
 - pending Suggestion / Interrupt の自動生成ロジック (現状は静的 mock 固定)
@@ -142,13 +177,21 @@ Phase 5 全実装 (C15-C24) 完了済み。**次セッションは以下のど�
 ### 選択肢 C: Phase 7 (Supabase 永続化) 設計開始
 - Phase 5 で MOCK_* がさらに増えたので、永続化スキーマを grill-me で詰める
 - LearningPlan / GeneratedTask / NodeReviewSuggestion / InterruptEvent / PlanRevision
-  + RLS で家族のみアクセス、admin 通知の DB 設計
+- **Material / KnowledgeNode / MaterialReview / 教材 chat スレッド (2026-05-25 grill 由来の新エンティティ)**
+- + RLS で家族のみアクセス、admin 通知の DB 設計
 
 ### 選択肢 D: Phase 8 (音声対話) 着手
 
+### 選択肢 E: Phase 4 ウィザード簡素化 (軽量、Phase 6 前哨戦)
+- 2026-05-25 grill 確定 9 (監修撤去) + 11 (体系図 + 評価コメント) の **ガワを先行実装**
+- `Step3Review.tsx` 削除 + Step4Save を Step3 に詰めて **3 step 化**
+- AI 抽出は mock のまま (Phase 6 で本物の葵 API に置換、その時の基盤を整える)
+- 教材詳細ページ skeleton (体系図 + 評価 mock + 葵 chat 入力欄) も同時実装可
+- A の前にやると Phase 6 が軽くなる、独立で 1 セッション収まる軽さ
+
 ### Phase 5 を超える長期論点
-- **Phase 6**: Claude API 接続 + 教材 PDF 自動読み込み + Plan Engine / WeakNode 判定の AI 化
-- **Phase 7**: Supabase 永続化 (現在の MOCK_* 全部を migrate)
+- **Phase 6**: Claude API 接続 + 葵先生による教材体系図生成 (2026-05-25 grill 由来) + WeakNode 判定 AI 化
+- **Phase 7**: Supabase 永続化 (現在の MOCK_* + 教材関連 全部を migrate)
 - **Phase 8**: 音声対話 (Web Speech + OpenAI TTS)
 
 ### 残未決事項 (Phase 5 実装で意識的に Phase 6 へ送ったもの)
@@ -176,20 +219,22 @@ AI-Education プロジェクトの作業を継続します。
 2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 5: 学習戦略エンジン」セクションを確認
 3. memory MEMORY.md の project_ai_education.md を確認
 
-【今日の状態 (Phase 5 完全完了)】
+【今日の状態 (Phase 5 完全完了 + 2026-05-25 追加 grill 確定)】
 - Phase 3 レビュー追従 完了 (C1-C6)
 - Phase 4 中学生向け設計軌道修正 完了 (C7-C13)
 - Phase 5 学習戦略エンジン 試作型 + mock (C14)
 - **Phase 5 grill 確定 (P5-Q1〜Q7 + サブ問い計 11 問、ARCHITECTURE.md SSoT 反映済み)**
-- **Phase 5 全実装完了 (C15 docs + C16 型 + C17 立案 + C18 Suggestion + C19 Replan + C20 週次 + C21 Plan Engine + C22 today-tasks + C23 動線 + C24 引継ぎ)**
-- 23 commit / main 直 push (or 未 push) / tsc + lint クリア / dev server で動作確認可
+- **Phase 5 全実装完了 (C15 docs + C16 型 + C17 立案 + C18 Suggestion + C19 Replan + C20 週次 + C21 Plan Engine + C22 today-tasks + C23 動線 + C24 引継ぎ + C25 ARCHITECTURE 同期)**
+- **2026-05-25 追加 grill (C26): 教材アップロード設計 13 確定 を ARCHITECTURE / SESSION_HANDOFF / memory に同期。詳細は ARCHITECTURE「## 教材アップロード設計 (2026-05-25 grill)」参照**
+- 26 commit / main 直 push 済 / tsc + lint クリア / dev server で動作確認可
 
 【次の作業 (本セッション内に「進めて」で続行 or 次回新セッションで開始)】
-SESSION_HANDOFF.md §5 の選択肢 A-D から選んで進める:
-- A: Phase 6 (Claude API 接続) — scripted mock → 本物の AI 対話に置換
+SESSION_HANDOFF.md §5 の選択肢 A-E から選んで進める:
+- A: Phase 6 (Claude API 接続) — scripted mock → 本物の AI、葵による教材体系図 + 評価コメント、教材詳細ページ + 教材ごと独立 chat、ウィザード 3 step 化
 - B: Phase 5 細部改善 (Suggestion/Interrupt 自動生成、永続化対応等)
-- C: Phase 7 (Supabase 永続化) 設計 grill-me 開始
+- C: Phase 7 (Supabase 永続化) 設計 grill-me 開始 (Material/MaterialReview/教材 chat も対象)
 - D: Phase 8 (音声対話) 着手
+- E: Phase 4 ウィザード簡素化 (監修撤去 + 3 step 化 + 教材詳細ページ skeleton、Phase 6 前哨戦の軽量タスク)
 
 ito19 さんに「次どれ?」とアスクしてから進める。
 

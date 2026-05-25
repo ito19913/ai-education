@@ -1038,7 +1038,8 @@ TutorHandoff ドキュメント作成 (mock では chat 内のカード)
 | `/tutor?view=issue&id=xxx` | 右ペインに課題 chat（科目の先生との対話） | Phase 3 |
 | `/tutor?view=today-tasks` | **右ペインに今日のタスクダッシュボード** (Phase 5 P5-Q7 で `view=schedule` からリネーム)。SI[] 一覧 + [開始] /learn 遷移 + 進捗 N/M + 全 done CTA | Phase 5 |
 | `/tutor?view=history` | 右ペインに学習履歴 | Phase 3 |
-| `/tutor?view=material-new` | 右ペインに新規教材登録ウィザード（`MaterialEditWizard` を embed） | Phase 3 |
+| `/tutor?view=material-new` | 右ペインに新規教材登録ウィザード（`MaterialEditWizard` を embed） | Phase 3 (※ 2026-05-25 grill で 3 step 化予定、本書「## 教材アップロード設計 (2026-05-25 grill)」参照) |
+| `/tutor?view=material-detail&id=xxx` | **右ペインに教材詳細ページ** (体系図 + 葵評価コメント + 教材ごと独立葵 chat、本書「## 教材アップロード設計 (2026-05-25 grill)」参照) | Phase 6 (新規追加予定) |
 | `/tutor?view=subject-history&subjectId=xxx` | 右ペインに科目の先生との対話履歴ビュー（ノード対話 + 課題 chat の時系列集約）| Phase 3 |
 | `/tutor?view=tutor-archive` | **右ペインにゆい先生対話アーカイブ**（日付セレクター + 話題フィルター、readonly） | ✓ Phase 3 中盤 |
 | `/tutor?view=tutor-archive&date=YYYY-MM-DD` | 上記で特定日を即表示（検索結果カードからのジャンプ） | ✓ Phase 3 中盤 |
@@ -1284,7 +1285,7 @@ TutorHandoff {
 | **Phase 3.5** | 学習開始の儀式 + 経過時間計測 + 離席検知 + 終了儀式（下記 Phase 3.5 スコープ参照） | 中盤の追加機能で部分実装済 (auto-pause / ending dialogue / 3 状態タイマー)、残りは next |
 | **Phase 4** | **中学生向け設計軌道修正 (2026-05-25 grill)**: LearningPlan + 帰宅儀式 (2 部構成) + SchoolDailyReport + 週次/月次レポート (4 セクション) + 達成バッジ + 親共有 (本人同意制)。**既存 Phase 4 (宿題タスク) と旧 Phase 5 (授業の新しい学び) は本 Phase に統合** | ✓ 完了 (C7-C13、2026-05-25) |
 | **Phase 5** | **学習戦略エンジン (2026-05-25 grill)**: 4 軸分離 (Plan Type / Mode / Resource / Node) + GeneratedTask × ScheduleItem 並走 + WeakNodes 半自動 + Replan Engine (3 トリガー) + NodeReviewSuggestion 即時 accept + Plan Engine ダッシュボード + 今日のタスクルート整理 | ✓ 完了 (C14 試作 + C15-C24、2026-05-25) |
-| **Phase 6** | Claude API 接続、scripted mock を本物の対話に置換、コンテキスト圧縮（rolling summary / prompt cache）、ゆいによるサマリー読み込み、教材 PDF → roadmap 自動生成、WeakNodes 自動判定の AI 化 | 未着手 |
+| **Phase 6** | Claude API 接続、scripted mock を本物の対話に置換、コンテキスト圧縮（rolling summary / prompt cache）、ゆいによるサマリー読み込み、**葵先生による教材読み込み (体系図 + 評価コメント、本書「## 教材アップロード設計 (2026-05-25 grill)」参照)**、教材詳細ページ + 教材ごと独立 chat、WeakNodes 自動判定の AI 化、`MaterialEditWizard` の 3 step 化 (監修ステップ撤去) | 未着手 |
 | **Phase 7** | Supabase スキーマ + mock → 永続化 (LearningPlan / SchoolDailyReport / ScheduleItem 拡張 / GeneratedTask / バッジ等含む) | 未着手 |
 | **Phase 8** | Web Speech API（STT）+ OpenAI TTS で音声対話 | 未着手 |
 
@@ -1403,10 +1404,12 @@ TutorHandoff {
 
 ### 教材追加ゆいハブ化（Phase 3）
 
+> **2026-05-25 grill 追記**: 本セクションは Phase 3 時点の動線設計。教材アップロード全体の設計 (主体 / AI 役割 / 葵の出力構造 / 動線 / 監修廃止 等の 13 確定) は別途まとめてある → **本書「## 教材アップロード設計 (2026-05-25 grill)」** を参照。本セクションの「担当 AI = ゆい先生が全部担当」は **撤回**: 確定 8 により **教材を読むのは葵先生**、ゆいは入口/出口のみ。
+
 | 論点 | 確定 |
 |---|---|
 | 対象ユーザー | **両方で同じフロー**（権限区別なし、学習者も教材追加できる）|
-| 担当 AI | **ゆい先生が全部担当**（科目の先生にハンドオフしない、シンプル維持）|
+| 担当 AI | ~~**ゆい先生が全部担当**~~ → **2026-05-25 grill 確定 8 で撤回**: 教材を読むのは葵先生 (科目の先生)、ゆいは入口/出口のみ |
 | 既存ウィザード | `/admin/materials/new` は **残してバックアップ動線化**（URL バー直入力で到達可、サイドバーからは撤去）|
 | UI 表現 | **ゆいは入口、ウィザード本体は右ペインに展開**（既存 `MaterialEditWizard` に `embedded` props を追加して再利用）|
 | 完了体験 | ウィザード保存 → `onComplete` コールバック → ゆいが「『{name}』登録できたよ！」発話 + 右ペイン自動クローズ |
@@ -1546,8 +1549,111 @@ ito19 さん観察「現状の仕組みは大人の学習方法に寄ってい�
 - バッジの具体的ビジュアル (絵文字 / SVG / ステッカー風)
 - 親への通知方法 (admin 側 UI、メール等)
 - 月末週の判定ロジック細部 (「最終週」の判定基準)
-- 計画立案の AI による教材目次自動読み込み (Phase 6 で実装、現状は手動入力 mock)
+- ~~計画立案の AI による教材目次自動読み込み (Phase 6 で実装、現状は手動入力 mock)~~ → **2026-05-25 grill で再設計確定** (葵先生が体系図 (テキスト忠実) + 評価コメント 2 レイヤで生成、Phase 6 で実装)。本書「## 教材アップロード設計 (2026-05-25 grill)」参照
 - 教材変更時の roadmap 再計算ロジック
+
+---
+
+## 教材アップロード設計 (2026-05-25 grill)
+
+Phase 5 完了後の追加 grill。教材ウィザード (Phase 4 実装済 = `MaterialEditWizard`) / Plan Engine の `MaterialPickerCard` (Phase 5 実装済) / Phase 6 計画 (教材 PDF → roadmap 自動生成) を貫く「**教材という入力レイヤ**」の設計を 13 個の確定で固めた。grill 結果は本セクションに集約、既存セクション (教材追加ゆいハブ化 / Phase 4 grill 確定 等) からは本セクションへの参照を置く。
+
+### 13 確定事項
+
+| # | 確定 |
+|---|---|
+| 1 | 順序: **教材アップロード → 計画** (現状実装維持) |
+| 2 | 計画主体: ゆい (担任) が提案 → 娘さん承認/修正 |
+| 3 | ゆいは **教材選びの提案はしない** (与えた教材に対する計画案のみ。「○○本を買って」は禁止) |
+| 4 | 教材アップロード主体: **親 + 娘さん両方** (admin/learner 区別なし、本書 1408 既設計) |
+| 5 | 教材アップロード後の動線は **計画と疎結合**: (a) 体系図/評価コメントを見る・葵に質問 (b) 計画立案で使う (c) 何もしない の 3 経路 |
+| 6 | 学校宿題は **SchoolDailyReport 側** で写真/PDF アップ可 (教材 = Material エンティティとは別カテゴリ、計画の対象外) |
+| 7 | 教材は **事前アップが基本** (同時アップも例外可) |
+| 8 | 教材 AI persona = **葵先生** (科目の先生)。TUTOR-ROLE 境界 (ゆい=教えない / 葵=教える) より、ゆいは入口のみ |
+| 9 | **監修ステップは全廃** (どの場面でも、人間が AI 出力を承認するステップは置かない。葵生成・ゆい計画案・週次レポート 等すべて) |
+| 10 | **葵生成はテキストに忠実** (AI 解釈・取捨選択禁止、「中3範囲だから削除」みたいな勝手な判断 NG。教科書に書かれているノードは必ず体系図に含める) |
+| 11 | 葵の教材出力 = **体系図 (テキスト忠実) + 評価コメント (葵の見解: coverage / difficulty / fit / notes)** の 2 レイヤ |
+| 12 | 教材についての葵 chat = **教材ごと独立スレッド** (教材詳細ページに集約、既存「課題ごと独立 chat」と相似形) |
+| 13 | アップ完了動線 = **ゆい hub 経由**「葵が読んだよ、見る?」(本書 1404 ハブ化方針と一貫) |
+
+### 設計の流れ図
+
+```
+[アップロード]
+     ↓
+[葵が読む]  ← 体系図 (テキスト忠実) + 評価コメント (葵の見解) を 2 レイヤで生成
+     ↓
+[保存] (監修ステップなし、葵生成をそのまま保存)
+     ↓
+[ゆい「葵が読んだよ、見る?」] ← hub 復帰、quickReplies で 3 択
+     ↓
+  ┌──────────────────┼──────────────────┐
+  ↓                  ↓                  ↓
+教材詳細ページ      計画立案で使う      何もしない
+(体系図 +           (材料として        (後で使う、
+ 評価コメント +     ピッカーに出る、    既登録教材として
+ 葵 chat)           ゆいが提案)        他の経路で利用可能)
+```
+
+### 葵先生の教材出力構造 (新型)
+
+```typescript
+type AoiMaterialAnalysis = {
+  materialId: string
+  nodes: KnowledgeNode[]      // 体系図 (テキスト忠実、AI 解釈なし)
+  review: MaterialReview      // 評価コメント (葵の見解)
+}
+
+type MaterialReview = {
+  coverage: string             // 範囲評価 「中2文法を網羅、関係代名詞は中3範囲だが基礎部分」
+  difficulty: string           // 難易度評価 「やや易しめ、演習問題が少ない」
+  fit: string                  // 対象との整合 「中2 1月時点でちょうど良い」
+  notes: string[]              // その他コメント
+}
+```
+
+### 影響を受ける既存実装
+
+| 既存実装 | 影響 |
+|---|---|
+| `MaterialEditWizard` (Phase 4) | **Step3Review 撤去**, Step4Save を Step3 に詰めて **3 step 化** (メタ・アップ / 葵生成 / 保存)。Step2 の AI 抽出 (現状 mock) は Phase 6 で本物の葵生成に置換 |
+| `MaterialPickerCard` (Phase 5) | **確定 1, 2, 3 と整合、既存挙動でOK**。ゆいが「どの教材で?」と聞いて娘さんが既登録教材から選ぶのは「教材選び提案」(=新規購入提案) ではなく「選択肢提示」 |
+| 教材詳細ページ (`/tutor?view=material-detail&id=xxx`) | **新規追加** (確定 5, 11, 12)。体系図表示 + 葵評価コメント + 葵 chat 入力欄を一体表示 |
+| ゆい mock (`tutor-mock.ts`) | 教材アップ完了 onComplete 後の「葵が読んだよ、見る?」発話 + 3 択 quickReplies を追加 (確定 13) |
+| 教材追加ゆいハブ化 (本書 1404-1413) | 確定 4 と既存設計が整合済、確定 13 でアップ完了動線が「ゆい hub 復帰」として明文化 |
+| `IssueChatMessage` | 教材ごと独立 chat (確定 12) で同型を流用するか `MaterialChatMessage` を新設するかは Phase 6 着手時に判断 |
+
+### Phase 6 で実装する具体タスク (この grill が決めたもの)
+
+- 葵先生による教材 PDF / 写真読み込み (Claude Opus マルチモーダル、画像 OCR + 構造抽出)
+- 体系図出力: テキスト忠実の `KnowledgeNode[]` 抽出 (確定 10)
+- 評価コメント出力: `MaterialReview` 新型 (確定 11)
+- 教材詳細ページ UI (`/tutor?view=material-detail&id=xxx`)
+- 教材ごと独立 chat スレッド (型と永続化、確定 12)
+- ゆい mock の onComplete 発話 ("葵が読んだよ、見る?") 追加 (確定 13)
+- `MaterialEditWizard` 3 step 化 (Step3Review 撤去、確定 9)
+
+### 未決事項 (実装着手時に詰める)
+
+- ウィザード簡素化後の入力タイプ UX (PDF / 写真 / スキャン の出し分け)
+- 計画立案フローでの教材ピッカー動作の細部 (既登録教材の並び順 / 検索 / 削除)
+- 学校宿題写真アップ時の葵介入度 (マルチモーダル解析するか、ファイル保存のみか) — Phase 6 議論
+- 教材詳細ページの細部 UI (体系図ビジュアル / 評価コメントレイアウト / chat 入力欄配置)
+- 永続化 (Phase 7 Supabase スキーマで決まる: Material / KnowledgeNode / MaterialReview / 教材 chat スレッド)
+
+### PHILOSOPHY / TUTOR-ROLE との整合
+
+- **PHILOSOPHY.md 本文**: 修正不要。中核 2「頭の中にツールを組み立てる」は「葵が体系図を提示 → 娘さんが見て理解する」立て付けで成立 (本文に「娘さん自身が一人でゼロから組み立てる」とは書かれていない)。中核 5「体系の骨格を先に掴む」は葵生成体系図がまさに骨格提示なので強化される
+- **TUTOR-ROLE.md**: 修正不要。ゆい = 教えない / 葵 = 教える の境界に従って教材体系図生成と教材 chat を葵に割り当てたので、境界設計が強化される
+- **削除した過去解釈**: memory `project_ai_education.md` に記載していた「娘さん自身が AI と対話しながら自分で作る (生成効果)」は本 grill で撤回 (中2 には負荷過剰 + ゆい計画提案路線と矛盾)
+
+### 関連箇所
+
+- 本書 1404-1413 (教材追加ゆいハブ化)
+- 本書 1514-1551 (Phase 4 grill 確定、教材ウィザード関連の Q3-Q11)
+- 本書 1287 (Phase 6 ロードマップ「教材 PDF → roadmap 自動生成」)
+- `TUTOR-ROLE.md` (ゆい / 葵の境界)
+- `PHILOSOPHY.md` 中核 2 (ツール化) / 中核 5 (体系の骨格)
 
 ---
 
