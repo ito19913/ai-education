@@ -33,6 +33,7 @@ import { MaterialEditWizard } from "@/components/admin/MaterialEditWizard";
 import { SubjectHistoryView } from "@/components/subjects/SubjectHistoryView";
 import { TutorArchiveView } from "@/components/tutor/TutorArchiveView";
 import { ReflectionListView } from "@/components/reflections/ReflectionListView";
+import { WeeklyMonthlyReportView } from "@/components/reports/WeeklyMonthlyReportView";
 
 type Props = {
   view: RightPaneView;
@@ -156,6 +157,18 @@ export function RightPaneRouter({
     // ReflectionListView は MOCK_REFLECTION_LOGS / MOCK_ISSUES / MOCK_HANDOFFS
     // を直接 import する (Phase 7 で Supabase 化する時にここを props 化する)
     return <ReflectionListView nodes={nodes} subjects={subjects} />;
+  }
+
+  if (view === "weekly-report") {
+    return (
+      <WeeklyMonthlyReportView mode="weekly" nodes={nodes} subjects={subjects} />
+    );
+  }
+
+  if (view === "monthly-report") {
+    return (
+      <WeeklyMonthlyReportView mode="monthly" nodes={nodes} subjects={subjects} />
+    );
   }
 
   if (view === "material-new") {

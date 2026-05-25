@@ -769,6 +769,9 @@ export function deriveTutorTopic(
         return "history-check";
       case "open-reflections":
         return "reflection-check";
+      case "open-weekly-report":
+      case "open-monthly-report":
+        return "reflection-check"; // 週次/月次レポートも振り返り系
       case "open-material-new":
         return "material-add";
       case "open-subject-history":
@@ -1124,6 +1127,46 @@ function buildNextTutorReplyInner(args: {
         role: "tutor",
         text: "これまでの学習履歴、右に出すね。\nセッションごとの時間と振り返りが見られるよ。",
         rightPaneAction: { kind: "open-history" },
+        createdAt: now,
+      },
+    };
+  }
+
+  // C11: 「週次レポート」「今週のレポート」「weekly」
+  // → 週次レポート (WeeklyMonthlyReportView mode=weekly)
+  if (
+    lower.includes("週次レポート") ||
+    lower.includes("今週のレポート") ||
+    lower.includes("今週のまとめ") ||
+    lower.includes("weekly")
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、今週のレポート出すね。\n一緒に読もう、**達成 → 学校 → 弱いところ → 来週の計画** の順だよ。",
+        rightPaneAction: { kind: "open-weekly-report" },
+        createdAt: now,
+      },
+    };
+  }
+
+  // C11: 「月次レポート」「今月のレポート」「monthly」
+  // → 月次レポート (WeeklyMonthlyReportView mode=monthly)
+  if (
+    lower.includes("月次レポート") ||
+    lower.includes("今月のレポート") ||
+    lower.includes("今月のまとめ") ||
+    lower.includes("monthly")
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、今月のレポート出すね。\n月末週なら来月の計画も込みで一緒に見ようね。",
+        rightPaneAction: { kind: "open-monthly-report" },
         createdAt: now,
       },
     };

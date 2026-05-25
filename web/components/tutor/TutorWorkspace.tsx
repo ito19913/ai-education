@@ -77,6 +77,8 @@ function viewFromParam(raw: string | null): RightPaneView {
     raw === "schedule" ||
     raw === "history" ||
     raw === "reflections" ||
+    raw === "weekly-report" ||
+    raw === "monthly-report" ||
     raw === "material-new" ||
     raw === "subject-history" ||
     raw === "tutor-archive"
@@ -251,6 +253,12 @@ export function TutorWorkspace({
           break;
         case "open-reflections":
           navigate("reflections");
+          break;
+        case "open-weekly-report":
+          navigate("weekly-report");
+          break;
+        case "open-monthly-report":
+          navigate("monthly-report");
           break;
         case "open-material-new":
           navigate("material-new");
