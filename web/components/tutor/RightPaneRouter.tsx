@@ -30,6 +30,7 @@ import { IssueChat } from "@/components/issues/IssueChat";
 import { TodayTaskDashboard } from "@/components/today-tasks/TodayTaskDashboard";
 import { HistoryView } from "@/components/history/HistoryView";
 import { MaterialEditWizard } from "@/components/admin/MaterialEditWizard";
+import { MaterialDetailView } from "@/components/materials/MaterialDetailView";
 import { SubjectHistoryView } from "@/components/subjects/SubjectHistoryView";
 import {
   SubjectSettingsPanel,
@@ -39,12 +40,15 @@ import { TutorArchiveView } from "@/components/tutor/TutorArchiveView";
 import { ReflectionListView } from "@/components/reflections/ReflectionListView";
 import { WeeklyMonthlyReportView } from "@/components/reports/WeeklyMonthlyReportView";
 import { PlanEngineDashboard } from "@/components/plans/PlanEngineDashboard";
+import { MOCK_MATERIALS } from "@/lib/learn/mock-data";
 
 type Props = {
   view: RightPaneView;
   selectedIssue: Issue | null;
   /** URL ?subjectId= で指定された subject ID（subject-history 用）*/
   selectedSubjectId: string | null;
+  /** URL ?id= で指定された material ID（material-detail 用、C32 2026-05-25 grill 1）*/
+  selectedMaterialId: string | null;
   issues: Issue[];
   nodes: KnowledgeNode[];
   chatMessages: ChatMessage[];
@@ -77,6 +81,7 @@ export function RightPaneRouter({
   view,
   selectedIssue,
   selectedSubjectId,
+  selectedMaterialId,
   issues,
   nodes,
   chatMessages,
@@ -201,6 +206,23 @@ export function RightPaneRouter({
   if (view === "subjects") {
     // C30 2026-05-25 grill 2 S6: 科目設定パネル
     return <SubjectSettingsPanel subjects={subjects} onSubjectAdded={onSubjectAdded} />;
+  }
+
+  if (view === "material-detail") {
+    // C32 2026-05-25 grill 1 確定 5/11/12: 教材詳細ページ
+    const material = selectedMaterialId
+      ? MOCK_MATERIALS.find((m) => m.id === selectedMaterialId)
+      : undefined;
+    if (!material) {
+      return (
+        <NotFoundPane
+          message="教材が見つかりませんでした"
+          onBack={onBack}
+        />
+      );
+    }
+    const subject = subjects.find((s) => s.id === material.subjectId) ?? null;
+    return <MaterialDetailView material={material} subject={subject} nodes={nodes} />;
   }
 
   if (view === "tutor-archive") {

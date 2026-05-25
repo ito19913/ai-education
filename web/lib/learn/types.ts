@@ -484,6 +484,7 @@ export type TutorRightPaneAction =
   | { kind: "open-monthly-report" } // C11 Phase 4: 月次レポート
   | { kind: "open-plans" } // C21 Phase 5 P5-Q6: Plan Engine ダッシュボード
   | { kind: "open-material-new" }
+  | { kind: "open-material-detail"; materialId: string } // C32 2026-05-25 grill 1 確定 5/11/12
   | { kind: "open-subjects" } // C30 2026-05-25 grill 2 S6: 科目設定パネル
   | { kind: "open-subject-history"; subjectId: string }
   | { kind: "open-tutor-archive" }
@@ -532,6 +533,7 @@ export type RightPaneView =
   | "monthly-report" // C11 Phase 4: 月次レポート
   | "plans" // C21 Phase 5 P5-Q6: Plan Engine ダッシュボード
   | "material-new"
+  | "material-detail" // C32 2026-05-25 grill 1 確定 5/11/12: 教材詳細ページ
   | "subjects" // C30 2026-05-25 grill 2 S6: 科目設定パネル
   | "subject-history"
   | "tutor-archive";

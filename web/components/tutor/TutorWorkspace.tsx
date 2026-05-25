@@ -36,7 +36,7 @@ import {
   loadTutorThread,
   saveTutorThread,
 } from "@/lib/learn/tutor-thread-storage";
-import { MOCK_SUBJECTS } from "@/lib/learn/mock-data";
+import { MOCK_MATERIALS, MOCK_SUBJECTS } from "@/lib/learn/mock-data";
 import type {
   ChatMessage,
   ExamPrep,
@@ -111,6 +111,9 @@ export function TutorWorkspace({
   const view = viewFromParam(searchParams.get("view"));
   const selectedIssueId = searchParams.get("id");
   const selectedSubjectId = searchParams.get("subjectId");
+  // C32 2026-05-25 grill 1: material-detail view では id クエリを materialId として解釈
+  const selectedMaterialId =
+    searchParams.get("view") === "material-detail" ? searchParams.get("id") : null;
   // /tutor?ending=1: /learn の「学習を終了」から来た時、ゆいを ending モードで起動
   const endingMode = searchParams.get("ending") === "1";
 
@@ -229,11 +232,13 @@ export function TutorWorkspace({
   const navigate = useCallback(
     (
       next: RightPaneView,
-      params?: { issueId?: string; subjectId?: string },
+      params?: { issueId?: string; subjectId?: string; materialId?: string },
     ) => {
       const url = new URLSearchParams();
       if (next !== "default") url.set("view", next);
       if (next === "issue" && params?.issueId) url.set("id", params.issueId);
+      if (next === "material-detail" && params?.materialId)
+        url.set("id", params.materialId);
       if (next === "subject-history" && params?.subjectId)
         url.set("subjectId", params.subjectId);
       const q = url.toString();
@@ -272,6 +277,9 @@ export function TutorWorkspace({
         case "open-material-new":
           navigate("material-new");
           break;
+        case "open-material-detail":
+          navigate("material-detail", { materialId: action.materialId });
+          break;
         case "open-subjects":
           navigate("subjects");
           break;
@@ -289,20 +297,26 @@ export function TutorWorkspace({
     [navigate],
   );
 
-  // ----- 教材追加完了時のゆい発話追加 + 右ペインクローズ -----
+  // ----- 教材追加完了時のゆい発話追加 + 右ペイン遷移 -----
+  // C32 2026-05-25 grill 1 確定 13: アップ完了動線 = ゆいから「葵が読んだよ、見る?」
+  // → 右ペインに material-detail (体系図 + 評価コメント + 葵 chat) 即時展開
+  // 暫定: MOCK_MATERIALS への動的 push は未実装 (Step4Save が console.log のみ)。
+  // 表示は MOCK_MATERIALS の先頭 (= 中2英語教科書) を仮表示。Phase 7 で永続化対応。
   const handleMaterialAdded = useCallback(
     (materialName: string, approvedNodeCount: number) => {
       const reply: TutorMessage = {
         id: `t-mat-${Date.now()}`,
         role: "tutor",
-        text:
-          approvedNodeCount > 0
-            ? `「${materialName}」、登録できたよ！\n体系図に ${approvedNodeCount} 個のノードが追加されたよ。`
-            : `「${materialName}」、登録できたよ！\n（承認ノードは 0 件だったから、体系図には追加されてないよ）`,
+        text: `「${materialName}」、葵先生が読んだよ！\n体系図 (${approvedNodeCount} ノード) と評価コメントをまとめてくれたから、右で見せるね。`,
         createdAt: new Date().toISOString(),
       };
       setTutorMessages((prev) => [...prev, reply]);
-      navigate("default");
+      const fallbackMaterialId = MOCK_MATERIALS[0]?.id;
+      if (fallbackMaterialId) {
+        navigate("material-detail", { materialId: fallbackMaterialId });
+      } else {
+        navigate("default");
+      }
     },
     [navigate],
   );
@@ -556,6 +570,7 @@ export function TutorWorkspace({
             view={view}
             selectedIssue={selectedIssue}
             selectedSubjectId={selectedSubjectId}
+            selectedMaterialId={selectedMaterialId}
             issues={issues}
             nodes={nodes}
             chatMessages={chatMessages}
