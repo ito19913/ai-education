@@ -37,6 +37,7 @@ import {
   MOCK_REFLECTION_LOGS,
   MOCK_SCHEDULE_TODAY,
   MOCK_SCHOOL_DAILY_REPORTS,
+  MOCK_SUBJECTS,
   MOCK_TREE,
 } from "./mock-data";
 import { searchTutorThreads } from "./tutor-thread-storage";
@@ -1542,7 +1543,7 @@ function buildNextTutorReplyInner(args: {
         text: "OK、サクッと始めよっか。**何の教科から?**",
         card: {
           kind: "subject-picker",
-          options: [{ subjectId: "subj-english", label: "英語" }],
+          options: MOCK_SUBJECTS.map((s) => ({ subjectId: s.id, label: s.name })),
         },
         createdAt: now,
       },
@@ -1992,7 +1993,7 @@ function buildNextTutorReplyInner(args: {
         text: `OK、**${typeLabel}** の計画立てよう! まず科目から。`,
         card: {
           kind: "subject-picker",
-          options: [{ subjectId: "subj-english", label: "英語" }],
+          options: MOCK_SUBJECTS.map((s) => ({ subjectId: s.id, label: s.name })),
         },
         createdAt: now,
       },
@@ -2023,7 +2024,7 @@ function buildNextTutorReplyInner(args: {
         text: "OK、学習計画立てよう! まず科目から。\n（教材を 3 回まわす計画を立てるよ）",
         card: {
           kind: "subject-picker",
-          options: [{ subjectId: "subj-english", label: "英語" }],
+          options: MOCK_SUBJECTS.map((s) => ({ subjectId: s.id, label: s.name })),
         },
         createdAt: now,
       },
@@ -2709,7 +2710,7 @@ function buildNextTutorReplyInner(args: {
         text: "了解。**何の教科から始める?**",
         card: {
           kind: "subject-picker",
-          options: [{ subjectId: "subj-english", label: "英語" }],
+          options: MOCK_SUBJECTS.map((s) => ({ subjectId: s.id, label: s.name })),
         },
         createdAt: now,
       },
