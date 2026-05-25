@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-25 (Phase 4 完了 + Phase 5 grill 確定 + 実装 C15-C19 完了)
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-25 (Phase 4 完了 + **Phase 5 grill 確定 + C15-C24 全実装完了**)
 
 ---
 
@@ -29,7 +29,7 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 
 ## §3. 今日のセッション (2026-05-25) 全成果
 
-**19 commit、約 +6800 行**。`7aaf7df`..`21a2238` の範囲。
+**23 commit、約 +8500 行**。`7aaf7df`..`8899555` の範囲。**Phase 5 grill 確定 + 全実装完了**。
 
 ### Phase 3 レビュー追従 (REVIEW-2026-05-24.md 対応)
 | # | SHA | 内容 |
@@ -58,7 +58,7 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 |---|---|---|
 | C14 | `6b3e84a` | Phase 5 試作型 9 個 + 静的 mock (議論用) |
 
-### Phase 5 grill 確定 (P5-Q1〜Q7 + サブ問い計 11 問) + 実装 C15-C19
+### Phase 5 grill 確定 (P5-Q1〜Q7 + サブ問い計 11 問) + 実装 C15-C24 全完了
 | # | SHA | 内容 |
 |---|---|---|
 | C15 | `ee51d81` | docs: ARCHITECTURE.md Phase 5 grill 確定設計 (P5-Q1〜Q7) を反映 |
@@ -66,6 +66,11 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 | C17 | `2ea8d50` | 立案フロー拡張 (weak-node-picker + PlanType 明示発話分岐) |
 | C18 | `71f94d9` | NodeReviewSuggestion フロー (ゆい chat 主提示 + 即時 SI 挿入) |
 | C19 | `21a2238` | Replan Engine (3 トリガー + 種類別影響範囲 + PlanRevision 履歴) |
+| C24 | `1326cf5` | docs: SESSION_HANDOFF.md 更新 (中間) |
+| C20 | `c01b86f` | 週次レポート拡張 (pending Suggestion 副提示 + Replan draft + weakNodes 追加) |
+| C21 | `287ed83` | Plan Engine ダッシュボード (/tutor?view=plans 本実装) |
+| C22 | `c26a557` | view=schedule → view=today-tasks 全体リネーム |
+| C23 | `8899555` | 今日のタスク 進捗バー + 全 done CTA |
 
 ---
 
@@ -114,35 +119,47 @@ npm run dev
 
 ---
 
-## §5. 次セッションで実装する Phase 5 残 commits (C20-C23)
+## §5. 次セッションで進める論点 (Phase 5 完了、Phase 6 開始 or 細部改善)
 
-Phase 5 grill (P5-Q1〜Q7 + サブ計 11 問) は本セッションで完全確定済み、
-ARCHITECTURE.md に SSoT 反映済み (C15)。実装も C16-C19 で約 1/2 完了。
-**次セッションで残り C20-C23 を実装する**。
+Phase 5 全実装 (C15-C24) 完了済み。**次セッションは以下のどれかから選択**:
 
-### 次セッションで実装する commits
+### 選択肢 A: Phase 6 (Claude API 接続) 開始
+- ゆい先生の発話を scripted mock → Claude API に置換
+- WeakNodes 自動判定の AI 化 (P5-Q2 の半自動 → 完全自動候補)
+- pace-change Replan の monthlyRoadmap 再計算 + 未来 GT[] 書き換え 本実装
+- 教材 PDF → roadmap 自動生成
 
-| # | 内容 | 規模 |
-|---|---|---|
-| **C20** | **週次レポート拡張**: WeeklyMonthlyReportView の「弱いところ」セクションに pending な NodeReviewSuggestion 一覧追加、Action Proposal セクションに detectPlanDelay → Replan draft 提示、weakNodes [追加] ボタン (P5-Q2 副提示 + P5-Q3 weekly-review トリガー) | 中 |
-| **C21** | **Plan Engine ダッシュボード**: `/tutor?view=plans` を本実装 (Phase 4 で URL のみ確保済み)。左サイドに LearningPlan[] 一覧 + 右パネルに詳細 (概要/全期間ロードマップ/weakNodes/pending Suggestion + Interrupt/PlanRevision 履歴)。新規 PlanEngineDashboard コンポーネント (P5-Q6) | 大 |
-| **C22** | **today-tasks リネーム**: `/tutor?view=schedule` → `/tutor?view=today-tasks`、`/schedule` → `/today-tasks`、`ScheduleDashboard` → `TodayTaskDashboard`、中身を SI 一覧 + GT 紐付け対応に書き換え (P5-Q7) | 中 |
-| **C23** | **今日のタスククリック動線**: `[今日のタスク]` メニュークリック → `/tutor?view=today-tasks` 遷移、各 SI に [開始] ボタン → /learn 遷移 + status: todo → doing、進捗 N/M、全 done で「振り返ろう」CTA (P5-Q7) | 小 |
+### 選択肢 B: Phase 5 細部の改善 (運用上の不足を埋める)
+- pending Suggestion / Interrupt の自動生成ロジック (現状は静的 mock 固定)
+- WeakNodeAddSection の永続化 (現状ローカル mutation のみ)
+- Replan の SI 日付付け替えの実装本体 (現状は PlanRevision 履歴のみ)
+- TodayTaskDashboard 内の SI 順序を Plan Engine 推奨順に変更 (P5-Q5 配分使用)
+- material-change Replan の新 LearningPlan 自動生成
+- バッジビジュアル強化 (SVG / ステッカー風)
+
+### 選択肢 C: Phase 7 (Supabase 永続化) 設計開始
+- Phase 5 で MOCK_* がさらに増えたので、永続化スキーマを grill-me で詰める
+- LearningPlan / GeneratedTask / NodeReviewSuggestion / InterruptEvent / PlanRevision
+  + RLS で家族のみアクセス、admin 通知の DB 設計
+
+### 選択肢 D: Phase 8 (音声対話) 着手
 
 ### Phase 5 を超える長期論点
-- **Phase 6**: Claude API 接続 + 教材 PDF 自動読み込み (Plan Engine / WeakNode 判定の AI 化、pace-change の monthlyRoadmap 再計算 + 未来 GT[] 書き換えの実装本体もここで)
+- **Phase 6**: Claude API 接続 + 教材 PDF 自動読み込み + Plan Engine / WeakNode 判定の AI 化
 - **Phase 7**: Supabase 永続化 (現在の MOCK_* 全部を migrate)
 - **Phase 8**: 音声対話 (Web Speech + OpenAI TTS)
 
-### 残未決事項 (Phase 5 実装中に出た細部、Phase 6 待ち含む)
+### 残未決事項 (Phase 5 実装で意識的に Phase 6 へ送ったもの)
 - pace-change Replan の monthlyRoadmap 再計算ロジック (現状は PlanRevision 履歴のみ)
 - carry-over Replan の SI 日付付け替えロジック (現状は履歴のみ)
 - material-change Replan の新 LearningPlan 自動生成 (現状は旧 plan paused のみ)
-- weekly-review Replan の自動発火 (週次レポート画面側に判定組み込み、C20 で扱う予定)
+- WeakNodes / NodeReviewSuggestion の AI 自動判定 (現状は固定閾値 + 静的 mock)
+- Interrupt の自動生成 (現状は MOCK_INTERRUPT_EVENTS 固定 2 件)
 - バッジビジュアル強化 (SVG / ステッカー風)
 - 親側 admin 通知 UI (admin ルート未着手)
 - AchievementBadgeChip の独立コンポーネント化
 - 月末週判定の正確なロジック (最終週の自動判定)
+- TodayTaskDashboard 内既存 lint warning (LearnSidebar 2 件、MaterialEditDialog 3 件)
 
 ---
 
@@ -154,21 +171,25 @@ ARCHITECTURE.md に SSoT 反映済み (C15)。実装も C16-C19 で約 1/2 完�
 AI-Education プロジェクトの作業を継続します。
 
 1. C:\dev\projects\home\Ai-Education\SESSION_HANDOFF.md を読んで状況把握
-2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 5: 学習戦略エンジン」セクションを確認 (grill 確定済み、SSoT)
+2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 5: 学習戦略エンジン」セクションを確認
 3. memory MEMORY.md の project_ai_education.md を確認
 
-【今日の状態】
+【今日の状態 (Phase 5 完全完了)】
 - Phase 3 レビュー追従 完了 (C1-C6)
 - Phase 4 中学生向け設計軌道修正 完了 (C7-C13)
 - Phase 5 学習戦略エンジン 試作型 + mock (C14)
-- Phase 5 grill 確定 (P5-Q1〜Q7 + サブ問い計 11 問、ARCHITECTURE.md SSoT 反映済み)
-- Phase 5 実装 約 1/2 (C15 docs + C16 型 + C17 立案 + C18 Suggestion + C19 Replan)
-- 19 commit / main に push 済み / tsc + lint クリア / dev server で動作確認可
-- 残: C20-C23 実装 (週次レポート拡張 / Plan Engine ダッシュボード / today-tasks リネーム / 動線)
+- **Phase 5 grill 確定 (P5-Q1〜Q7 + サブ問い計 11 問、ARCHITECTURE.md SSoT 反映済み)**
+- **Phase 5 全実装完了 (C15 docs + C16 型 + C17 立案 + C18 Suggestion + C19 Replan + C20 週次 + C21 Plan Engine + C22 today-tasks + C23 動線 + C24 引継ぎ)**
+- 23 commit / main 直 push (or 未 push) / tsc + lint クリア / dev server で動作確認可
 
-【次の作業】
-SESSION_HANDOFF.md §5「Phase 5 残 commits C20-C23」を順番に実装する。
-最初は C20 (週次レポート拡張: pending Suggestion 一覧 + Replan draft + weakNodes 追加ボタン) から。
+【次の作業 (本セッション内に「進めて」で続行 or 次回新セッションで開始)】
+SESSION_HANDOFF.md §5 の選択肢 A-D から選んで進める:
+- A: Phase 6 (Claude API 接続) — scripted mock → 本物の AI 対話に置換
+- B: Phase 5 細部改善 (Suggestion/Interrupt 自動生成、永続化対応等)
+- C: Phase 7 (Supabase 永続化) 設計 grill-me 開始
+- D: Phase 8 (音声対話) 着手
+
+ito19 さんに「次どれ?」とアスクしてから進める。
 
 各 commit ごとに tsc --noEmit + eslint クリアを確認、conventional commit
 (feat: / docs: / refactor:) + 「なぜ / 何を / どう動くか」を本文に書く。
