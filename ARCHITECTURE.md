@@ -502,60 +502,185 @@ ito19 さんの観察「**現状の仕組みは大人の学習方法に寄って
 - **C12 (2026-05-25)**: 達成バッジ UI + 親共有 UI 実装済。達成バッジは AchievementSection 内の Badge 表示で完成 (C11 で実装、`AchievementBadge.description` を絵文字込みで表示)。親共有は `ShareToParentButton` を WeeklyMonthlyReportView のヘッダに追加: デフォルト未共有で「親と共有」ボタン表示、クリックで `SharedToParent` を `MOCK_SHARED_TO_PARENT` に push (scope: "full") → 「✓ 共有済 (date)」表示に切替。Q15 確定の「本人同意制」を体現 (デフォルト OFF、本人が能動的に「見せる」を選ぶ達成感のもう 1 層)。
 - **C13 (2026-05-25)**: メニュー整理 (ito19 さん指示 + 別 AI 意見統合)。`TutorHubMenu` を **[今日のタスク (強調)] [課題] [先生 ▼] [もっと ▼] [スペーサー] [プラン (強調 右端)]** に再構成。「学習を開始」「スケジュール確認」「教材を追加」「振り返り」「履歴」を撤去 (今日のタスク / プラン / もっと ▼ に統合)。「もっと ▼」は **アーカイブ** (振り返りログ / 今週レポート / 今月レポート / 学習履歴) + **緊急動線** (帰ってきた) を格納。「今日のタスク」「プラン」は primary emphasis スタイル (border-primary + bg-primary/10) で視覚的に主動線として強調。PDCA の P (プラン右端) と D (今日のタスク左端) を空間的に対比表示。
 
-### Phase 5 設計の予告 (ito19 さん + 別 AI 議論で浮上)
+---
 
-軌道修正 grill (Q1-Q17) を超える「学習戦略エンジン」レベルの設計案が
-浮上したため、次セッション以降で詳細 grill + 実装する予定:
+## Phase 5: 学習戦略エンジン (2026-05-25 grill 確定)
 
-| カテゴリ | 提案 |
+Phase 4 (中学生向け軌道修正) の上に乗る「学習戦略エンジン」レベルの設計。
+ito19 さん + 別 AI 議論で浮上した「学習 OS」概念を、grill-me で P5-Q1〜P5-Q7
+の 7 論点 (+ サブ問い計 11 問) として詰めた結果。
+
+**実装状況**: grill 確定済、実装中 (C15〜C24 予定)。
+C14 (2026-05-25) で型 + 静的 mock の試作実装あり (`web/lib/learn/types.ts`
++ `web/lib/learn/mock-data.ts`)、本セクションで確定設計に基づき書き換え。
+
+### 設計の核 (Phase 4 の上に乗る)
+
+| 哲学 | 内容 |
 |---|---|
-| **概念分離 (4 軸)** | Plan Type (目的) / Learning Mode (Input/Output/Review/Drill/Test) / Resource (教材) / Node (知識単位) を明確に分離 |
-| **LearningPlan 拡張** | GoalType / WeakNodes[] / ReviewRules / TestRules / ReplanRules を追加 |
-| **GeneratedTask 新型** | ScheduleItem と並走 (or 統合)、Plan Engine から自動生成される実行単位 |
-| **Replan エンジン** | 「死なないシステム」のコア。週次チェック → 遅れ繰り越し / 理解度低下 → 上ノード復習タスク自動追加 |
-| **割込みイベント体系化** | 宿題 / 体調不良 / 学校行事 / 想定外復習 を Interrupt として正式型化、Scheduler が再計算 |
-| **ノードベース学習** | 「関係代名詞が弱い」というノードに対し、AI が教科書 p32-45 + 問題集 p88-93 + AI ドリル + 週末テスト を自動割当 |
-| **学習 OS の位置付け** | 「AI 先生」じゃなく「AI による学習戦略最適化エンジン」(別 AI 評価)|
+| **4 軸分離** | Plan Type (目的) / Learning Mode (Input/Output/Review/Drill/Test) / Resource (教材) / Node (知識単位) を明確に分離 |
+| **死なないシステム** | 遅延を許す Replan Engine、上ノード復習提案、Interrupt の正式型化で「計画破綻」を防ぐ |
+| **タスクは結果** | `GeneratedTask` (計画の実行単位) が中心、`ScheduleItem` は今日のカレンダー view |
+| **本人主体性貫徹** | Replan accept / Suggestion accept / 親共有 すべて本人 OK で発火 (Q15 一貫) |
+| **PHILOSOPHY 整合** | AI 自動判定よりも本人確認、ゲーミフィケーション過剰回避、達成感を構造で支える |
 
-これらは Phase 4 の上に乗る **「学習戦略エンジン Phase 5」** として独立扱い。
-詳細は次セッションの grill + 実装で詰める。
+### P5-Q1 確定: GeneratedTask × ScheduleItem の関係
 
-#### C14 Phase 5 試作 (型 + 静的 mock、設計叩き台 2026-05-25)
+**並走 + 紐付け**:
+- `GeneratedTask` (GT) は「計画の実行単位」、`ScheduleItem` (SI) は「今日のカレンダー view」
+- **1 GT : 1 SI** (cardinality 固定)。GT はもう「1 日分のタスク」粒度。ページ範囲も GT に含む
+- **計画立案時に全期間 GT 化** (例: 9 ヶ月計画なら立案時に ~180 GT 生成)
+- **月初 expansion** = 該当月の GT[] から SI[] を生成 (日付 + status: "todo" 付与)
+- `ScheduleItem.generatedTaskId?: string` で逆参照 (ad-hoc / carry-over は null)
+- Replan は GT[] 書き換え、未来 SI 再生成。履歴は `PlanRevision[]` に蓄積
+
+**理由**: 「立案時に全体カレンダー化」を選んだことで、ito19 さんの会計士試験的な
+「全体俯瞰大事」志向と「ページ単位配分」(Q4) が両立する。Plan Engine の「計画の設計」と
+ScheduleItem の「実行カレンダー」のレイヤー分離を保つ。
+
+### P5-Q2 確定: WeakNodes[] の自動抽出
+
+**半自動候補 + 本人チェック**:
+- 候補抽出: `Issue (status: "open" + 最近 7 日言及)` + `NodeComprehension.score < 0.55` をマージ
+- 確定方式: 候補から本人がチェックボックスで選ぶ (完全自動は PHILOSOPHY「知らない間に弱点ラベル貼られる」と不整合)
+- 確定 UI (3 経路):
+  - **立案時**: `weak-node-picker-card` (roadmap-preview の前に挟む) で初期セット
+  - **週次レポート**: 「弱いところ」セクションに [weakNodes に追加] ボタン
+  - **ゆい chat**: 「ここ弱い」発話で随時追加可
+- Phase 6 で AI 化、現状は閾値固定 mock
+
+**理由**: PDCA フラクタル (Phase 4 確定の週次 Check + 月次 Check) と整合。
+立案時に意識化 → 週次でメンテで、新規データを取り込みつつ過剰露出を回避。
+
+### P5-Q3 確定: Replan Engine の発火タイミング
+
+**3 トリガー (毎日判定は不採用)**:
+- **週次レポート時**: `delayThresholdDays` 超え判定 → `ActionProposal` に Replan draft を含める
+- **InterruptEvent 即時**: `replanTriggered: true` 発火、ゆいから「明日からの予定、組み直そうか?」提案
+- **明示発話**: 「再計画して」「ペース変えて」「教材変える」発話で本人主導
+- 月次 Replan は「月末週の週次レポートに月次を統合」(Phase 4 Q12 一貫) で別儀式新設なし
+
+**影響範囲は種類別**:
+| 種類 | 影響範囲 | トリガー例 |
+|---|---|---|
+| `carry-over` | 当月 GT[] 内で再配置 (来月以降に滲ませる) | 風邪で 3 日遅れ |
+| `pace-change` | `monthlyRoadmap` 再計算 → 未来 GT[] 全再生成 | 「もっとゆっくり」発話 |
+| `material-change` | 新 LearningPlan 作成 + 旧 paused | 「教材変える」発話 |
+
+**履歴**: すべての Replan は `PlanRevision` (Phase 4 既存型) に記録。本人 OK でコミット (Q15 同精神)。
+
+### P5-Q4 確定: NodeReviewSuggestion accept フロー
+
+**2 層提示 (主 = ゆい chat、副 = レポート)**:
+- **生成**: `NodeComprehension.score` 低下検出 or `TestRules.failureAction: "review-parent"` 時に `status: "pending"` で生成
+- **主提示**: 次にゆい chat 開いた時、冒頭で `NodeReviewSuggestionCard` (新規 TutorCard)
+  - 3 択: `[復習する]` `[あとで考える]` `[いらない]`
+- **副提示**: 週次レポート「弱いところ」セクションに `pending` な Suggestion[] 一覧 (見逃し救済)
+- **accept**: 復習 GT 生成 (`mode: "review"`, `nodeId: parentNodeId`) → **即時** 今週の空き日に SI 挿入。
+  押し出された plan SI は `carry-over` で翌週繰越。ゆい chat で「**明日 inf 復習 30 分入れたよ**」と即通知
+- **dismiss**: `status: "dismissed"`、しばらく再提案しない
+- **deferred**: `pending` のまま、次セッションで再提示
+
+**理由**: 「accept 後に動かない」は中学生の達成感消失の元凶。「戻る仕組み」(Phase 4 設計の核) を
+摩擦少なく動かす設計。
+
+### P5-Q5 確定: Plan Type × Mode マトリクス
+
+**定数テーブル化 + Plan Engine が参照**:
+- 実装: `web/lib/learn/plan-mode-matrix.ts` に `PLAN_MODE_DISTRIBUTION: Record<PlanType, Record<LearningMode, "primary" | "secondary" | "none">>`
+- Plan Engine: PlanType を見て GT 生成時のモード配分を決定 (`primary` = 主に使う、`secondary` = 補助で使う、`none` = 使わない)
+- **デフォルト**: `regular-study` (95% のケース、立案 UI に PlanType ピッカー常駐させない)
+- **他タイプ起動**: 明示発話 (「試験対策の計画立てて」「苦手克服したい」「復習だけする」「長期記憶化」)
+  + 「もっと ▼」サブメニュー「他の計画タイプ」で発見性担保
+
+#### 推奨配分マトリクス (後日調整可、初期値)
+
+| | input | output | review | drill | test |
+|---|---|---|---|---|---|
+| **regular-study** | ✓ | ✓ | ◯ | ◯ | ◯ |
+| **exam-prep** | ◯ | ✓ | ✓ | ✓ | ✓ |
+| **weakness-grind** | | ✓ | ✓ | ✓ | ◯ |
+| **review** | | ◯ | ✓ | ◯ | ◯ |
+| **long-term-memory** | | | ✓ | ✓ | ◯ |
+
+(`✓` = primary, `◯` = secondary, 空欄 = none)
+
+**理由**: 中学生に「あなたの PlanType は?」は認知負荷高すぎ。発話で起動 = PHILOSOPHY「AI と対話で全てが回る」整合。
+
+### P5-Q6 確定: Plan Engine ダッシュボード UI
+
+**既存 [プラン] メニュー (C13 右端強調) を Plan Engine 入口に拡張**:
+- URL: `/tutor?view=plans` (既に Phase 4 で予定、本実装で中身を詰める)
+- 構成:
+  - **左サイドリスト**: LearningPlan[] (active / paused、科目アイコン付き)
+  - **右パネル** (選択中の plan):
+    - 概要: タイトル / 期間 / 進捗バー (今月% / 全体%)
+    - 全期間ロードマップ (月単位タブ、GT カレンダー)
+    - weakNodes 一覧 (追加 / 削除可)
+    - pending Suggestion + 最近の Interrupt
+    - 修正履歴 (PlanRevision タイムライン)
+- **ヘッダ右**: `[新しい計画 (+)]` → `/tutor?view=plan-new` (既存立案 chat に遷移)
+- **「完了済を表示」トグル**で `status: "completed"` の plan 一覧切替
+
+**親可視性**: **本人専用**。親 (admin) は週次/月次レポート (本人共有チェックボックス経由) でのみ
+進捗を知れる。Q15 (本人同意制) を Plan にも一貫適用。中2 女子の親共有神経質配慮 + 完璧主義プレッシャー回避。
+
+### P5-Q7 確定: 「今日のタスク」クリック時の挙動
+
+**常に今日の SI 一覧表示**:
+- 主動線: `[今日のタスク]` クリック → `/tutor?view=today-tasks` (新ルート)
+- ルート整理:
+  - `/tutor?view=schedule` → **`/tutor?view=today-tasks` にリネーム** + 中身書き換え
+  - `/schedule` (バックアップ動線) → **`/today-tasks` にリネーム**
+  - コンポーネント `ScheduleDashboard` → **`TodayTaskDashboard`** にリネーム
+- 内容:
+  - 今日の SI[] (plan + carry-over + ad-hoc) を順番に並べた一覧
+  - 各 SI に `[開始]` → `/learn?node=xxx&startDay=1` 遷移 + `status: "todo" → "doing"` 遷移
+  - 完了時 `[完了]` で `status: "done"` + `doneAt` 記録
+- 補助 UI:
+  - 上部: 「今日の進捗 N/M done」
+  - 下部: 全 done 時に「お疲れさま、振り返ろう」CTA (軽い 1-2 ターン chat、本格振り返りは朝の儀式)
+- **帰宅儀式は別動線維持** (今日のタスクには混ぜない、自動起動 + 「もっと ▼ → 帰ってきた」明示起動の 2 経路)
+
+**理由**: 「同じボタンで違う画面」を避ける = 中学生に予測可能。「[今日のタスク] = 毎日の起点」(C13 哲学) に忠実。
+
+### Phase 5 試作 (C14、2026-05-25 — 設計叩き台、本実装で書き換え対象)
 
 > 実装: `web/lib/learn/types.ts` (試作型ブロック) + `web/lib/learn/mock-data.ts` (Phase 5 試作 mock)
 
-grill で詰めずに **手を動かしながら設計を可視化** するためのスナップショット。**後で書き換え前提**。
+grill で詰めずに **手を動かしながら設計を可視化** するためのスナップショット。
+上記 P5-Q1〜P5-Q7 確定設計に基づき、C16 以降の本実装で書き換える。
 
-**新型 (試作)**:
+**新型 (試作 → 本実装で確定)**:
 
-| 型 | 役割 |
-|---|---|
-| `PlanType` | 計画の目的: `exam-prep` / `weakness-grind` / `regular-study` / `review` / `long-term-memory` (ito19 さん指示で `homework-response` は除外、宿題は ad-hoc) |
-| `LearningMode` | 学習モード: `input` / `output` / `review` / `drill` / `test` |
-| `ResourceType` | 教材種別: `textbook` / `workbook` / `note` / `school-material` / `ai-generated` |
-| `ReviewRules` | 復習間隔 + 復習モード |
-| `TestRules` | テスト間隔 + 合格スコア + 失敗時アクション (`retry` / `review-parent` / `manual`)。**`review-parent` が ito19 さん「上ノード復習」の核** |
-| `ReplanRules` | 遅延閾値 + 再計画モード (`extend` / `drop` / `ai-suggest`) |
-| `GeneratedTask` | Plan Engine が自動生成する実行単位 (planId + nodeId + mode + resource + 優先度 + 期限) |
-| `InterruptEvent` | 割込みイベント: `homework` / `sick` / `school-event` / `unexpected-review` / `other` + `replanTriggered` フラグ |
-| `NodeReviewSuggestion` | 上ノード復習提案 (子ノード失敗 → 親ノード復習を提案、本人 accept 待ち) |
+| 型 | 試作 | grill 確定での扱い |
+|---|---|---|
+| `PlanType` | 5 種 | そのまま (homework-response 除外、5 種維持) |
+| `LearningMode` | 5 種 | そのまま (input/output/review/drill/test) |
+| `ResourceType` | 5 種 | そのまま |
+| `ReviewRules` | 復習間隔 + モード | そのまま |
+| `TestRules` | 間隔 + 閾値 + failureAction (`retry`/`review-parent`/`manual`) | そのまま (P5-Q4 で `review-parent` フローを実装) |
+| `ReplanRules` | 遅延閾値 + replanMode | P5-Q3 で 3 トリガー + 種類別影響範囲を実装ロジックに反映 |
+| `GeneratedTask` | planId + nodeId + mode + resource + 優先度 + 期限 | **pageStart/pageEnd 追加** (P5-Q1 で「1 GT = 1 日分、ページ範囲含む」確定) + `generatedTaskId` 紐付け |
+| `InterruptEvent` | type + 影響日 + replanTriggered フラグ | そのまま (P5-Q3 即時トリガー連動) |
+| `NodeReviewSuggestion` | 子→親ノード提案 + status | そのまま (P5-Q4 で `NodeReviewSuggestionCard` 連動) |
+| **新規** `PLAN_MODE_DISTRIBUTION` | — | C16 で `web/lib/learn/plan-mode-matrix.ts` に定数テーブル新設 |
 
-**`LearningPlan` 拡張** (optional 追加で後方互換):
-- `planType` / `weakNodeIds` / `reviewRules` / `testRules` / `replanRules` / `dailyCapacityMinutes`
+**`LearningPlan` 拡張** (P5-Q1〜Q5 で確定、本実装で required 昇格対象):
+- `planType` (デフォルト `regular-study`)
+- `weakNodeIds` (P5-Q2 半自動候補 + 本人確定)
+- `reviewRules` / `testRules` / `replanRules`
+- `dailyCapacityMinutes` (Plan Engine の負荷分散用)
 
-**mock データ** (現在の英語計画を Phase 5 拡張):
-- `plan-english-2026-05` に `planType: "regular-study"` + 弱いノード 2 件 (`inf-adv` / `passive-basic`) + 週末テストルール (合格 70%、失敗時 `review-parent`) + 再計画 3 日遅れで AI 提案
-- `MOCK_GENERATED_TASKS`: 4 件 (英語 副詞的用法 input + output + test + 過去分詞 drill)
-- `MOCK_INTERRUPT_EVENTS`: 2 件 (5/22 副詞的用法 小テスト発表 / 5/19 急な提出物)
-- `MOCK_NODE_REVIEW_SUGGESTIONS`: 1 件 (`inf-adv` 浅さ → `inf` 親ノード復習提案、pending)
+**ScheduleItem 拡張** (P5-Q1 で確定):
+- `generatedTaskId?: string` (plan 由来 SI で必須、ad-hoc/carry-over は null)
 
-**次セッションで議論する論点** (grill):
-- `GeneratedTask` と既存 `ScheduleItem` の統合 or 並走
-- `WeakNodes[]` の生成ロジック (Issue / NodeComprehension からの自動抽出)
-- Replan Engine の発火タイミング (週次 / 月次 / 即時)
-- `NodeReviewSuggestion` の accept フロー (ゆい chat で議論 → 受け入れで GeneratedTask 自動追加)
-- Plan Type と Learning Mode の組み合わせマトリクス (Plan Type × Mode で出力タスクの型が変わる)
-- UI: `/tutor?view=plan-engine` のような Plan Engine ダッシュボードを作るか
+**mock データの本実装書き換え**:
+- `plan-english-2026-05` を全期間 GT 化 (~180 GT を立案時に生成済みとして mock)
+- `MOCK_GENERATED_TASKS` を 4 件 (試作) → 当月分 ~20 件 + 来月以降の薄い mock に拡張
+- `MOCK_NODE_REVIEW_SUGGESTIONS` の `pending` 1 件を維持、accept フロー mock 追加
+
+---
 
 ### 設計の核 (Q1-Q17 の上流)
 
@@ -889,20 +1014,20 @@ TutorHandoff ドキュメント作成 (mock では chat 内のカード)
 | `/tutor` | **司令室。左ゆい chat + 右動的ペイン**（Phase 3 で 2 ペイン化） | Phase 2 単独 chat 完了 / Phase 3 で 2 ペイン化 |
 | `/tutor?view=issues` | 右ペインに課題一覧（同コンポーネントを `/issues` と共用） | Phase 3 |
 | `/tutor?view=issue&id=xxx` | 右ペインに課題 chat（科目の先生との対話） | Phase 3 |
-| `/tutor?view=schedule` | 右ペインに今日のタスクダッシュボード | Phase 3 |
+| `/tutor?view=today-tasks` | **右ペインに今日のタスクダッシュボード** (Phase 5 P5-Q7 で `view=schedule` からリネーム)。SI[] 一覧 + [開始] /learn 遷移 + 進捗 N/M + 全 done CTA | Phase 5 |
 | `/tutor?view=history` | 右ペインに学習履歴 | Phase 3 |
 | `/tutor?view=material-new` | 右ペインに新規教材登録ウィザード（`MaterialEditWizard` を embed） | Phase 3 |
 | `/tutor?view=subject-history&subjectId=xxx` | 右ペインに科目の先生との対話履歴ビュー（ノード対話 + 課題 chat の時系列集約）| Phase 3 |
 | `/tutor?view=tutor-archive` | **右ペインにゆい先生対話アーカイブ**（日付セレクター + 話題フィルター、readonly） | ✓ Phase 3 中盤 |
 | `/tutor?view=tutor-archive&date=YYYY-MM-DD` | 上記で特定日を即表示（検索結果カードからのジャンプ） | ✓ Phase 3 中盤 |
 | `/tutor?view=reflections` | **右ペインに振り返りログ一覧**（cadence フィルタ、派生リンク表示、readonly） | ✓ Phase 3 レビュー追従 C4 |
-| `/tutor?view=plan-new` | **右ペインに計画立案 (chat + カードハイブリッド)**: subject-picker → material-picker → duration-picker → roadmap-preview | Phase 4 |
-| `/tutor?view=plans` | **右ペインに LearningPlan 一覧** (active / completed / paused) | Phase 4 |
+| `/tutor?view=plan-new` | **右ペインに計画立案 (chat + カードハイブリッド)**: subject-picker → material-picker → duration-picker → **weak-node-picker (P5-Q2)** → roadmap-preview | Phase 4 + 5 |
+| `/tutor?view=plans` | **Plan Engine ダッシュボード** (P5-Q6): 左サイドに LearningPlan[] 一覧 + 右パネルに詳細 (概要/全期間ロードマップ/weakNodes/pending Suggestion + Interrupt/PlanRevision 履歴) | Phase 5 |
 | `/tutor?view=weekly-report` | **右ペインに週次レポート** (4 セクション、月末週は + 月次 + 来月計画) | Phase 4 |
 | `/tutor?view=monthly-report` | **右ペインに月次レポート単独ビュー** (週次から抽出して見るバックアップ動線) | Phase 4 |
 | `/tutor` 帰宅モード | **平日 16:00 以降の初回アクセスで自動起動**、第 1 部 学校レポート → 第 2 部 スケジュール確定 | Phase 4 |
 | `/tutor?ending=1` | **学習終了振り返り (ending) モードでゆい起動**（`/learn` の「学習を終了」ボタンから） | ✓ Phase 3 中盤 |
-| `/schedule` | 学習スケジュール ダッシュボード（バックアップ動線、`/tutor?view=schedule` と同コンポーネント） | ✓ Phase 1 骨格 |
+| `/today-tasks` | 今日のタスク ダッシュボード（バックアップ動線、`/tutor?view=today-tasks` と同 `TodayTaskDashboard` コンポーネント）。P5-Q7 で `/schedule` からリネーム | Phase 5 (旧 Phase 1 `/schedule`) |
 | `/learn` | 学習画面（4 ペイン: サイドバー / 体系図 / 対話 / ノート + 課題）。`/tutor` 右ペインには収まらないため別ルート | ✓ |
 | `/learn?node=xxx&startDay=1` | 担任からのハンドオフで体系図 復元テスト → 学習 | ✓ |
 | `/issues` | 課題一覧（バックアップ動線、`/tutor?view=issues` と同コンポーネント） | ✓ |
@@ -1135,9 +1260,10 @@ TutorHandoff {
 | **Phase 3 拡張: コーチング設計** | ゆいを純粋コーチング エージェントに進化（下記 Phase 3 拡張スコープ 3a〜3g 参照） | 3a-3b + 拡張機能 多数 ✓、3c-3g 残 |
 | **Phase 3 中盤の追加機能** | 1 日 1 chat 永続化 + 話題セクション + アーカイブ + 検索 + セッション pause/resume + 3 状態タイマー + ending dialogue（上記「Phase 3 中盤の実装スナップショット」参照） | ✓ 完了 |
 | **Phase 3.5** | 学習開始の儀式 + 経過時間計測 + 離席検知 + 終了儀式（下記 Phase 3.5 スコープ参照） | 中盤の追加機能で部分実装済 (auto-pause / ending dialogue / 3 状態タイマー)、残りは next |
-| **Phase 4** | **中学生向け設計軌道修正 (2026-05-25 grill)**: LearningPlan + 帰宅儀式 (2 部構成) + SchoolDailyReport + 週次/月次レポート (4 セクション) + 達成バッジ + 親共有 (本人同意制)。**既存 Phase 4 (宿題タスク) と Phase 5 (授業の新しい学び) は本 Phase に統合** | grill 確定、実装は次セッション |
-| **Phase 6** | Claude API 接続、scripted mock を本物の対話に置換、コンテキスト圧縮（rolling summary / prompt cache）、ゆいによるサマリー読み込み、教材 PDF → roadmap 自動生成 | 未着手 |
-| **Phase 7** | Supabase スキーマ + mock → 永続化 (LearningPlan / SchoolDailyReport / ScheduleItem 拡張 / バッジ等含む) | 未着手 |
+| **Phase 4** | **中学生向け設計軌道修正 (2026-05-25 grill)**: LearningPlan + 帰宅儀式 (2 部構成) + SchoolDailyReport + 週次/月次レポート (4 セクション) + 達成バッジ + 親共有 (本人同意制)。**既存 Phase 4 (宿題タスク) と旧 Phase 5 (授業の新しい学び) は本 Phase に統合** | ✓ 完了 (C7-C13、2026-05-25) |
+| **Phase 5** | **学習戦略エンジン (2026-05-25 grill)**: 4 軸分離 (Plan Type / Mode / Resource / Node) + GeneratedTask × ScheduleItem 並走 + WeakNodes 半自動 + Replan Engine (3 トリガー) + NodeReviewSuggestion 即時 accept + Plan Engine ダッシュボード + 今日のタスクルート整理 | grill 確定 (P5-Q1〜Q7)、実装中 (C14 試作 + C15-C24) |
+| **Phase 6** | Claude API 接続、scripted mock を本物の対話に置換、コンテキスト圧縮（rolling summary / prompt cache）、ゆいによるサマリー読み込み、教材 PDF → roadmap 自動生成、WeakNodes 自動判定の AI 化 | 未着手 |
+| **Phase 7** | Supabase スキーマ + mock → 永続化 (LearningPlan / SchoolDailyReport / ScheduleItem 拡張 / GeneratedTask / バッジ等含む) | 未着手 |
 | **Phase 8** | Web Speech API（STT）+ OpenAI TTS で音声対話 | 未着手 |
 
 ### Phase 3 スコープ
