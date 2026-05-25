@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-25 (Phase 4 完了 + Phase 5 試作)
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-25 (Phase 4 完了 + Phase 5 grill 確定 + 実装 C15-C19 完了)
 
 ---
 
@@ -29,7 +29,7 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 
 ## §3. 今日のセッション (2026-05-25) 全成果
 
-**14 commit、約 +5400 行**。`7aaf7df`..`6b3e84a` の範囲。
+**19 commit、約 +6800 行**。`7aaf7df`..`21a2238` の範囲。
 
 ### Phase 3 レビュー追従 (REVIEW-2026-05-24.md 対応)
 | # | SHA | 内容 |
@@ -58,6 +58,15 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 |---|---|---|
 | C14 | `6b3e84a` | Phase 5 試作型 9 個 + 静的 mock (議論用) |
 
+### Phase 5 grill 確定 (P5-Q1〜Q7 + サブ問い計 11 問) + 実装 C15-C19
+| # | SHA | 内容 |
+|---|---|---|
+| C15 | `ee51d81` | docs: ARCHITECTURE.md Phase 5 grill 確定設計 (P5-Q1〜Q7) を反映 |
+| C16 | `e23d63c` | Phase 5 型確定 + PLAN_MODE_DISTRIBUTION 新規 + GT mock 全期間化 |
+| C17 | `2ea8d50` | 立案フロー拡張 (weak-node-picker + PlanType 明示発話分岐) |
+| C18 | `71f94d9` | NodeReviewSuggestion フロー (ゆい chat 主提示 + 即時 SI 挿入) |
+| C19 | `21a2238` | Replan Engine (3 トリガー + 種類別影響範囲 + PlanRevision 履歴) |
+
 ---
 
 ## §4. 現状確認方法 (dev server で動かす)
@@ -75,12 +84,27 @@ npm run dev
 | **C1 markdown** | 全 chat バブルで `**強調**` が太字レンダリングされていることを確認 |
 | **C6 ハードガード** | ゆいに「不定詞ってなに?」と話す → 3 肢選択 (今すぐ葵 / メモ / 自分で考える) |
 | | 「数学って何のためにやるの?」→ メタ救済でゆいが受ける |
-| **C8 計画立案** | メニュー [プラン] クリック or「計画立てよう」発話 → subject → material → duration → roadmap-preview → 「これで OK」で LearningPlan + ScheduleItem 自動生成 |
+| **C8 計画立案** | メニュー [プラン] クリック or「計画立てよう」発話 → subject → material → duration → **C17 weak-node-picker (新規)** → roadmap-preview → 「これで OK」で LearningPlan + ScheduleItem 自動生成 |
 | **C9-C10 帰宅儀式** | 平日 16:00 以降に初回アクセスで自動起動 (or 「ただいま」発話 / 「もっと ▼」→「帰ってきた」) → 時限数 → 各時限ヒアリング → extraEvents → 第 2 部 today-schedule → 課題ヒアリング → 開始 |
 | **C11 週次レポート** | 「もっと ▼」→「今週のレポート」 or 発話 → 右ペインに 4 セクション (達成度 75% / 学校 5 日分 / 弱いところ 5 件 / 来週計画 + Action) |
 | **C11 月次レポート** | 同様、月末週は + 来月 nextMonthPlan |
 | **C12 親共有** | レポート画面のヘッダ右 [親と共有] → クリックで「✓ 親と共有済」に切替 (MOCK_SHARED_TO_PARENT に push) |
 | **C13 新メニュー** | `/tutor` でメニュー = `[今日のタスク (青)] [課題] [先生 ▼] [もっと ▼]` ... `[プラン (青、右端)]` |
+| **C17 weak-node-picker** | 計画立案フロー中、duration-picker 直後に「重点練習したいところある?」+ 候補リスト (デフォルト preChecked 数件) + 「これでいい」ボタン |
+| **C17 PlanType 明示発話** | 「**試験対策の計画立てて**」「**苦手克服したい**」「**復習だけする**」「**長期記憶化したい**」発話で対応する PlanType セットで立案開始 |
+| **C18 NodeReviewSuggestion** | ゆい chat 朝開く (リロード) → 挨拶の後に「inf-adv 浅め → inf に戻ろう」提案カード + 3 択 (復習する / あとで / いらない)。「復習する」で復習 GT/SI 即時生成 |
+| **C19 Replan: Interrupt** | ゆい chat 朝開く → Interrupt (5/19 数学プリント) 由来の carry-over Replan draft 提示 → 「OK 反映して」で PlanRevision push |
+| **C19 Replan: 明示発話** | 「**ペース変えて**」 → pace-change draft、「**教材変える**」 → material-change draft、「**再計画して**」 → carry-over draft (quickReplies で他種類も選択可) |
+
+### Phase 5 動作シナリオ (mock データ前提)
+
+1. `/tutor` を開く → 朝 morning モード起動
+2. 挨拶の後に 2 件の AI 介入が連続提示される:
+   - **(優先 1)** Interrupt 由来の Replan draft (5/19 数学プリント、carry-over)
+   - **(優先 2)** NodeReviewSuggestion (inf-adv 浅 → inf 復習)
+3. 各カードに 3 択 quickReplies、本人選択で副作用 (mock データ mutation)
+4. メニュー [プラン] クリック → `/tutor?view=plans` (C21 で本実装予定)、現状は LearningPlan 一覧 + 詳細パネルの skelton
+5. 「計画立てる」発話 → 立案フロー (subject → material → duration → **weak-node-picker** → roadmap)
 
 ### 現状のメニュー配置
 ```
@@ -90,33 +114,35 @@ npm run dev
 
 ---
 
-## §5. 次セッションで詰める論点 (Phase 5 grill)
+## §5. 次セッションで実装する Phase 5 残 commits (C20-C23)
 
-C14 で型 + mock の試作はあるが、設計が確定していない。次セッションは **grill-me モードで以下を 1 問ずつ詰める**:
+Phase 5 grill (P5-Q1〜Q7 + サブ計 11 問) は本セッションで完全確定済み、
+ARCHITECTURE.md に SSoT 反映済み (C15)。実装も C16-C19 で約 1/2 完了。
+**次セッションで残り C20-C23 を実装する**。
 
-### Phase 5「学習戦略エンジン」の議論論点
+### 次セッションで実装する commits
 
-| # | 論点 | 私の暫定推奨 |
+| # | 内容 | 規模 |
 |---|---|---|
-| **P5-Q1** | `GeneratedTask` × `ScheduleItem` の関係 | ScheduleItem に `generatedTaskId?` フィールドを足して紐付け、Plan Engine が GeneratedTask → ScheduleItem 化する pipeline (両方残す) |
-| **P5-Q2** | `WeakNodes[]` の自動抽出 | (a) NodeComprehension.score < 0.55 (b) Issue 未クリア かつ 最近言及 (c) テスト失敗履歴。Phase 6 で AI が判定、現状は手動 |
-| **P5-Q3** | Replan Engine の発火タイミング | 週次レポート時に「遅延 > delayThresholdDays」判定 + Interrupt 発生時に即時。明示的「再計画して」発話も可 |
-| **P5-Q4** | NodeReviewSuggestion accept フロー | ゆい chat で「inf-adv 浅いから inf に戻ろう?」と提案カード → 本人 accept で復習 GeneratedTask 自動追加 |
-| **P5-Q5** | Plan Type × Mode マトリクス | 「試験対策 × test」「苦手克服 × drill」のような典型パターンを定義 (5×5 マトリクスから現実的な組合せを抽出) |
-| **P5-Q6** | Plan Engine ダッシュボード UI | `/tutor?view=plan-engine` 専用画面 or 「今日のタスク」内に統合。ito19 さんの「タスクは結果」哲学だと統合が綺麗 |
-| **P5-Q7** | 「今日のタスク」クリック時の挙動 (C13 で未実装) | 平日 16:00 以降 = 帰宅儀式起動、それ以外 = 今日の GeneratedTask 一覧 + クリックで /learn 遷移 |
+| **C20** | **週次レポート拡張**: WeeklyMonthlyReportView の「弱いところ」セクションに pending な NodeReviewSuggestion 一覧追加、Action Proposal セクションに detectPlanDelay → Replan draft 提示、weakNodes [追加] ボタン (P5-Q2 副提示 + P5-Q3 weekly-review トリガー) | 中 |
+| **C21** | **Plan Engine ダッシュボード**: `/tutor?view=plans` を本実装 (Phase 4 で URL のみ確保済み)。左サイドに LearningPlan[] 一覧 + 右パネルに詳細 (概要/全期間ロードマップ/weakNodes/pending Suggestion + Interrupt/PlanRevision 履歴)。新規 PlanEngineDashboard コンポーネント (P5-Q6) | 大 |
+| **C22** | **today-tasks リネーム**: `/tutor?view=schedule` → `/tutor?view=today-tasks`、`/schedule` → `/today-tasks`、`ScheduleDashboard` → `TodayTaskDashboard`、中身を SI 一覧 + GT 紐付け対応に書き換え (P5-Q7) | 中 |
+| **C23** | **今日のタスククリック動線**: `[今日のタスク]` メニュークリック → `/tutor?view=today-tasks` 遷移、各 SI に [開始] ボタン → /learn 遷移 + status: todo → doing、進捗 N/M、全 done で「振り返ろう」CTA (P5-Q7) | 小 |
 
 ### Phase 5 を超える長期論点
-- **Phase 6**: Claude API 接続 + 教材 PDF 自動読み込み (Plan Engine の AI 化)
+- **Phase 6**: Claude API 接続 + 教材 PDF 自動読み込み (Plan Engine / WeakNode 判定の AI 化、pace-change の monthlyRoadmap 再計算 + 未来 GT[] 書き換えの実装本体もここで)
 - **Phase 7**: Supabase 永続化 (現在の MOCK_* 全部を migrate)
 - **Phase 8**: 音声対話 (Web Speech + OpenAI TTS)
 
-### 残未決事項 (Phase 4 完了後の細部)
+### 残未決事項 (Phase 5 実装中に出た細部、Phase 6 待ち含む)
+- pace-change Replan の monthlyRoadmap 再計算ロジック (現状は PlanRevision 履歴のみ)
+- carry-over Replan の SI 日付付け替えロジック (現状は履歴のみ)
+- material-change Replan の新 LearningPlan 自動生成 (現状は旧 plan paused のみ)
+- weekly-review Replan の自動発火 (週次レポート画面側に判定組み込み、C20 で扱う予定)
 - バッジビジュアル強化 (SVG / ステッカー風)
 - 親側 admin 通知 UI (admin ルート未着手)
 - AchievementBadgeChip の独立コンポーネント化
 - 月末週判定の正確なロジック (最終週の自動判定)
-- 計画変更時の roadmap 再計算ロジック
 
 ---
 
@@ -128,21 +154,29 @@ C14 で型 + mock の試作はあるが、設計が確定していない。次�
 AI-Education プロジェクトの作業を継続します。
 
 1. C:\dev\projects\home\Ai-Education\SESSION_HANDOFF.md を読んで状況把握
-2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 4」「## Phase 5 設計の予告」セクションを確認
+2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 5: 学習戦略エンジン」セクションを確認 (grill 確定済み、SSoT)
 3. memory MEMORY.md の project_ai_education.md を確認
 
 【今日の状態】
 - Phase 3 レビュー追従 完了 (C1-C6)
 - Phase 4 中学生向け設計軌道修正 完了 (C7-C13)
-- Phase 5 学習戦略エンジン 試作型 + mock のみ (C14)
-- 14 commit / main に push 済み / tsc + lint クリア / dev server で動作確認可
+- Phase 5 学習戦略エンジン 試作型 + mock (C14)
+- Phase 5 grill 確定 (P5-Q1〜Q7 + サブ問い計 11 問、ARCHITECTURE.md SSoT 反映済み)
+- Phase 5 実装 約 1/2 (C15 docs + C16 型 + C17 立案 + C18 Suggestion + C19 Replan)
+- 19 commit / main に push 済み / tsc + lint クリア / dev server で動作確認可
+- 残: C20-C23 実装 (週次レポート拡張 / Plan Engine ダッシュボード / today-tasks リネーム / 動線)
 
 【次の作業】
-SESSION_HANDOFF.md §5「Phase 5 grill 論点 P5-Q1〜P5-Q7」を grill-me モード (1 問ずつ詰める、推奨案添えて聞く) で順次詰める。最初は P5-Q1 (GeneratedTask × ScheduleItem の関係) から。
+SESSION_HANDOFF.md §5「Phase 5 残 commits C20-C23」を順番に実装する。
+最初は C20 (週次レポート拡張: pending Suggestion 一覧 + Replan draft + weakNodes 追加ボタン) から。
 
-grill 完了したら commit 計画 (C15〜) を立てて実装フェーズへ。
+各 commit ごとに tsc --noEmit + eslint クリアを確認、conventional commit
+(feat: / docs: / refactor:) + 「なぜ / 何を / どう動くか」を本文に書く。
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> を末尾に。
 
-ito19 さんは grill-me モード前提 (memory feedback_grill_me.md 参照)、SSoT 規律重視、AI 駆動開発の非エンジニア。フランクな砕けた文体で。
+ito19 さんは grill-me モード前提 (memory feedback_grill_me.md 参照)、
+SSoT 規律重視、AI 駆動開発の非エンジニア。フランクな砕けた文体で。
+実装中に設計の曖昧さに気付いたら勝手に決めず grill-me で確認。
 ```
 
 ---
@@ -231,10 +265,15 @@ C:\dev\projects\home\Ai-Education\
 - `project_ai_education.md`
 - `feedback_grill_me.md`
 
-**memory 更新候補 (次セッション or 今セッション末尾で)**:
-- `project_ai_education.md` を「Phase 4 完了 + Phase 5 試作」状態に更新
-- C1-C14 の commit SHA リスト
-- 次セッションは Phase 5 grill 開始
+**memory 更新候補 (本セッション末尾で Claude が draft を出して ito19 さん確認)**:
+- `project_ai_education.md` を「Phase 4 完了 + Phase 5 grill 確定 + 実装 C15-C19 完了 (C20-C23 残)」状態に更新
+- C1-C19 の commit SHA リスト
+- Phase 5 grill (P5-Q1〜Q7 + サブ問い) の確定内容
+- 次セッションは C20 から実装継続
+
+**memory 更新ルール (ito19 さん主導、本人指示あり)**:
+- memory はユーザー主導なので、Claude が draft を出して ito19 さんが確認・保存する
+- 自動で Edit せず、必ず draft 提示 → 確認の 2 ステップで進める
 
 ---
 
