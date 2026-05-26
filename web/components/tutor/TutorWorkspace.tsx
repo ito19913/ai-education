@@ -553,7 +553,6 @@ export function TutorWorkspace({
             AI-Education
           </span>
         </Link>
-        <span className="text-xs text-muted-foreground">/ ゆい先生</span>
         <Link href="/learn" title="学習画面へ">
           <Button
             size="sm"
