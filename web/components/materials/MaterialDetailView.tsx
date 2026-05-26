@@ -322,17 +322,27 @@ export function MaterialDetailView({
                   </ul>
                 </div>
               )}
-              <div className="flex justify-end">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => router.push("/tutor?view=today-tasks")}
-                  className="gap-1.5"
-                >
-                  <span>今月の予定を見る</span>
-                  <ArrowRight className="size-3.5" />
-                </Button>
-              </div>
+              {/* C51 ito19 さん意見: 「学習スケジュールに組み込まれていない場合は
+                  予定の画面に遷移できなくていい」 → 今月の SI が 0 件 (= 計画には
+                  紐付くが今月分は未展開 or 未生成) の時はボタン非表示、代わりに
+                  「今月の予定はまだありません」テキストを出す */}
+              {scheduleInfo.totalCount > 0 ? (
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => router.push("/tutor?view=today-tasks")}
+                    className="gap-1.5"
+                  >
+                    <span>今月の予定を見る</span>
+                    <ArrowRight className="size-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs italic text-muted-foreground">
+                  今月の予定はまだありません。
+                </p>
+              )}
             </>
           ) : (
             <>
