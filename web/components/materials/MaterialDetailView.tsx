@@ -17,6 +17,7 @@
  */
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -61,6 +62,9 @@ export function MaterialDetailView({
   const router = useRouter();
   // C46 F: 教材編集・削除 dialog の open state
   const [editOpen, setEditOpen] = useState(false);
+  // C48 2026-05-26 (ito19 さん意見): 体系図 リスト ⇄ マップ 切替モード
+  // default = "list" (テキスト忠実、grill 1 確定 10 整合)、マップは MindMapPane 表示
+  const [systemMapMode, setSystemMapMode] = useState<"list" | "map">("list");
 
   const coveredNodes = material.coveredNodeIds
     .map((nodeId) => nodes.find((n) => n.id === nodeId))
@@ -274,35 +278,60 @@ export function MaterialDetailView({
       </Card>
 
       {/*
-        体系図フローチャート (ito19 さん 2026-05-26 意見「学習画面のフローチャートと
-        同じものを教材詳細にも」= G 案実装、C43)。
-        MindMapPane は React Flow + dagre LR レイアウトで階層図を描画。
-        内部に独自ヘッダ「体系の地図 - 教材名 (N ノード)」を持つので Card Header は省く。
-        currentNodeId は教材詳細では「今ここ」概念が無いため coveredNodes[0]?.id を仮指定
-        (ハイライト用、ノードクリックは no-op、将来「ノードごと chat」入口にできる)。
+        体系図 (リスト ⇄ マップ 切替、C48 ito19 さん意見):
+        旧 (C43): 体系図フローチャート Card (MindMapPane) と 体系図ノードリスト Card の
+        2 枚を縦に並べて両方表示していた → 縦に冗長 + マップ常時表示で重い
+        新 (C48): 1 Card に統合、ヘッダー右側のトグル (リスト / マップ) で切替
+        デフォルト = リスト (確定 10 テキスト忠実、軽量、最初のスキャン用途)
+        マップ = MindMapPane (React Flow 階層図、グラフ的理解用途)
       */}
       <Card className="overflow-hidden">
-        <CardContent className="h-[420px] p-0">
-          <MindMapPane
-            nodes={coveredNodes}
-            currentNodeId={coveredNodes[0]?.id ?? ""}
-            onSelectNode={() => {}}
-            viewTitle={material.name}
-            visibleNodeCount={coveredNodes.length}
-          />
-        </CardContent>
-      </Card>
-
-      {/* 体系図プレビュー (確定 11: テキスト忠実なノード一覧) */}
-      <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <BookText className="size-4 text-primary" />
-            <span>体系図 ({coveredNodes.length} ノード)</span>
+          <CardTitle className="flex items-center justify-between gap-2 text-sm">
+            <div className="flex items-center gap-2">
+              <BookText className="size-4 text-primary" />
+              <span>体系図 ({coveredNodes.length} ノード)</span>
+            </div>
+            <div className="flex items-center gap-0 rounded-md border border-border bg-muted/40 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setSystemMapMode("list")}
+                className={cn(
+                  "rounded px-2 py-0.5 transition-colors",
+                  systemMapMode === "list"
+                    ? "bg-card font-medium text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                リスト
+              </button>
+              <button
+                type="button"
+                onClick={() => setSystemMapMode("map")}
+                className={cn(
+                  "rounded px-2 py-0.5 transition-colors",
+                  systemMapMode === "map"
+                    ? "bg-card font-medium text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                マップ
+              </button>
+            </div>
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {coveredNodes.length === 0 ? (
+        <CardContent className={systemMapMode === "map" ? "h-[420px] p-0" : ""}>
+          {systemMapMode === "map" ? (
+            // currentNodeId は教材詳細で「今ここ」概念が無いため coveredNodes[0]?.id を仮指定
+            // (ハイライト用、ノードクリックは no-op、将来「ノードごと chat」入口にできる)
+            <MindMapPane
+              nodes={coveredNodes}
+              currentNodeId={coveredNodes[0]?.id ?? ""}
+              onSelectNode={() => {}}
+              viewTitle={material.name}
+              visibleNodeCount={coveredNodes.length}
+            />
+          ) : coveredNodes.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               この教材にはまだノードが紐付いていません。
             </p>
