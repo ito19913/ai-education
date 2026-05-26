@@ -96,7 +96,7 @@ export function Step2Extraction({ draft, onComplete, onBack }: Props) {
           <span>戻る</span>
         </Button>
         <Button size="lg" onClick={onComplete} disabled={!isDone}>
-          {isDone ? "監修に進む" : "解析中…"}
+          {isDone ? "保存に進む" : "解析中…"}
         </Button>
       </div>
     </div>

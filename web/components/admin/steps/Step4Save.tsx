@@ -21,15 +21,14 @@ type Props = {
 
 export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
   const [saved, setSaved] = useState(false);
-  const approved = extracted.filter(
-    (n) => n.reviewStatus === "approved" || n.reviewStatus === "edited",
-  );
 
+  // 2026-05-25 grill 1 確定 9 (監修撤去) + 確定 10 (テキスト忠実、AI 解釈・取捨選択禁止):
+  // 葵が抽出したノードはそのまま全保存する (人間が承認/編集して取捨選択しない)。
   const handleSave = () => {
     // MVP モック: state だけ。後で Supabase Insert に置き換え。
-    console.log("[save material]", draft, approved);
+    console.log("[save material]", draft, extracted);
     setSaved(true);
-    onComplete?.(draft.name, approved.length);
+    onComplete?.(draft.name, extracted.length);
   };
 
   if (saved) {
@@ -43,7 +42,7 @@ export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
               <CheckCircle2 className="mx-auto size-12 text-primary" />
               <h2 className="mt-4 text-lg font-semibold">登録しました</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                「{draft.name}」を {approved.length} ノードと紐付けて保存しました。
+                「{draft.name}」を {extracted.length} ノードと紐付けて保存しました。
                 <br />
                 ゆい先生に伝えました。
               </p>
@@ -59,7 +58,7 @@ export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
             <CheckCircle2 className="mx-auto size-12 text-primary" />
             <h2 className="mt-4 text-lg font-semibold">登録しました</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              「{draft.name}」を {approved.length} ノードと紐付けて保存しました。
+              「{draft.name}」を {extracted.length} ノードと紐付けて保存しました。
               <br />
               （現状は mock のため、ページをリロードすると消えます。後で Supabase 連携で永続化します）
             </p>
@@ -95,24 +94,24 @@ export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
           <ConfirmRow label="学年" value={draft.gradeLevel} />
           <ConfirmRow label="PDF" value={draft.fileName ?? "（未選択）"} />
           <ConfirmRow
-            label="承認したノード数"
-            value={`${approved.length} 件`}
+            label="抽出ノード数"
+            value={`${extracted.length} 件`}
           />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">承認したノード一覧</CardTitle>
+          <CardTitle className="text-base">抽出されたノード一覧</CardTitle>
         </CardHeader>
         <CardContent>
-          {approved.length === 0 ? (
+          {extracted.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              まだ承認したノードがありません。戻って監修してください。
+              ノードが抽出されませんでした。戻って AI 抽出をやり直してください。
             </p>
           ) : (
             <ul className="flex flex-col gap-1 text-sm">
-              {approved.map((n) => (
+              {extracted.map((n) => (
                 <li key={n.tempId} className="text-card-foreground">
                   • {n.name}{" "}
                   <span className="text-xs text-muted-foreground">
@@ -133,7 +132,7 @@ export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
         <Button
           size="lg"
           onClick={handleSave}
-          disabled={approved.length === 0}
+          disabled={extracted.length === 0}
           className="gap-2"
         >
           <Save className="size-4" />

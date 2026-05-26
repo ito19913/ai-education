@@ -1495,7 +1495,7 @@ function buildNextTutorReplyInner(args: {
       reply: {
         id: makeId(),
         role: "tutor",
-        text: "OK、新規教材登録するね。右でやろう。\nPDF を選んだら AI が体系図ノードを抽出してくれるから、それを一緒に監修していこう。",
+        text: "OK、新規教材登録するね。右でやろう。\nPDF を選んだら、その教科の先生が読んで、体系図と評価コメントを出してくれるよ。",
         rightPaneAction: { kind: "open-material-new" },
         createdAt: now,
       },

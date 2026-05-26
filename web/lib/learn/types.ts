@@ -1318,7 +1318,11 @@ export type NodeReviewSuggestion = {
 // 教材登録（admin）の型
 // ============================================================================
 
-/** AI が PDF から抽出したノード候補（監修前） */
+/**
+ * AI が PDF から抽出したノード候補。
+ * 2026-05-25 grill 1 確定 9 (監修撤去) + 確定 10 (テキスト忠実) により、
+ * 葵が抽出したノードはそのまま全保存される (旧 reviewStatus フィールドは C38 で削除)。
+ */
 export type AiExtractedNode = {
   tempId: string;
   /** AI が提案する名前 */
@@ -1333,8 +1337,6 @@ export type AiExtractedNode = {
   matchedNodeId: string | null;
   /** 信頼度（0-1、mock では固定） */
   confidence: number;
-  /** 監修ステータス */
-  reviewStatus: "pending" | "approved" | "rejected" | "edited";
 };
 
 /** 教材登録ウィザードの入力データ */

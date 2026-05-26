@@ -9,10 +9,7 @@
 import type { AiExtractedNode, KnowledgeNode } from "@/lib/learn/types";
 
 /** 中2 英語 教科書を mock 抽出した想定の結果（既存ノードに合致） */
-const MOCK_EXTRACTION_TEMPLATE: Omit<
-  AiExtractedNode,
-  "reviewStatus" | "matchedNodeId"
->[] = [
+const MOCK_EXTRACTION_TEMPLATE: Omit<AiExtractedNode, "matchedNodeId">[] = [
   {
     tempId: "ai-1",
     name: "中2 英語文法",
@@ -129,7 +126,6 @@ export function mockExtractNodes(
     return {
       ...tmpl,
       matchedNodeId: matched?.id ?? null,
-      reviewStatus: "pending" as const,
     };
   });
 }
