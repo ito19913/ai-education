@@ -1483,9 +1483,36 @@ function buildNextTutorReplyInner(args: {
     };
   }
 
-  // 「教材を追加」「教材追加」「教材登録」「PDF」「テキスト追加」
+  // C44 2026-05-26 (ito19 さん意見、残課題⑤ 解消):
+  // 「教材一覧」「教材を見る」「教材」 → 教材一覧ペイン (一覧 → 詳細 → 葵 chat 動線)
+  // 注意: この分岐は下の「教材追加」分岐より前に置く (先勝ち、「教材」単独 word は一覧扱い)
   if (
-    lower.includes("教材") ||
+    lower.includes("教材一覧") ||
+    lower === "教材を見る" ||
+    lower === "教材" ||
+    lower === "教材見せて" ||
+    lower === "教材どこ"
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、登録済の教材を右で見せるね。\nクリックで体系図・評価コメント・先生 chat に飛べるよ。下から新規追加もできるよ。",
+        rightPaneAction: { kind: "open-materials" },
+        createdAt: now,
+      },
+    };
+  }
+
+  // 「教材を追加」「教材追加」「教材登録」「教材アップロード」「PDF」「テキスト追加」
+  // C44 で条件を厳密化 (旧: lower.includes("教材") 全 catch → 上の一覧分岐と衝突)
+  if (
+    lower.includes("教材追加") ||
+    lower.includes("教材を追加") ||
+    lower.includes("教材登録") ||
+    lower.includes("教材を登録") ||
+    lower.includes("教材アップ") ||
     lower.includes("pdf") ||
     lower.includes("テキスト追加") ||
     lower.includes("テキスト登録")

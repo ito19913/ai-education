@@ -83,6 +83,7 @@ function viewFromParam(raw: string | null): RightPaneView {
     raw === "plans" ||
     raw === "material-new" ||
     raw === "material-detail" || // C32 2026-05-25 grill 1 確定 5/11/12 (C40 で許可リスト追加忘れ fix)
+    raw === "materials" || // C44 2026-05-26: 教材一覧 (ito19 さん意見、残課題⑤ 解消)
     raw === "subjects" || // C30 2026-05-25 grill 2 S6
     raw === "subject-history" ||
     raw === "tutor-archive"
@@ -280,6 +281,9 @@ export function TutorWorkspace({
           break;
         case "open-material-detail":
           navigate("material-detail", { materialId: action.materialId });
+          break;
+        case "open-materials":
+          navigate("materials");
           break;
         case "open-subjects":
           navigate("subjects");

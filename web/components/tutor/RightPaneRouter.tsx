@@ -31,6 +31,7 @@ import { TodayTaskDashboard } from "@/components/today-tasks/TodayTaskDashboard"
 import { HistoryView } from "@/components/history/HistoryView";
 import { MaterialEditWizard } from "@/components/admin/MaterialEditWizard";
 import { MaterialDetailView } from "@/components/materials/MaterialDetailView";
+import { MaterialsListPane } from "@/components/materials/MaterialsListPane";
 import { SubjectHistoryView } from "@/components/subjects/SubjectHistoryView";
 import {
   SubjectSettingsPanel,
@@ -201,6 +202,12 @@ export function RightPaneRouter({
         onComplete={onMaterialAdded}
       />
     );
+  }
+
+  if (view === "materials") {
+    // C44 2026-05-26 (ito19 さん意見、残課題⑤ 解消): 教材一覧ペイン
+    // ゆいメニュー「教材」ボタン → 「教材一覧」発話 → tutor-mock 分岐 → 本ペイン
+    return <MaterialsListPane materials={MOCK_MATERIALS} subjects={subjects} />;
   }
 
   if (view === "subjects") {

@@ -485,6 +485,7 @@ export type TutorRightPaneAction =
   | { kind: "open-plans" } // C21 Phase 5 P5-Q6: Plan Engine ダッシュボード
   | { kind: "open-material-new" }
   | { kind: "open-material-detail"; materialId: string } // C32 2026-05-25 grill 1 確定 5/11/12
+  | { kind: "open-materials" } // C44 2026-05-26: 教材一覧 (ito19 さん意見 = 再アクセス動線 残課題⑤ 解消)
   | { kind: "open-subjects" } // C30 2026-05-25 grill 2 S6: 科目設定パネル
   | { kind: "open-subject-history"; subjectId: string }
   | { kind: "open-tutor-archive" }
@@ -534,6 +535,7 @@ export type RightPaneView =
   | "plans" // C21 Phase 5 P5-Q6: Plan Engine ダッシュボード
   | "material-new"
   | "material-detail" // C32 2026-05-25 grill 1 確定 5/11/12: 教材詳細ページ
+  | "materials" // C44 2026-05-26: 教材一覧 (ito19 さん意見、再アクセス動線 残課題⑤ 解消)
   | "subjects" // C30 2026-05-25 grill 2 S6: 科目設定パネル
   | "subject-history"
   | "tutor-archive";

@@ -467,8 +467,20 @@ function TutorHubMenu({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* スペーサー: 「プラン」を右端に押し出す */}
+      {/* スペーサー: 右側ボタン群 (教材 / プラン) を右端に押し出す */}
       <div className="flex-1" />
+
+      {/* 「教材」ボタン (右側、プランの左): C44 2026-05-26 ito19 さん意見 = 教材詳細の再アクセス動線
+          強調なし (通常スタイル) で日常拠点として配置。プラン (節目の儀式) と差別化 */}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onSend("教材一覧")}
+        className="rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+        title="登録済の教材一覧。クリックで体系図・評価・葵 chat。新規追加もここから。"
+      >
+        教材
+      </button>
 
       {/* 「プラン」ボタン (右端): C21 Phase 5 P5-Q6 で Plan Engine ダッシュボード入口に変更 */}
       <button
