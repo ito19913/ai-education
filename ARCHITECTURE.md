@@ -1651,7 +1651,8 @@ type MaterialReview = {
 | C45 | `5b0623d` | feat: 教材詳細にスケジュール組み込み状況表示 + 遷移リンク (D+E α 案、SI → GT → resource.materialId 経路で当月 SI 集計、計画名 + 進捗 + 未着手 SI 上位 3 件 + [今月の予定を見る] / [計画を立てる] ボタン) |
 | C46 | `63a4f6b` | feat: 教材編集・削除 (F α 案、MaterialEditDialog 再利用、TutorWorkspace materials state 管理、handleMaterialUpdated/Deleted callback、誤操作防止のため削除はダイアログ内ゴミ箱、関連データ整合は Phase 7) |
 | C48 | `bea7c2e` | refactor: MaterialDetailView 体系図セクションを「リスト ⇄ マップ 切替」UI に統合 (ito19 さん意見、旧 C43 で 2 Card 縦並びだったフローチャート + ノードリストを 1 Card に統合、ヘッダー右側トグルボタン、デフォルト = リスト) |
-| C49 | (今 push) | feat: 学習スケジュール進捗を信号機色 (🟢順調 / 🟡ペース注意 / 🔴遅れ気味) で表示 (ito19 さん意見、暫定閾値 80%/50%、プログレスバー色も連動、本物の閾値ロジック = 日付経過率比較等は Phase 6/7 で要件 grill 後確定) |
+| C49 | `47ca5a3` | feat: 学習スケジュール進捗を信号機色 (🟢順調 / 🟡ペース注意 / 🔴遅れ気味) で表示 (ito19 さん意見、暫定閾値 80%/50%、プログレスバー色も連動、本物の閾値ロジック = 日付経過率比較等は Phase 6/7 で要件 grill 後確定) |
+| C50 | (今 push) | style: 体系図マップモードの高さを 420px → 700px に拡大 (ito19 さん「マップは縦に大きくしないと見づらい」、33 ノード階層図の視認性向上) |
 
 ガワ実装範囲: 確定 9/11/13 のうち UI + フロー部分のみ。Phase 6 (本物の葵 Claude Opus 接続 + 評価コメント生成 + 教材ごと独立 chat 本実装) + Phase 7 (Material/MaterialReview/chat の Supabase 永続化) は未着手。
 

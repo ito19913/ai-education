@@ -398,7 +398,7 @@ export function MaterialDetailView({
             </div>
           </CardTitle>
         </CardHeader>
-        <CardContent className={systemMapMode === "map" ? "h-[420px] p-0" : ""}>
+        <CardContent className={systemMapMode === "map" ? "h-[700px] p-0" : ""}>
           {systemMapMode === "map" ? (
             // currentNodeId は教材詳細で「今ここ」概念が無いため coveredNodes[0]?.id を仮指定
             // (ハイライト用、ノードクリックは no-op、将来「ノードごと chat」入口にできる)
