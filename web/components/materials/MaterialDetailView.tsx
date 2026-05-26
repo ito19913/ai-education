@@ -15,7 +15,7 @@
  * - 評価コメントは葵生成 mock テキスト (Phase 6 で Claude Opus 出力に置換)
  * - 葵 chat 入力欄は placeholder 表示のみ (Phase 6 で本物の chat スレッド実装)
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,11 +23,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { SubjectTeacherAvatar } from "@/components/ui/subject-teacher-avatar";
 import { MindMapPane } from "@/components/learn/MindMapPane";
+import { MaterialEditDialog } from "@/components/learn/MaterialEditDialog";
 import {
   ArrowRight,
   BookText,
   CalendarClock,
   MessageCircle,
+  Pencil,
   Send,
   Sparkles,
 } from "lucide-react";
@@ -43,10 +45,22 @@ type Props = {
   material: Material;
   subject: Subject | null;
   nodes: KnowledgeNode[];
+  /** C46 F (ito19 さん意見): MaterialEditDialog の onSave 経由で呼ばれる */
+  onMaterialUpdated: (id: string, patch: Partial<Material>) => void;
+  /** C46 F (ito19 さん意見): MaterialEditDialog の onDelete 経由で呼ばれる */
+  onMaterialDeleted: (id: string) => void;
 };
 
-export function MaterialDetailView({ material, subject, nodes }: Props) {
+export function MaterialDetailView({
+  material,
+  subject,
+  nodes,
+  onMaterialUpdated,
+  onMaterialDeleted,
+}: Props) {
   const router = useRouter();
+  // C46 F: 教材編集・削除 dialog の open state
+  const [editOpen, setEditOpen] = useState(false);
 
   const coveredNodes = material.coveredNodeIds
     .map((nodeId) => nodes.find((n) => n.id === nodeId))
@@ -341,6 +355,40 @@ export function MaterialDetailView({ material, subject, nodes }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      {/* 教材の管理 (C46 F、ito19 さん意見): 編集 + 削除 dialog の起点
+          誤操作防止のため削除は dialog 内に置く (MaterialEditDialog の設計を踏襲) */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Pencil className="size-4 text-muted-foreground" />
+            <span>教材の管理</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditOpen(true)}
+            className="gap-1.5"
+          >
+            <Pencil className="size-3.5" />
+            <span>メタ情報を編集 / 削除</span>
+          </Button>
+          <p className="mt-2 text-[11px] italic text-muted-foreground">
+            ※ 編集できるのは名前・種別・学年。PDF 差し替えは新規登録扱い (体系図が変わるため)。
+            削除は編集ダイアログ内の「ゴミ箱」から (誤操作防止)。
+          </p>
+        </CardContent>
+      </Card>
+
+      <MaterialEditDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        material={material}
+        onSave={onMaterialUpdated}
+        onDelete={onMaterialDeleted}
+      />
         </div>
       </div>
     </div>

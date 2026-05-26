@@ -46,6 +46,7 @@ import type {
   KnowledgeNode,
   LearningSession,
   LessonReview,
+  Material,
   RightPaneView,
   ScheduleItem,
   Subject,
@@ -108,6 +109,11 @@ export function TutorWorkspace({
   // C30 2026-05-25 grill 2 S7: 科目追加対応で subjects を useState 化
   // SubjectSettingsPanel から動的 push される
   const [subjects, setSubjects] = useState<Subject[]>(initialSubjects);
+  // C46 2026-05-26 F (ito19 さん意見): 教材編集・削除のため materials を state 管理
+  // 現状は in-memory mutation (Phase 7 で Supabase 化、関連 LearningPlan / SI / GT
+  // との整合も Phase 7 grill)。RightPaneRouter 経由で MaterialsListPane / MaterialDetailView に
+  // 最新 state を流す
+  const [materials, setMaterials] = useState<Material[]>(MOCK_MATERIALS);
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = viewFromParam(searchParams.get("view"));
@@ -300,6 +306,33 @@ export function TutorWorkspace({
       }
     },
     [navigate],
+  );
+
+  // ----- 教材編集 (C46 F、ito19 さん意見): メタ情報 patch を materials state に反映 -----
+  const handleMaterialUpdated = useCallback(
+    (id: string, patch: Partial<Material>) => {
+      setMaterials((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+      );
+    },
+    [],
+  );
+
+  // ----- 教材削除 (C46 F、ito19 さん意見): in-memory 削除 + ゆい発話 + 一覧に戻す -----
+  const handleMaterialDeleted = useCallback(
+    (id: string) => {
+      const deleted = materials.find((m) => m.id === id);
+      setMaterials((prev) => prev.filter((m) => m.id !== id));
+      const reply: TutorMessage = {
+        id: `t-mat-del-${Date.now()}`,
+        role: "tutor",
+        text: `「${deleted?.name ?? id}」を削除したよ。\n（現状は mock のため関連する学習計画やスケジュールには影響しません。Phase 7 永続化で整合化予定。）`,
+        createdAt: new Date().toISOString(),
+      };
+      setTutorMessages((prev) => [...prev, reply]);
+      navigate("materials");
+    },
+    [materials, navigate],
   );
 
   // ----- 教材追加完了時のゆい発話追加 + 右ペイン遷移 -----
@@ -593,7 +626,10 @@ export function TutorWorkspace({
             onSelectIssueItem={(id) => navigate("issue", { issueId: id })}
             onBack={() => navigate("default")}
             onMaterialAdded={handleMaterialAdded}
+            onMaterialUpdated={handleMaterialUpdated}
+            onMaterialDeleted={handleMaterialDeleted}
             onSubjectAdded={handleSubjectAdded}
+            materials={materials}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

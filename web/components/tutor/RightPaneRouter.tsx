@@ -41,7 +41,8 @@ import { TutorArchiveView } from "@/components/tutor/TutorArchiveView";
 import { ReflectionListView } from "@/components/reflections/ReflectionListView";
 import { WeeklyMonthlyReportView } from "@/components/reports/WeeklyMonthlyReportView";
 import { PlanEngineDashboard } from "@/components/plans/PlanEngineDashboard";
-import { MOCK_MATERIALS } from "@/lib/learn/mock-data";
+// MOCK_MATERIALS は TutorWorkspace 経由で props として渡される (C46: 編集・削除のため state 管理)
+import type { Material } from "@/lib/learn/types";
 
 type Props = {
   view: RightPaneView;
@@ -72,10 +73,24 @@ type Props = {
    */
   onMaterialAdded: (materialName: string, approvedNodeCount: number) => void;
   /**
+   * 教材編集 (C46 F、ito19 さん意見): メタ情報 patch を materials state に反映
+   * (MaterialEditDialog の onSave)
+   */
+  onMaterialUpdated: (id: string, patch: Partial<Material>) => void;
+  /**
+   * 教材削除 (C46 F、ito19 さん意見): in-memory 削除 + ゆい発話 + 一覧に戻す
+   * (MaterialEditDialog の onDelete)
+   */
+  onMaterialDeleted: (id: string) => void;
+  /**
    * 科目追加完了時のコールバック（subjects view 用、C30 2026-05-25 grill 2 S6）。
    * TutorWorkspace 側で MOCK_SUBJECTS / subjects state に push + ゆいの完了発話 + 右ペイン閉じる。
    */
   onSubjectAdded: (input: NewSubjectInput) => void;
+  /**
+   * 全教材リスト (state ベース、C46 F)。MaterialsListPane / MaterialDetailView で参照
+   */
+  materials: Material[];
 };
 
 export function RightPaneRouter({
@@ -100,7 +115,10 @@ export function RightPaneRouter({
   onSelectIssueItem,
   onBack,
   onMaterialAdded,
+  onMaterialUpdated,
+  onMaterialDeleted,
   onSubjectAdded,
+  materials,
 }: Props) {
   if (view === "default") {
     return <DefaultPane />;
@@ -207,7 +225,8 @@ export function RightPaneRouter({
   if (view === "materials") {
     // C44 2026-05-26 (ito19 さん意見、残課題⑤ 解消): 教材一覧ペイン
     // ゆいメニュー「教材」ボタン → 「教材一覧」発話 → tutor-mock 分岐 → 本ペイン
-    return <MaterialsListPane materials={MOCK_MATERIALS} subjects={subjects} />;
+    // C46: materials を props 経由 (state 管理) に変更、編集・削除が即座に反映される
+    return <MaterialsListPane materials={materials} subjects={subjects} />;
   }
 
   if (view === "subjects") {
@@ -217,8 +236,9 @@ export function RightPaneRouter({
 
   if (view === "material-detail") {
     // C32 2026-05-25 grill 1 確定 5/11/12: 教材詳細ページ
+    // C46 F: materials を props 経由 (state) で受ける + 編集・削除 callback 渡し
     const material = selectedMaterialId
-      ? MOCK_MATERIALS.find((m) => m.id === selectedMaterialId)
+      ? materials.find((m) => m.id === selectedMaterialId)
       : undefined;
     if (!material) {
       return (
@@ -229,7 +249,15 @@ export function RightPaneRouter({
       );
     }
     const subject = subjects.find((s) => s.id === material.subjectId) ?? null;
-    return <MaterialDetailView material={material} subject={subject} nodes={nodes} />;
+    return (
+      <MaterialDetailView
+        material={material}
+        subject={subject}
+        nodes={nodes}
+        onMaterialUpdated={onMaterialUpdated}
+        onMaterialDeleted={onMaterialDeleted}
+      />
+    );
   }
 
   if (view === "tutor-archive") {
