@@ -15,13 +15,28 @@
  * - 評価コメントは葵生成 mock テキスト (Phase 6 で Claude Opus 出力に置換)
  * - 葵 chat 入力欄は placeholder 表示のみ (Phase 6 で本物の chat スレッド実装)
  */
+import { useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { SubjectTeacherAvatar } from "@/components/ui/subject-teacher-avatar";
 import { MindMapPane } from "@/components/learn/MindMapPane";
-import { BookText, MessageCircle, Send, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  BookText,
+  CalendarClock,
+  MessageCircle,
+  Send,
+  Sparkles,
+} from "lucide-react";
+import {
+  MOCK_GENERATED_TASKS,
+  MOCK_LEARNING_PLANS,
+  MOCK_SCHEDULE_TODAY,
+  MOCK_SCHEDULE_UPCOMING,
+} from "@/lib/learn/mock-data";
 import type { KnowledgeNode, Material, Subject } from "@/lib/learn/types";
 
 type Props = {
@@ -31,9 +46,45 @@ type Props = {
 };
 
 export function MaterialDetailView({ material, subject, nodes }: Props) {
+  const router = useRouter();
+
   const coveredNodes = material.coveredNodeIds
     .map((nodeId) => nodes.find((n) => n.id === nodeId))
     .filter((n): n is KnowledgeNode => n !== undefined);
+
+  // D + E 2026-05-26 (ito19 さん意見 α 案): スケジュール組み込み状況
+  // - active LearningPlan を materialIds で逆引き
+  // - SI → GT → resource.materialId の経路で「教材紐付き SI」を集計 (P5-Q1 構造)
+  // - 当月の SI (SI.date が YYYY-MM- prefix 一致) + 進捗 % + 未着手 SI 上位 3 件
+  //   + [今月の予定を見る] ボタン (today-tasks 遷移)
+  const scheduleInfo = useMemo(() => {
+    const activePlan = MOCK_LEARNING_PLANS.find(
+      (p) =>
+        p.materialIds.includes(material.id) && p.status === "active",
+    );
+    const now = new Date();
+    const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const gtIdsForMaterial = new Set(
+      MOCK_GENERATED_TASKS.filter(
+        (gt) => gt.resource.materialId === material.id,
+      ).map((gt) => gt.id),
+    );
+    const allSIs = [...MOCK_SCHEDULE_TODAY, ...MOCK_SCHEDULE_UPCOMING];
+    const thisMonthSIs = allSIs.filter(
+      (si) =>
+        si.date.startsWith(thisMonth) &&
+        si.generatedTaskId !== undefined &&
+        gtIdsForMaterial.has(si.generatedTaskId),
+    );
+    const doneCount = thisMonthSIs.filter((si) => si.status === "done").length;
+    const totalCount = thisMonthSIs.length;
+    const progressPct =
+      totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+    const unfinished = thisMonthSIs
+      .filter((si) => si.status !== "done" && si.status !== "skipped")
+      .slice(0, 3);
+    return { activePlan, thisMonthSIs, doneCount, totalCount, progressPct, unfinished };
+  }, [material.id]);
 
   // 評価コメント mock (Phase 6 で葵先生 Claude Opus の本物出力に置換)
   const aoiReview = {
@@ -115,6 +166,96 @@ export function MaterialDetailView({ material, subject, nodes }: Props) {
             ※ 現状は mock 表示。Phase 6 で本物の {subject?.teacher?.displayName ?? "葵先生"}{" "}
             (Claude Opus) が教材を読んで体系図 + 評価コメントを生成します。
           </p>
+        </CardContent>
+      </Card>
+
+      {/* D + E 2026-05-26 (ito19 さん意見 α 案、C45): 学習スケジュール組み込み状況 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <CalendarClock className="size-4 text-primary" />
+            <span>学習スケジュール組み込み状況</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 text-sm">
+          {scheduleInfo.activePlan ? (
+            <>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-xs text-muted-foreground">計画</span>
+                <span className="truncate font-medium text-foreground">
+                  {scheduleInfo.activePlan.title}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-xs text-muted-foreground">今月の予定</span>
+                <span className="text-foreground">
+                  {scheduleInfo.doneCount} / {scheduleInfo.totalCount} 件 完了 (
+                  <span className="font-medium text-primary">
+                    {scheduleInfo.progressPct}%
+                  </span>
+                  )
+                </span>
+              </div>
+              {scheduleInfo.totalCount > 0 && (
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-primary transition-all"
+                    style={{ width: `${scheduleInfo.progressPct}%` }}
+                  />
+                </div>
+              )}
+              {scheduleInfo.unfinished.length > 0 && (
+                <div className="flex flex-col gap-1 rounded-md border border-border bg-muted/30 p-2">
+                  <div className="text-[11px] font-medium text-muted-foreground">
+                    未着手 (上位 {scheduleInfo.unfinished.length} 件)
+                  </div>
+                  <ul className="flex flex-col gap-0.5">
+                    {scheduleInfo.unfinished.map((si) => (
+                      <li
+                        key={si.id}
+                        className="flex items-baseline justify-between gap-2 text-xs"
+                      >
+                        <span className="truncate text-foreground">
+                          • {si.title}
+                        </span>
+                        <span className="shrink-0 text-muted-foreground">
+                          {si.date} 予定
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => router.push("/tutor?view=today-tasks")}
+                  className="gap-1.5"
+                >
+                  <span>今月の予定を見る</span>
+                  <ArrowRight className="size-3.5" />
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-muted-foreground">
+                この教材はまだ学習計画に組み込まれていません。
+              </p>
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => router.push("/tutor?view=plans")}
+                  className="gap-1.5"
+                >
+                  <span>計画を立てる</span>
+                  <ArrowRight className="size-3.5" />
+                </Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
