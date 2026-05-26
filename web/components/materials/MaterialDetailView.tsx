@@ -75,6 +75,12 @@ export function MaterialDetailView({
   // - SI → GT → resource.materialId の経路で「教材紐付き SI」を集計 (P5-Q1 構造)
   // - 当月の SI (SI.date が YYYY-MM- prefix 一致) + 進捗 % + 未着手 SI 上位 3 件
   //   + [今月の予定を見る] ボタン (today-tasks 遷移)
+  // C49 2026-05-26 (ito19 さん意見): 信号機色 (赤/黄/青) で進捗状況を表示、
+  //   パッと見で順調かどうかが分かるように。
+  //   ⚠️ TODO: 暫定閾値 (80% 順調 / 50-80% 注意 / 50%未満 遅れ)。
+  //   本物の閾値ロジック (日付経過率との比較: 月の半分過ぎてるのに 30%
+  //   なら赤、等) は ito19 さん「要件は後で詰める」明示なので Phase 6/7
+  //   の要件 grill で確定する。
   const scheduleInfo = useMemo(() => {
     const activePlan = MOCK_LEARNING_PLANS.find(
       (p) =>
@@ -101,8 +107,52 @@ export function MaterialDetailView({
     const unfinished = thisMonthSIs
       .filter((si) => si.status !== "done" && si.status !== "skipped")
       .slice(0, 3);
-    return { activePlan, thisMonthSIs, doneCount, totalCount, progressPct, unfinished };
+    // C49 暫定信号: Phase 6/7 で要件 grill 確定後に置換予定
+    const signal: "green" | "yellow" | "red" | null =
+      totalCount === 0
+        ? null
+        : progressPct >= 80
+          ? "green"
+          : progressPct >= 50
+            ? "yellow"
+            : "red";
+    return {
+      activePlan,
+      thisMonthSIs,
+      doneCount,
+      totalCount,
+      progressPct,
+      unfinished,
+      signal,
+    };
   }, [material.id]);
+
+  // C49 信号機色 → スタイル設定 (Phase 6/7 要件 grill 後に閾値/色を再確定)
+  const signalConfig = scheduleInfo.signal
+    ? {
+        green: {
+          label: "順調",
+          dot: "bg-emerald-500",
+          text: "text-emerald-700",
+          bar: "bg-emerald-500",
+          ring: "ring-emerald-200",
+        },
+        yellow: {
+          label: "ペース注意",
+          dot: "bg-amber-500",
+          text: "text-amber-700",
+          bar: "bg-amber-500",
+          ring: "ring-amber-200",
+        },
+        red: {
+          label: "遅れ気味",
+          dot: "bg-red-500",
+          text: "text-red-700",
+          bar: "bg-red-500",
+          ring: "ring-red-200",
+        },
+      }[scheduleInfo.signal]
+    : null;
 
   // 評価コメント mock (Phase 6 で葵先生 Claude Opus の本物出力に置換)
   const aoiReview = {
@@ -214,10 +264,38 @@ export function MaterialDetailView({
                   )
                 </span>
               </div>
+              {/* C49 進捗 信号機表示 (ito19 さん意見、暫定閾値、Phase 6/7 で要件 grill) */}
+              {signalConfig && (
+                <div
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 ring-1 ring-inset",
+                    signalConfig.ring,
+                  )}
+                >
+                  <span className="text-xs text-muted-foreground">進捗状況</span>
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1.5 text-sm font-medium",
+                      signalConfig.text,
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "size-2.5 rounded-full",
+                        signalConfig.dot,
+                      )}
+                    />
+                    {signalConfig.label}
+                  </span>
+                </div>
+              )}
               {scheduleInfo.totalCount > 0 && (
                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full bg-primary transition-all"
+                    className={cn(
+                      "h-full transition-all",
+                      signalConfig?.bar ?? "bg-primary",
+                    )}
                     style={{ width: `${scheduleInfo.progressPct}%` }}
                   />
                 </div>
