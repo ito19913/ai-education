@@ -82,6 +82,7 @@ function viewFromParam(raw: string | null): RightPaneView {
     raw === "monthly-report" ||
     raw === "plans" ||
     raw === "material-new" ||
+    raw === "material-detail" || // C32 2026-05-25 grill 1 確定 5/11/12 (C40 で許可リスト追加忘れ fix)
     raw === "subjects" || // C30 2026-05-25 grill 2 S6
     raw === "subject-history" ||
     raw === "tutor-archive"
