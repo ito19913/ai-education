@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-25 (Phase 4 完了 + Phase 5 grill 確定 + C15-C24 全実装完了 + **2026-05-25 追加 grill 1: 教材アップロード設計 13 確定 (C26)** + **2026-05-25 追加 grill 2: 科目追加設計 9 確定 (C27)**)
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-25/26 (Phase 4 完了 + Phase 5 grill 確定 + C15-C24 全実装完了 + **2026-05-25 追加 grill 1 (C26) + 追加 grill 2 (C27) + 両 grill のガワ実装 C28-C34 完了**)
 
 ---
 
@@ -27,9 +27,9 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 
 ---
 
-## §3. 今日のセッション (2026-05-25) 全成果
+## §3. 今日のセッション (2026-05-25/26) 全成果
 
-**27 commit、約 +9200 行**。`7aaf7df`..(C27 SHA) の範囲。**Phase 5 grill 確定 + 全実装完了 + ARCHITECTURE 完全同期 + 2026-05-25 追加 grill 1 (教材アップロード設計 13 確定 / C26) + 2026-05-25 追加 grill 2 (科目追加設計 9 確定 / C27) を SSoT 同期**。
+**35 commit、約 +9900 行**。`7aaf7df`..(C35 SHA) の範囲。**Phase 5 grill 確定 + 全実装完了 + ARCHITECTURE 完全同期 + 2026-05-25 追加 grill 1+2 (教材アップロード 13 + 科目追加 9) SSoT 同期 + 両 grill ガワ実装 (C28-C34) で Mock 画面に全反映**。
 
 ### Phase 3 レビュー追従 (REVIEW-2026-05-24.md 対応)
 | # | SHA | 内容 |
@@ -130,12 +130,40 @@ C26 と同日。計画立案・教材ウィザードの `SubjectPickerCard` が 
 | S9 | ハードコードデフォルト = 主要 5 教科 (英・数・国・理・社) |
 
 **未決 (実装時に詰める)**:
-- 5 教科の先生キャラ命名 (英語=葵既存、残り 4 教科)
-- 科目追加 UI 入力項目細部 (科目名 / 先生名 / アバター文字 / 色 / subtitle)
-- 削除運用 (ハードコード保護 + 手動追加分削除時の関連 Material/LearningPlan 整合)
-- `SubjectSettingsPanel` の UI 細部
-- 「+ 新規科目」リンクのビジュアル
-- ゆい mock 「科目を追加」 keyword 分岐パターン
+- 5 教科の先生キャラ命名 (英語=葵既存、残り 4 教科) → **✅ C28 で確定 (数=かずや / 国=みやび / 理=さとし / 社=ゆうき)**
+- 科目追加 UI 入力項目細部 (科目名 / 先生名 / アバター文字 / 色 / subtitle) → **✅ C30 で確定 (科目名 / 先生名 / アバター 1 文字、色/subtitle は自動)**
+- 削除運用 (ハードコード保護 + 手動追加分削除時の関連 Material/LearningPlan 整合) → **Phase 7 で対応予定**
+- `SubjectSettingsPanel` の UI 細部 → **✅ C30 でガワ実装**
+- 「+ 新規科目」リンクのビジュアル → **✅ C29 でガワ実装**
+- ゆい mock 「科目を追加」 keyword 分岐パターン → **✅ C30 でガワ実装 (科目を追加 / 教科を追加 / 科目設定 / 英語以外 / 新規科目)**
+
+### 2026-05-25/26 ガワ実装 (C28-C34): 両 grill の Mock 画面反映
+
+ito19 さん「Mock 画面に反映できますか」の要望に応じて、選択肢 E (Phase 4 ウィザード簡素化 + 科目追加 UI ガワ) を全部実装。両 grill のガワが /tutor で実際に動かせる状態に。
+
+| # | SHA | 内容 | 対応する確定 |
+|---|---|---|---|
+| C28 | `d8e7153` | MOCK_SUBJECTS 5 教科展開 + SVG アバター 5 人分 + 共通 `SubjectTeacherAvatar` コンポーネント | grill 2 S2/S9 |
+| C29 | `749f8a2` | SubjectPickerCard + ウィザード Step1 に「+ 新規科目」リンク | grill 2 S8 |
+| C30 | `96075dc` | `SubjectSettingsPanel` + `/tutor?view=subjects` + ゆい mock 「科目を追加」分岐 | grill 2 S4/S5/S6 |
+| C31 | `10e933e` | MaterialEditWizard 3 step 化 (Step3Review 撤去、3 step 化) | grill 1 確定 9 |
+| C32 | `379e5e5` | 教材詳細ページ skeleton + `view=material-detail` + ゆい「葵が読んだよ」発話 | grill 1 確定 5/11/12/13 |
+| C33 | `f80d4e7` | `/admin/subjects` バックアップ動線 (SubjectSettingsPanel を再利用) | grill 2 S6 |
+| C34 | `b1b92a1` | fix: subject-picker options を MOCK_SUBJECTS から動的化 (英語のみ表示バグ修正) | grill 2 S9 |
+
+**動作確認シナリオ** (dev server 起動後):
+1. ゆいに「計画立てる」 → subject-picker に 5 教科 + SVG アバター + 「+ 新規科目」リンク
+2. ゆいに「科目を追加」「科目設定」 → 右ペインに `SubjectSettingsPanel`、追加フォームから新規科目登録 → ゆい「○○ 追加したよ」発話
+3. `/admin/subjects` 直接アクセス → 一括管理画面 (同じパネル、親想定)
+4. ゆいに「教材を追加」 → ウィザード 3 step (メタ → AI 抽出 → 保存、**監修ステップなし**)
+5. ウィザード保存完了 → ゆい「葵先生が読んだよ! 右で見せるね」 + 教材詳細ページ自動展開 (体系図 + 評価コメント + 葵 chat 入力欄 placeholder)
+
+**Phase 6/7 残作業** (この grill 由来):
+- 葵先生 (Claude Opus) による教材 PDF / 写真の本物の読み込み (現状 mockExtractNodes、評価コメントは固定 mock テキスト)
+- 教材ごと独立 chat スレッドの本実装 (現状 placeholder/disabled textarea)
+- ゆい完了発話の quickReplies「[見る][あとで]」(現状は自動 material-detail 遷移)
+- 「計画立案中に科目がない」AI 自動検出 → ゆい誘導発話 (S5、現状は UI 配置のみで自動検出なし)
+- Phase 7 Supabase: Material / Subject / MaterialReview / 教材 chat の永続化 + 削除運用 (ハードコード保護 + 関連データ整合)
 
 ---
 
@@ -214,13 +242,9 @@ Phase 5 全実装 (C15-C24) + 2026-05-25 追加 grill (C26、教材アップロ�
 
 ### 選択肢 D: Phase 8 (音声対話) 着手
 
-### 選択肢 E: Phase 4 ウィザード簡素化 + 科目追加 UI ガワ (軽量、Phase 6 前哨戦)
-- 2026-05-25 grill 1 確定 9 (監修撤去) + 11 (体系図 + 評価コメント) の **ガワを先行実装**
-- `Step3Review.tsx` 削除 + Step4Save を Step3 に詰めて **3 step 化**
-- AI 抽出は mock のまま (Phase 6 で本物の葵 API に置換、その時の基盤を整える)
-- 教材詳細ページ skeleton (体系図 + 評価 mock + 葵 chat 入力欄) も同時実装可
-- **2026-05-25 grill 2 由来の科目追加 UI も同時で軽実装**: MOCK_SUBJECTS を 5 教科に拡張 + SubjectPickerCard / Step1 に「+ 新規科目」リンク追加 + `SubjectSettingsPanel` ガワ (mock 表示)
-- A の前にやると Phase 6 が軽くなる、独立で 1 セッション収まる軽さ
+### 選択肢 E: Phase 4 ウィザード簡素化 + 科目追加 UI ガワ — **✅ 2026-05-25/26 C28-C34 で完了**
+
+両 grill のガワ実装 (Mock 画面反映) を C28-C34 で全て実施済み。詳細は §3「2026-05-25/26 ガワ実装 (C28-C34)」セクション参照。次は A (本物の葵 Opus 接続) か C (Phase 7 永続化) に進むのが自然 (それぞれが Phase 6 / Phase 7 そのもの)。
 
 ### Phase 5 を超える長期論点
 - **Phase 6**: Claude API 接続 + 葵先生による教材体系図生成 (2026-05-25 grill 由来) + WeakNode 判定 AI 化
@@ -252,23 +276,24 @@ AI-Education プロジェクトの作業を継続します。
 2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 5: 学習戦略エンジン」セクションを確認
 3. memory MEMORY.md の project_ai_education.md を確認
 
-【今日の状態 (Phase 5 完全完了 + 2026-05-25 追加 grill 1+2 確定)】
+【今日の状態 (Phase 5 完全完了 + 2026-05-25 追加 grill 1+2 確定 + C28-C34 ガワ実装完了)】
 - Phase 3 レビュー追従 完了 (C1-C6)
 - Phase 4 中学生向け設計軌道修正 完了 (C7-C13)
 - Phase 5 学習戦略エンジン 試作型 + mock (C14)
 - **Phase 5 grill 確定 (P5-Q1〜Q7 + サブ問い計 11 問、ARCHITECTURE.md SSoT 反映済み)**
 - **Phase 5 全実装完了 (C15 docs + C16 型 + C17 立案 + C18 Suggestion + C19 Replan + C20 週次 + C21 Plan Engine + C22 today-tasks + C23 動線 + C24 引継ぎ + C25 ARCHITECTURE 同期)**
-- **2026-05-25 追加 grill 1 (C26): 教材アップロード設計 13 確定 を ARCHITECTURE / SESSION_HANDOFF / memory に同期。詳細は ARCHITECTURE「## 教材アップロード設計 (2026-05-25 grill)」**
-- **2026-05-25 追加 grill 2 (C27): 科目追加設計 9 確定 を ARCHITECTURE / SESSION_HANDOFF / memory に同期。詳細は ARCHITECTURE「## 科目追加設計 (2026-05-25 grill)」**
-- 27 commit / main 直 push 済 / tsc + lint クリア / dev server で動作確認可
+- **2026-05-25 追加 grill 1 (C26): 教材アップロード設計 13 確定 SSoT 同期。詳細は ARCHITECTURE「## 教材アップロード設計 (2026-05-25 grill)」**
+- **2026-05-25 追加 grill 2 (C27): 科目追加設計 9 確定 SSoT 同期。詳細は ARCHITECTURE「## 科目追加設計 (2026-05-25 grill)」**
+- **両 grill のガワ実装完了 (C28 MOCK_SUBJECTS 5 教科 + SVG アバター / C29 「+ 新規科目」リンク / C30 SubjectSettingsPanel + ゆい mock 分岐 / C31 ウィザード 3 step 化 / C32 教材詳細ページ skeleton + ゆい完了発話 / C33 /admin/subjects バックアップ / C34 subject-picker options 動的化 fix)**。動作確認シナリオは §3「2026-05-25/26 ガワ実装」セクション参照
+- **C35 (今 push): C28-C34 を ARCHITECTURE / SESSION_HANDOFF / memory に同期 + 次セッション引継ぎ準備**
+- 35 commit / main 直 push 済 / tsc + lint クリア / dev server で全動線が動く
 
 【次の作業 (本セッション内に「進めて」で続行 or 次回新セッションで開始)】
-SESSION_HANDOFF.md §5 の選択肢 A-E から選んで進める:
-- A: Phase 6 (Claude API 接続) — scripted mock → 本物の AI、葵による教材体系図 + 評価コメント、教材詳細ページ + 教材ごと独立 chat、ウィザード 3 step 化、**科目追加 UI (5 教科ハードコード + SubjectSettingsPanel)**
-- B: Phase 5 細部改善 (Suggestion/Interrupt 自動生成、永続化対応等)
-- C: Phase 7 (Supabase 永続化) 設計 grill-me 開始 (Material/MaterialReview/教材 chat/**subjects テーブル + 削除運用** も対象)
+SESSION_HANDOFF.md §5 の選択肢 A-D から選んで進める (E は C28-C34 で完了):
+- A: Phase 6 (Claude API 接続) — 葵による本物の教材読み込み (体系図 + 評価コメント生成)、教材ごと独立 chat 本実装、ゆい発話の AI 化、quickReplies「[見る][あとで]」、WeakNodes 自動判定。**C28-C34 でガワ整備済なので本物 AI 接続が中心**
+- B: Phase 5 細部改善 (Suggestion/Interrupt 自動生成、Replan 実体変更、永続化対応等)
+- C: Phase 7 (Supabase 永続化) 設計 grill-me 開始 — Material / Subject / MaterialReview / 教材 chat / LearningPlan / GeneratedTask / NodeReviewSuggestion / InterruptEvent / PlanRevision + RLS + 削除運用 (ハードコード保護)
 - D: Phase 8 (音声対話) 着手
-- E: Phase 4 ウィザード簡素化 + **科目追加 UI ガワ** (監修撤去 + 3 step 化 + 教材詳細ページ skeleton + MOCK_SUBJECTS 5 教科展開 + 「+ 新規科目」リンク、Phase 6 前哨戦の軽量タスク)
 
 ito19 さんに「次どれ?」とアスクしてから進める。
 

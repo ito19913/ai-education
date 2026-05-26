@@ -1626,13 +1626,22 @@ type MaterialReview = {
 
 ### Phase 6 で実装する具体タスク (この grill が決めたもの)
 
-- 葵先生による教材 PDF / 写真読み込み (Claude Opus マルチモーダル、画像 OCR + 構造抽出)
-- 体系図出力: テキスト忠実の `KnowledgeNode[]` 抽出 (確定 10)
-- 評価コメント出力: `MaterialReview` 新型 (確定 11)
-- 教材詳細ページ UI (`/tutor?view=material-detail&id=xxx`)
-- 教材ごと独立 chat スレッド (型と永続化、確定 12)
-- ゆい mock の onComplete 発話 ("葵が読んだよ、見る?") 追加 (確定 13)
-- `MaterialEditWizard` 3 step 化 (Step3Review 撤去、確定 9)
+- 葵先生による教材 PDF / 写真読み込み (Claude Opus マルチモーダル、画像 OCR + 構造抽出) — **Phase 6 未着手**
+- 体系図出力: テキスト忠実の `KnowledgeNode[]` 抽出 (確定 10) — **Phase 6 未着手** (mockExtractNodes で代用中)
+- 評価コメント出力: `MaterialReview` 新型 (確定 11) — **✅ C32 ガワ実装** (現状は固定 mock テキスト coverage/difficulty/fit/notes、Phase 6 で Claude Opus 出力に置換)
+- 教材詳細ページ UI (`/tutor?view=material-detail&id=xxx`) — **✅ C32 ガワ実装** (`MaterialDetailView`、体系図プレビュー + 評価コメント + 葵 chat 入力欄)
+- 教材ごと独立 chat スレッド (型と永続化、確定 12) — **Phase 6 未着手** (現状は placeholder/disabled textarea)
+- ゆい mock の onComplete 発話 ("葵が読んだよ、見る?") 追加 (確定 13) — **✅ C32 ガワ実装** (現状は自動 material-detail 遷移、quickReplies「[見る][あとで]」は Phase 6)
+- `MaterialEditWizard` 3 step 化 (Step3Review 撤去、確定 9) — **✅ C31 ガワ実装** (`Step3Review.tsx` 削除済、STEP_LABELS を 3 個に縮退)
+
+### 実装状況 (2026-05-25/26 ガワ実装、C28-C34)
+
+| Commit | SHA | 内容 |
+|---|---|---|
+| C31 | `10e933e` | MaterialEditWizard 3 step 化 (Step3Review 撤去、確定 9) |
+| C32 | `379e5e5` | 教材詳細ページ skeleton + view=material-detail + ゆい「葵が読んだよ」発話 (確定 5/11/12/13) |
+
+ガワ実装範囲: 確定 9/11/13 のうち UI + フロー部分のみ。Phase 6 (本物の葵 Claude Opus 接続 + 評価コメント生成 + 教材ごと独立 chat 本実装) + Phase 7 (Material/MaterialReview/chat の Supabase 永続化) は未着手。
 
 ### 未決事項 (実装着手時に詰める)
 
@@ -1739,13 +1748,25 @@ S3 (手動追加分):
 
 ### Phase 6/7 で実装する具体タスク (本 grill が決めたもの)
 
-- MOCK_SUBJECTS 拡張 (5 教科ハードコード、先生キャラ命名、Phase 6 で着手可能)
-- 各教科 root KnowledgeNode 追加
-- ゆいハブメニュー「科目を追加」分岐 + `SubjectSettingsPanel` 新規実装
-- SubjectPickerCard / Step1MetaAndUpload に「+ 新規科目」リンク追加
-- `/admin/subjects` バックアップ動線実装
-- 計画立案フローでの「科目がない」検出 + ゆい誘導発話 (S5)
-- Phase 7 Supabase: `subjects` テーブル + RLS (家族のみアクセス) + 削除運用 (ハードコード保護 + 手動追加分削除時の関連データ整合)
+- MOCK_SUBJECTS 拡張 (5 教科ハードコード、先生キャラ命名) — **✅ C28 ガワ実装** (英=あおい / 数=かずや / 国=みやび / 理=さとし / 社=ゆうき + 5 人分シンプル SVG アバター)
+- 各教科 root KnowledgeNode 追加 — **✅ C28 ガワ実装** (math-root / japanese-root / science-root / social-root を MOCK_TREE に追加、内部ノードは英語以外未展開)
+- ゆいハブメニュー「科目を追加」分岐 + `SubjectSettingsPanel` 新規実装 — **✅ C30 ガワ実装** (tutor-mock に「科目を追加」keyword 分岐 + 右ペイン展開、SubjectSettingsPanel で 5 教科リスト + 追加フォーム)
+- SubjectPickerCard / Step1MetaAndUpload に「+ 新規科目」リンク追加 — **✅ C29 ガワ実装** + **✅ C34 fix** (tutor-mock の subject-picker options 4 箇所を MOCK_SUBJECTS 動的化、英語以外も表示されるよう修正)
+- `/admin/subjects` バックアップ動線実装 — **✅ C33 ガワ実装** (`web/app/admin/subjects/page.tsx` で SubjectSettingsPanel を再利用)
+- 計画立案フローでの「科目がない」検出 + ゆい誘導発話 (S5) — **部分実装**: 「+ 新規科目」リンクは配置済 (C29)、自動検出によるゆい発話誘導は Phase 6
+- Phase 7 Supabase: `subjects` テーブル + RLS (家族のみアクセス) + 削除運用 (ハードコード保護 + 手動追加分削除時の関連データ整合) — **Phase 7 未着手**
+
+### 実装状況 (2026-05-25/26 ガワ実装、C28-C34)
+
+| Commit | SHA | 内容 |
+|---|---|---|
+| C28 | `d8e7153` | MOCK_SUBJECTS 5 教科 + SVG アバター + SubjectTeacherAvatar 共通コンポーネント (S2/S9) |
+| C29 | `749f8a2` | SubjectPickerCard + Step1MetaAndUpload に「+ 新規科目」リンク (S8) |
+| C30 | `96075dc` | SubjectSettingsPanel + view=subjects + ゆい mock 「科目を追加」分岐 (S4/S5/S6) |
+| C33 | `f80d4e7` | /admin/subjects バックアップ動線 (S6) |
+| C34 | `b1b92a1` | fix: subject-picker options を MOCK_SUBJECTS から動的生成 (C28 で残った hardcode の修正) |
+
+ガワ実装範囲: S2/S3/S4/S5/S6/S7/S8/S9 のうち UI + フロー部分が完成。S7 の削除運用 + Phase 7 Supabase 永続化 + Phase 6 で実装予定の「ゆいによる『科目がない』自動検出発話」が残作業。
 
 ### 未決事項 (実装着手時に詰める)
 
