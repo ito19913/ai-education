@@ -1629,7 +1629,7 @@ type MaterialReview = {
 - 葵先生による教材 PDF / 写真読み込み (Claude Opus マルチモーダル、画像 OCR + 構造抽出) — **Phase 6 未着手**
 - 体系図出力: テキスト忠実の `KnowledgeNode[]` 抽出 (確定 10) — **Phase 6 未着手** (mockExtractNodes で代用中)
 - 評価コメント出力: `MaterialReview` 新型 (確定 11) — **✅ C32 ガワ実装** (現状は固定 mock テキスト coverage/difficulty/fit/notes、Phase 6 で Claude Opus 出力に置換)
-- 教材詳細ページ UI (`/tutor?view=material-detail&id=xxx`) — **✅ C32 ガワ実装** (`MaterialDetailView`、体系図プレビュー + 評価コメント + 葵 chat 入力欄)
+- 教材詳細ページ UI (`/tutor?view=material-detail&id=xxx`) — **✅ C32 ガワ実装 + C40 / C41 取り残し fix** (C32: `MaterialDetailView`、体系図プレビュー + 評価コメント + 葵 chat 入力欄 / C40: `viewFromParam` 許可リストに `"material-detail"` 追加忘れ fix で URL → view 同期がやっと動いた / C41: root の flex min-height: auto 問題でスクロール不能だった bug を二層パターンで fix)
 - 教材ごと独立 chat スレッド (型と永続化、確定 12) — **Phase 6 未着手** (現状は placeholder/disabled textarea)
 - ゆい mock の onComplete 発話 ("葵が読んだよ、見る?") 追加 (確定 13) — **✅ C32 ガワ実装** (現状は自動 material-detail 遷移、quickReplies「[見る][あとで]」は Phase 6)
 - `MaterialEditWizard` 3 step 化 (Step3Review 撤去、確定 9) — **✅ C31 + C38 全 fix** (C31: `Step3Review.tsx` 削除済、STEP_LABELS 3 個に縮退 / C38: Step3Review 撤去の取り残し全 fix — Step2「監修に進む」→「保存に進む」、Step4Save の approved → extracted 統一、`AiExtractedNode.reviewStatus` 型フィールド削除、ゆい発話「監修していこう」→「その教科の先生が…体系図と評価コメントを出してくれる」、致命バグ「保存ボタンが永遠に disabled」fix)
@@ -1643,6 +1643,8 @@ type MaterialReview = {
 | C36 | `fae0852` | MaterialPickerCard に「+ 新規テキスト追加」リンク追加 (SubjectPickerCard C29 と同じパターン、計画立案中の「教材がない」即追加動線) |
 | C37 | `b9b5b3e` | fix: Step1MetaAndUpload 科目セレクトの Radix Select quirk 修正 (value !== children な SelectItem で raw value 表示されていたバグ) |
 | C38 | `14f1125` | fix: C31 取り残し全 fix (Step2「監修に進む」→「保存に進む」、Step4Save approved → extracted 統一、`AiExtractedNode.reviewStatus` 型削除、ゆい発話更新、致命バグ「保存ボタン永遠 disabled」fix、確定 9/10 整合) |
+| C40 | `f93cc83` | fix: TutorWorkspace.viewFromParam に "material-detail" 追加忘れ修正 (C32 ガワ実装時に許可リスト追加漏れで、URL が material-detail に変わっても default に丸められ右ペインが切り替わらなかった致命バグ) |
+| C41 | `04074b4` | fix: MaterialDetailView スクロール不能 fix (flex 子の min-height: auto 規則で overflow が効かなかった、WeeklyMonthlyReportView の二層 min-h-0 flex-1 パターンに統一) |
 
 ガワ実装範囲: 確定 9/11/13 のうち UI + フロー部分のみ。Phase 6 (本物の葵 Claude Opus 接続 + 評価コメント生成 + 教材ごと独立 chat 本実装) + Phase 7 (Material/MaterialReview/chat の Supabase 永続化) は未着手。
 
