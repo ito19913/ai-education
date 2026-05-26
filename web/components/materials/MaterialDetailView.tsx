@@ -29,6 +29,7 @@ import {
   ArrowRight,
   BookText,
   CalendarClock,
+  ChevronLeft,
   MessageCircle,
   Pencil,
   Send,
@@ -192,6 +193,21 @@ export function MaterialDetailView({
     <div className="flex h-full w-full flex-col bg-canvas">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-4 p-5">
+          {/* C53 ito19 さん意見「教材一覧に戻るボタンが欲しい」:
+              教材詳細最上部にナビゲーション戻るリンクを配置。ゆいメニュー
+              「教材」を何度も押さなくても 1 クリックで一覧に戻れる UX */}
+          <div className="-mb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/tutor?view=materials")}
+              className="-ml-2 gap-1 text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="size-4" />
+              <span>教材一覧に戻る</span>
+            </Button>
+          </div>
+
           {/* 教材メタ */}
       <Card>
         <CardContent className="flex items-start gap-3 pt-5">
