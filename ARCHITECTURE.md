@@ -1618,7 +1618,7 @@ type MaterialReview = {
 | 既存実装 | 影響 |
 |---|---|
 | `MaterialEditWizard` (Phase 4) | **Step3Review 撤去**, Step4Save を Step3 に詰めて **3 step 化** (メタ・アップ / 葵生成 / 保存)。Step2 の AI 抽出 (現状 mock) は Phase 6 で本物の葵生成に置換 |
-| `MaterialPickerCard` (Phase 5) | **確定 1, 2, 3 と整合、既存挙動でOK**。ゆいが「どの教材で?」と聞いて娘さんが既登録教材から選ぶのは「教材選び提案」(=新規購入提案) ではなく「選択肢提示」 |
+| `MaterialPickerCard` (Phase 5) | **確定 1, 2, 3 と整合、既存挙動でOK**。ゆいが「どの教材で?」と聞いて娘さんが既登録教材から選ぶのは「教材選び提案」(=新規購入提案) ではなく「選択肢提示」。**✅ C36 で SubjectPickerCard C29 と同じパターンの「+ 新規テキスト追加」リンクをリスト末尾に追加** (`/tutor?view=material-new` 遷移 = `MaterialEditWizard` 起動、計画立案中に「教材がない」気づきから即追加可能) |
 | 教材詳細ページ (`/tutor?view=material-detail&id=xxx`) | **新規追加** (確定 5, 11, 12)。体系図表示 + 葵評価コメント + 葵 chat 入力欄を一体表示 |
 | ゆい mock (`tutor-mock.ts`) | 教材アップ完了 onComplete 後の「葵が読んだよ、見る?」発話 + 3 択 quickReplies を追加 (確定 13) |
 | 教材追加ゆいハブ化 (本書 1404-1413) | 確定 4 と既存設計が整合済、確定 13 でアップ完了動線が「ゆい hub 復帰」として明文化 |
@@ -1632,7 +1632,7 @@ type MaterialReview = {
 - 教材詳細ページ UI (`/tutor?view=material-detail&id=xxx`) — **✅ C32 ガワ実装** (`MaterialDetailView`、体系図プレビュー + 評価コメント + 葵 chat 入力欄)
 - 教材ごと独立 chat スレッド (型と永続化、確定 12) — **Phase 6 未着手** (現状は placeholder/disabled textarea)
 - ゆい mock の onComplete 発話 ("葵が読んだよ、見る?") 追加 (確定 13) — **✅ C32 ガワ実装** (現状は自動 material-detail 遷移、quickReplies「[見る][あとで]」は Phase 6)
-- `MaterialEditWizard` 3 step 化 (Step3Review 撤去、確定 9) — **✅ C31 ガワ実装** (`Step3Review.tsx` 削除済、STEP_LABELS を 3 個に縮退)
+- `MaterialEditWizard` 3 step 化 (Step3Review 撤去、確定 9) — **✅ C31 + C38 全 fix** (C31: `Step3Review.tsx` 削除済、STEP_LABELS 3 個に縮退 / C38: Step3Review 撤去の取り残し全 fix — Step2「監修に進む」→「保存に進む」、Step4Save の approved → extracted 統一、`AiExtractedNode.reviewStatus` 型フィールド削除、ゆい発話「監修していこう」→「その教科の先生が…体系図と評価コメントを出してくれる」、致命バグ「保存ボタンが永遠に disabled」fix)
 
 ### 実装状況 (2026-05-25/26 ガワ実装、C28-C34)
 
@@ -1640,6 +1640,9 @@ type MaterialReview = {
 |---|---|---|
 | C31 | `10e933e` | MaterialEditWizard 3 step 化 (Step3Review 撤去、確定 9) |
 | C32 | `379e5e5` | 教材詳細ページ skeleton + view=material-detail + ゆい「葵が読んだよ」発話 (確定 5/11/12/13) |
+| C36 | `fae0852` | MaterialPickerCard に「+ 新規テキスト追加」リンク追加 (SubjectPickerCard C29 と同じパターン、計画立案中の「教材がない」即追加動線) |
+| C37 | `b9b5b3e` | fix: Step1MetaAndUpload 科目セレクトの Radix Select quirk 修正 (value !== children な SelectItem で raw value 表示されていたバグ) |
+| C38 | `14f1125` | fix: C31 取り残し全 fix (Step2「監修に進む」→「保存に進む」、Step4Save approved → extracted 統一、`AiExtractedNode.reviewStatus` 型削除、ゆい発話更新、致命バグ「保存ボタン永遠 disabled」fix、確定 9/10 整合) |
 
 ガワ実装範囲: 確定 9/11/13 のうち UI + フロー部分のみ。Phase 6 (本物の葵 Claude Opus 接続 + 評価コメント生成 + 教材ごと独立 chat 本実装) + Phase 7 (Material/MaterialReview/chat の Supabase 永続化) は未着手。
 

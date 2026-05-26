@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-25/26 (Phase 4 完了 + Phase 5 grill 確定 + C15-C24 全実装完了 + **2026-05-25 追加 grill 1 (C26) + 追加 grill 2 (C27) + 両 grill のガワ実装 C28-C34 完了**)
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-26 (Phase 4 完了 + Phase 5 grill 確定 + C15-C24 全実装完了 + 2026-05-25 追加 grill 1 (C26) + 追加 grill 2 (C27) + 両 grill ガワ実装 C28-C34 完了 + **2026-05-26 緊急 fix C36-C38 (material-picker 「+ 新規テキスト追加」/ Step1 Radix quirk / C31 取り残し致命バグ全 fix) + C39 SSoT 同期 完了**)
 
 ---
 
@@ -29,7 +29,7 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 
 ## §3. 今日のセッション (2026-05-25/26) 全成果
 
-**35 commit、約 +9900 行**。`7aaf7df`..(C35 SHA) の範囲。**Phase 5 grill 確定 + 全実装完了 + ARCHITECTURE 完全同期 + 2026-05-25 追加 grill 1+2 (教材アップロード 13 + 科目追加 9) SSoT 同期 + 両 grill ガワ実装 (C28-C34) で Mock 画面に全反映**。
+**39 commit、約 +10000 行**。`7aaf7df`..(C39 SHA) の範囲。**Phase 5 grill 確定 + 全実装完了 + ARCHITECTURE 完全同期 + 2026-05-25 追加 grill 1+2 (教材アップロード 13 + 科目追加 9) SSoT 同期 + 両 grill ガワ実装 (C28-C34) + 2026-05-26 緊急 fix (C36 material-picker リンク / C37 Step1 Radix quirk / C38 C31 取り残し致命バグ全 fix)**。
 
 ### Phase 3 レビュー追従 (REVIEW-2026-05-24.md 対応)
 | # | SHA | 内容 |
@@ -165,6 +165,43 @@ ito19 さん「Mock 画面に反映できますか」の要望に応じて、選
 - 「計画立案中に科目がない」AI 自動検出 → ゆい誘導発話 (S5、現状は UI 配置のみで自動検出なし)
 - Phase 7 Supabase: Material / Subject / MaterialReview / 教材 chat の永続化 + 削除運用 (ハードコード保護 + 関連データ整合)
 
+### 2026-05-26 緊急 fix (C36-C38): ito19 さん画面動作確認中に発見
+
+C28-C34 ガワ実装完了状態の dev server 画面確認で見つかった 3 つの問題を、grill-me ではなく直接 fix。grill 1 / grill 2 の確定内容との整合性も同時に高めた。
+
+| # | SHA | 内容 | 関連 |
+|---|---|---|---|
+| C36 | `fae0852` | `MaterialPickerCard` に「+ 新規テキスト追加」リンク追加 | grill 1 確定 5 / grill 2 S8 と同じパターン (SubjectPickerCard C29) |
+| C37 | `b9b5b3e` | fix: `Step1MetaAndUpload` 科目セレクト Radix Select quirk 修正 | バグ (value !== children な SelectItem の raw value 表示) |
+| C38 | `14f1125` | fix: C31 取り残し全 fix (監修関連文言 + Step4Save 致命バグ) | C31 当時の Step3Review 撤去で取り残された 5 ファイル変更、grill 1 確定 9/10 整合 |
+
+**C38 が fix した致命バグの詳細**:
+- 教材登録ウィザード Step3 (保存) の「保存する」ボタンが `disabled={approved.length === 0}` で永遠 disabled、動線が完全に詰まっていた
+- C31 で Step3Review (監修) を撤去したため approve するチャンス自体が消えており、approved は永遠に 0 件
+- grill 1 確定 9 (監修ステップ全廃) + 確定 10 (テキスト忠実) に従い、葵が抽出したノードはそのまま全保存する設計に統一 → `disabled={extracted.length === 0}` で動線が初めて通った
+
+**C38 で変更した 5 ファイル**:
+- `Step2Extraction.tsx`: ボタン「監修に進む」→「保存に進む」
+- `Step4Save.tsx`: approved フィルタ全廃、表示文言「承認した〜」→「抽出された〜」、致命バグ disabled 条件修正
+- `tutor-mock.ts`: ゆい発話「監修していこう」→「その教科の先生が…体系図と評価コメントを出してくれる」(将来の他教科対応も視野に一般化)
+- `types.ts`: `AiExtractedNode.reviewStatus` 型フィールド削除 (dead field)
+- `mock-extraction.ts`: reviewStatus セット削除 + Omit から除外
+
+**動作確認シナリオ** (C36-C38 後の dev server):
+1. ゆいに「計画立てよう」→ 英語選択 → material-picker 末尾に「+ 新規テキスト追加」リンク (C36) ✅
+2. リンククリック → 右ペイン MaterialEditWizard 展開
+3. Step1: 科目欄が「**英語**」表示 (C37) ✅
+4. Step1 → Step2: ダミー教材名 + 何かの PDF で「AI 抽出に進む」
+5. Step2 → Step3: ボタン「**保存に進む**」(C38) で進める
+6. Step3: 「**抽出ノード数**」「**抽出されたノード一覧**」表示 + 「**保存する**」ボタン押せる (C38、旧:永遠 disabled)
+7. 保存後: ゆいが「葵先生が読んだよ」発話 + 右ペイン material-detail 切替 (C32 既存)
+
+### 2026-05-26 SSoT 同期 (C39)
+
+- `ARCHITECTURE.md`「## 教材アップロード設計 (2026-05-25 grill)」の「Phase 6 で実装する具体タスク」確定 9 行を「✅ C31 + C38 全 fix」に更新、「実装状況」表に C36/C37/C38 追記
+- 本 `SESSION_HANDOFF.md` の §3 に本「2026-05-26 緊急 fix」セクション追加 + §6 スタータープロンプト更新
+- memory `project_ai_education.md` / `MEMORY.md` 更新
+
 ---
 
 ## §4. 現状確認方法 (dev server で動かす)
@@ -273,32 +310,42 @@ Phase 5 全実装 (C15-C24) + 2026-05-25 追加 grill (C26、教材アップロ�
 AI-Education プロジェクトの作業を継続します。
 
 1. C:\dev\projects\home\Ai-Education\SESSION_HANDOFF.md を読んで状況把握
-2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 5: 学習戦略エンジン」セクションを確認
+2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 5: 学習戦略エンジン」「## 教材アップロード設計 (2026-05-25 grill)」「## 科目追加設計 (2026-05-25 grill)」セクションを確認
 3. memory MEMORY.md の project_ai_education.md を確認
 
-【今日の状態 (Phase 5 完全完了 + 2026-05-25 追加 grill 1+2 確定 + C28-C34 ガワ実装完了)】
+【今日の状態 (39 commit、Phase 5 完全完了 + 2026-05-25 追加 grill 1+2 確定 + C28-C34 ガワ実装完了 + C36-C38 緊急 fix + C39 SSoT 同期)】
 - Phase 3 レビュー追従 完了 (C1-C6)
 - Phase 4 中学生向け設計軌道修正 完了 (C7-C13)
 - Phase 5 学習戦略エンジン 試作型 + mock (C14)
 - **Phase 5 grill 確定 (P5-Q1〜Q7 + サブ問い計 11 問、ARCHITECTURE.md SSoT 反映済み)**
-- **Phase 5 全実装完了 (C15 docs + C16 型 + C17 立案 + C18 Suggestion + C19 Replan + C20 週次 + C21 Plan Engine + C22 today-tasks + C23 動線 + C24 引継ぎ + C25 ARCHITECTURE 同期)**
-- **2026-05-25 追加 grill 1 (C26): 教材アップロード設計 13 確定 SSoT 同期。詳細は ARCHITECTURE「## 教材アップロード設計 (2026-05-25 grill)」**
-- **2026-05-25 追加 grill 2 (C27): 科目追加設計 9 確定 SSoT 同期。詳細は ARCHITECTURE「## 科目追加設計 (2026-05-25 grill)」**
-- **両 grill のガワ実装完了 (C28 MOCK_SUBJECTS 5 教科 + SVG アバター / C29 「+ 新規科目」リンク / C30 SubjectSettingsPanel + ゆい mock 分岐 / C31 ウィザード 3 step 化 / C32 教材詳細ページ skeleton + ゆい完了発話 / C33 /admin/subjects バックアップ / C34 subject-picker options 動的化 fix)**。動作確認シナリオは §3「2026-05-25/26 ガワ実装」セクション参照
-- **C35 (今 push): C28-C34 を ARCHITECTURE / SESSION_HANDOFF / memory に同期 + 次セッション引継ぎ準備**
-- 35 commit / main 直 push 済 / tsc + lint クリア / dev server で全動線が動く
+- **Phase 5 全実装完了 (C15-C24 + C25 ARCHITECTURE 同期)**
+- **2026-05-25 追加 grill 1 (C26): 教材アップロード設計 13 確定 SSoT 同期**
+- **2026-05-25 追加 grill 2 (C27): 科目追加設計 9 確定 SSoT 同期**
+- **両 grill のガワ実装完了 (C28-C34) + C35 SSoT 同期**
+- **2026-05-26 緊急 fix C36-C38** (画面動作確認中に発見した取り残し、§3「2026-05-26 緊急 fix」セクション参照):
+  - **C36 `fae0852`**: MaterialPickerCard に「+ 新規テキスト追加」リンク追加 (SubjectPickerCard C29 と同じパターン)
+  - **C37 `b9b5b3e`**: fix: Step1MetaAndUpload 科目セレクト Radix Select quirk (raw value 表示バグ)
+  - **C38 `14f1125`**: fix: C31 取り残し全 fix (Step2 ボタン文言 / Step4Save の approved → extracted 統一 / `AiExtractedNode.reviewStatus` 型削除 / ゆい発話 / **致命バグ「保存ボタン永遠 disabled」**)
+  - これで教材登録ウィザード Step1 → Step2 → Step3 が **初めて完走可能に**
+- **C39 (今 push): C36-C38 を ARCHITECTURE / SESSION_HANDOFF / memory に同期**
+- 39 commit / main 直 push 済 / tsc + lint クリア / dev server で全動線が動く
 
-【次の作業 (本セッション内に「進めて」で続行 or 次回新セッションで開始)】
-SESSION_HANDOFF.md §5 の選択肢 A-D から選んで進める (E は C28-C34 で完了):
-- A: Phase 6 (Claude API 接続) — 葵による本物の教材読み込み (体系図 + 評価コメント生成)、教材ごと独立 chat 本実装、ゆい発話の AI 化、quickReplies「[見る][あとで]」、WeakNodes 自動判定。**C28-C34 でガワ整備済なので本物 AI 接続が中心**
-- B: Phase 5 細部改善 (Suggestion/Interrupt 自動生成、Replan 実体変更、永続化対応等)
-- C: Phase 7 (Supabase 永続化) 設計 grill-me 開始 — Material / Subject / MaterialReview / 教材 chat / LearningPlan / GeneratedTask / NodeReviewSuggestion / InterruptEvent / PlanRevision + RLS + 削除運用 (ハードコード保護)
-- D: Phase 8 (音声対話) 着手
+【次の作業 — 前回セッション末に grill-me 中断 (実装割り込み) 状態】
+前回ito19 さんが「Phase 6 = ゆい AI 化 (コーチング担当の AI 実装) を core スコープに確定」+「ただしその前に計画立案フローを再度詰めたい」を明示。
+grill 順序として「計画立案フロー grill 先 → ゆい AI 化 grill」が確定した直後に、
+dev server fix の割り込み (C36-C38) で grill は中断 → SESSION_HANDOFF §5 の選択肢 A-D は同じまま。
 
-ito19 さんに「次どれ?」とアスクしてから進める。
+**次セッションは「計画立案フロー grill (P6 前段)」から再開する**のが筋。
+grill 起点候補は前回提示済 (P5-Q1〜Q7 で詰めた後の残論点 9 個、§5 後段に整理):
+① 計画立案の「起点」(本人発話 only? ゆいから「そろそろ計画見直し時期?」と提案?) ← 推奨
+② 教材ピッカー UX 細部 / ③「科目がない」自動検出 / ④ roadmap-preview 表示内容 /
+⑤ キャンセル・一時保留 / ⑥ 複数並走計画 / ⑦ ゆいの事前情報 /
+⑧ 既存計画との関係 / ⑨ 1 計画 1 教材 vs 複数教材
+
+ito19 さんに「計画立案フロー grill ①〜⑨ どれから?」とアスクして start。
 
 各 commit ごとに tsc --noEmit + eslint クリアを確認、conventional commit
-(feat: / docs: / refactor:) + 「なぜ / 何を / どう動くか」を本文に書く。
+(feat: / fix: / docs: / refactor:) + 「なぜ / 何を / どう動くか」を本文に書く。
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> を末尾に。
 
 ito19 さんは grill-me モード前提 (memory feedback_grill_me.md 参照)、
