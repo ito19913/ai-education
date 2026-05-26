@@ -87,7 +87,15 @@ export function Step1MetaAndUpload({
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  {/*
+                    Radix SelectValue は SelectItem の children を ref 経由で取得するが、
+                    value !== children の時 (科目は value=s.id, children=s.name) SSR で取れず
+                    raw value が表示されてしまう。明示的に children を渡して表示テキストを制御。
+                  */}
+                  <SelectValue placeholder="科目を選択">
+                    {subjects.find((s) => s.id === draft.subjectId)?.name ??
+                      "科目を選択"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {subjects.map((s) => (
