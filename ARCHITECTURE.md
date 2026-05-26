@@ -1629,7 +1629,8 @@ type MaterialReview = {
 - 葵先生による教材 PDF / 写真読み込み (Claude Opus マルチモーダル、画像 OCR + 構造抽出) — **Phase 6 未着手**
 - 体系図出力: テキスト忠実の `KnowledgeNode[]` 抽出 (確定 10) — **Phase 6 未着手** (mockExtractNodes で代用中)
 - 評価コメント出力: `MaterialReview` 新型 (確定 11) — **✅ C32 ガワ実装** (現状は固定 mock テキスト coverage/difficulty/fit/notes、Phase 6 で Claude Opus 出力に置換)
-- 教材詳細ページ UI (`/tutor?view=material-detail&id=xxx`) — **✅ C32 ガワ実装 + C40 / C41 取り残し fix** (C32: `MaterialDetailView`、体系図プレビュー + 評価コメント + 葵 chat 入力欄 / C40: `viewFromParam` 許可リストに `"material-detail"` 追加忘れ fix で URL → view 同期がやっと動いた / C41: root の flex min-height: auto 問題でスクロール不能だった bug を二層パターンで fix)
+- 教材詳細ページ UI (`/tutor?view=material-detail&id=xxx`) — **✅ C32 ガワ + C40/C41 取り残し fix + C43 体系図フローチャート + C45 スケジュール組み込み状況 + C46 編集・削除 で完全実装** (C32: `MaterialDetailView` 骨格 / C40: viewFromParam fix / C41: スクロール fix / C43: MindMapPane 流用で体系図 2 表現 / C45: 当月 SI 紐付け表示 + today-tasks 遷移 / C46: MaterialEditDialog 再利用で編集削除)
+- 教材一覧の再アクセス動線 (隠れ取り残し論点⑤、C42 で発見) — **✅ C44 完全解消** (ゆいメニュー「教材」ボタン + MaterialsListPane 科目別 grouping + 末尾「+ 新規教材を追加」リンク、grill 1 確定 12「教材ごと独立葵 chat = 教材詳細ページに集約」を機能させる拠点アクセス動線が初めて確立)
 - 教材ごと独立 chat スレッド (型と永続化、確定 12) — **Phase 6 未着手** (現状は placeholder/disabled textarea)
 - ゆい mock の onComplete 発話 ("葵が読んだよ、見る?") 追加 (確定 13) — **✅ C32 ガワ実装** (現状は自動 material-detail 遷移、quickReplies「[見る][あとで]」は Phase 6)
 - `MaterialEditWizard` 3 step 化 (Step3Review 撤去、確定 9) — **✅ C31 + C38 全 fix** (C31: `Step3Review.tsx` 削除済、STEP_LABELS 3 個に縮退 / C38: Step3Review 撤去の取り残し全 fix — Step2「監修に進む」→「保存に進む」、Step4Save の approved → extracted 統一、`AiExtractedNode.reviewStatus` 型フィールド削除、ゆい発話「監修していこう」→「その教科の先生が…体系図と評価コメントを出してくれる」、致命バグ「保存ボタンが永遠に disabled」fix)
@@ -1645,6 +1646,10 @@ type MaterialReview = {
 | C38 | `14f1125` | fix: C31 取り残し全 fix (Step2「監修に進む」→「保存に進む」、Step4Save approved → extracted 統一、`AiExtractedNode.reviewStatus` 型削除、ゆい発話更新、致命バグ「保存ボタン永遠 disabled」fix、確定 9/10 整合) |
 | C40 | `f93cc83` | fix: TutorWorkspace.viewFromParam に "material-detail" 追加忘れ修正 (C32 ガワ実装時に許可リスト追加漏れで、URL が material-detail に変わっても default に丸められ右ペインが切り替わらなかった致命バグ) |
 | C41 | `04074b4` | fix: MaterialDetailView スクロール不能 fix (flex 子の min-height: auto 規則で overflow が効かなかった、WeeklyMonthlyReportView の二層 min-h-0 flex-1 パターンに統一) |
+| C43 | `79ee7b0` | feat: MaterialDetailView に体系図フローチャート追加 (G 案、ito19 さん意見「学習画面のフローチャートと同じものを教材詳細にも」、MindMapPane 流用、coveredNodes filter + h-[420px]、ノードリストと併せて 2 表現) |
+| C44 | `21f6a22` | feat: ゆいメニュー「教材」+ MaterialsListPane 新規 (A+B 一気実装、残課題⑤ 教材詳細の再アクセス動線完全解消、配置 δ プランの左、科目別 grouping + 末尾「+ 新規教材を追加」+ keyword「教材一覧」「教材」「教材を見る」「教材見せて」分岐) |
+| C45 | `5b0623d` | feat: 教材詳細にスケジュール組み込み状況表示 + 遷移リンク (D+E α 案、SI → GT → resource.materialId 経路で当月 SI 集計、計画名 + 進捗 + 未着手 SI 上位 3 件 + [今月の予定を見る] / [計画を立てる] ボタン) |
+| C46 | `63a4f6b` | feat: 教材編集・削除 (F α 案、MaterialEditDialog 再利用、TutorWorkspace materials state 管理、handleMaterialUpdated/Deleted callback、誤操作防止のため削除はダイアログ内ゴミ箱、関連データ整合は Phase 7) |
 
 ガワ実装範囲: 確定 9/11/13 のうち UI + フロー部分のみ。Phase 6 (本物の葵 Claude Opus 接続 + 評価コメント生成 + 教材ごと独立 chat 本実装) + Phase 7 (Material/MaterialReview/chat の Supabase 永続化) は未着手。
 

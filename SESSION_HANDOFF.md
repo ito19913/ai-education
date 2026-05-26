@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-26 (Phase 4 完了 + Phase 5 grill 確定 + C15-C24 全実装完了 + 2026-05-25 追加 grill 1 (C26) + 追加 grill 2 (C27) + 両 grill ガワ実装 C28-C34 完了 + 2026-05-26 緊急 fix C36-C38 + C39 SSoT 同期 + **2026-05-26 後段緊急 fix C40 (viewFromParam material-detail 抜け致命バグ) + C41 (MaterialDetailView スクロール不能 fix) + C42 SSoT 同期 完了**)
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-26 (Phase 4 完了 + Phase 5 grill 確定 + C15-C24 全実装完了 + 2026-05-25 追加 grill 1+2 (C26-C27) + 両 grill ガワ実装 (C28-C34) + C35 SSoT 同期 + 緊急 fix 5 件 (C36-C38, C40-C41) + 2 回 SSoT 同期 (C39, C42) + **2026-05-26 ito19 さん意見実装 (C43 G フローチャート / C44 A+B ゆいメニュー教材 + 一覧ペイン / C45 D+E スケジュール組み込み + 遷移 / C46 F 編集削除) + C47 SSoT 同期 完了 → 教材ハブ動線 (登録 → 一覧 → 詳細 → スケジュール連携 → 編集削除 → 葵 chat 拠点) 完全実装**)
 
 ---
 
@@ -29,7 +29,7 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 
 ## §3. 今日のセッション (2026-05-25/26) 全成果
 
-**42 commit、約 +10100 行**。`7aaf7df`..(C42 SHA) の範囲。**Phase 5 grill 確定 + 全実装完了 + ARCHITECTURE 完全同期 + 2026-05-25 追加 grill 1+2 (教材アップロード 13 + 科目追加 9) SSoT 同期 + 両 grill ガワ実装 (C28-C34) + 2026-05-26 緊急 fix 計 5 件 (C36 material-picker リンク / C37 Step1 Radix quirk / C38 C31 取り残し致命バグ全 fix / C40 viewFromParam material-detail 抜け致命バグ / C41 MaterialDetailView スクロール不能 fix)**。
+**47 commit、約 +10500 行**。`7aaf7df`..(C47 SHA) の範囲。**Phase 5 grill 確定 + 全実装完了 + ARCHITECTURE 完全同期 + 2026-05-25 追加 grill 1+2 (教材アップロード 13 + 科目追加 9) SSoT 同期 + 両 grill ガワ実装 (C28-C34) + 緊急 fix 5 件 (C36-C38 / C40-C41) + 2026-05-26 ito19 さん意見実装 4 件 (C43 G フローチャート / C44 A+B 教材メニュー+一覧 / C45 D+E スケジュール連携 / C46 F 編集削除) で教材ハブ動線完全実装**。
 
 ### Phase 3 レビュー追従 (REVIEW-2026-05-24.md 対応)
 | # | SHA | 内容 |
@@ -227,6 +227,52 @@ C39 で「動線完走可能」とした直後の動作確認で、教材登録�
 - 本 `SESSION_HANDOFF.md` Header / §3 / §6 を更新 + 残課題 ②③④ を次セッション引継ぎとして明記
 - memory `project_ai_education.md` / `MEMORY.md` 更新
 
+### 2026-05-26 ito19 さん意見実装 (C43-C46): grill-me なしで意見表明 → 4 commit で教材ハブ動線完全実装
+
+ito19 さん 2026-05-26 後段で「グリルミなしで自分の意見を述べる」フェーズに入り、A-G の追加要件を提示。本セッションでそのうち G + A-F を全実装。残課題 ②③④ (前 C42 で記録した別動線の論点) は引き続き次セッション以降。
+
+**ito19 さん意見の整理**:
+- A: ゆいメニューに「教材」追加
+- B: 教材一覧から詳細遷移
+- C: 教材詳細から葵 chat (Phase 6 で本実装、現状 placeholder)
+- D: 教材詳細にスケジュール組み込み状況表示
+- E: 教材詳細からスケジュール画面遷移リンク
+- F: 教材の追加・編集
+- G: 教材詳細に体系図 (学習画面と同じフローチャート) 追加 = ノードリスト + 体系図 2 表現
+
+| # | SHA | 内容 | 対応 |
+|---|---|---|---|
+| C43 | `79ee7b0` | feat: MaterialDetailView に体系図フローチャート (MindMapPane) 追加 | G (まず最優先で実装、ito19 さん「まずそこまでいきましょうか」) |
+| C44 | `21f6a22` | feat: ゆいメニュー「教材」+ MaterialsListPane 新規 | A+B 一気実装、残課題⑤ (教材詳細の再アクセス動線) 完全解消 |
+| C45 | `5b0623d` | feat: 教材詳細にスケジュール組み込み状況表示 + 遷移リンク | D+E α 案 (SI → GT → resource.materialId 経路で当月集計、today-tasks 遷移) |
+| C46 | `63a4f6b` | feat: 教材編集・削除 (F α 案、MaterialEditDialog 再利用) | F、TutorWorkspace.materials state 管理 + 既存 MaterialEditDialog 流用 |
+
+**動作確認シナリオ (C43-C46 後の完成形)**:
+1. ゆいメニュー右側 (プランの左) に **「教材」ボタン** (通常スタイル、強調なし)
+2. クリック → ゆい「OK、登録済の教材を右で見せるね…」発話 → 右ペインに **MaterialsListPane** (科目別 grouping 縦リスト + 末尾「+ 新規教材を追加」)
+3. 個別教材クリック → 右ペインに **MaterialDetailView** 切替:
+   - 教材メタ Card (アバター + 名前 + 種別 + 学年)
+   - **葵評価コメント Card** (範囲 / 難易度 / フィット / 使い方のヒント、mock テキスト)
+   - **学習スケジュール組み込み状況 Card (C45)** (計画名 + 今月 X/Y 件 + 進捗 % + プログレスバー + 未着手 SI 上位 3 件 + [今月の予定を見る →] ボタン)
+   - **体系図フローチャート Card (C43)** (MindMapPane で React Flow 階層図、左→右 dagre レイアウト、ズーム・パン可)
+   - 体系図ノードリスト Card (テキスト忠実 20 件 + 「…他 N 件」)
+   - 葵 chat 入力欄 Card (placeholder、Phase 6 で本実装)
+   - **教材の管理 Card (C46)** (「メタ情報を編集 / 削除」ボタン → MaterialEditDialog でメタ修正 / ゴミ箱削除)
+4. 削除 → ゆい「『○○』を削除したよ。Phase 7 永続化で関連データ整合化予定」発話 + 一覧ページに自動遷移
+
+**本セッション中対応せず次セッション以降に持ち越し**:
+- ② 表示教材が MOCK_MATERIALS[0] 固定 (アップロード時 fallback 設計、Phase 7 in-memory push で解消)
+- ③ 2 回目以降の教材登録で「テスト」発話の重複
+- ④ 計画立案フロー + material-detail 並走の UX 違和感
+- C45 で α 案を選んだが「未着手 SI が現実的に存在するか」は plan-mock データ依存
+- F の関連データ整合 (LearningPlan / SI / GT の materialId 参照) は Phase 7 永続化で grill
+
+### 2026-05-26 後々段 SSoT 同期 (C47)
+
+- `ARCHITECTURE.md`「実装状況」表に C43 / C44 / C45 / C46 追加、「Phase 6 で実装する具体タスク」の教材詳細ページ UI 行を「✅ C32 ガワ + C40 / C41 取り残し fix + C43 体系図フローチャート + C45 スケジュール組み込み状況 + C46 編集・削除 で完全実装」に更新、再アクセス動線の項目に C44 完全解消を追記
+- 本 `SESSION_HANDOFF.md` Header / §3 / §6 を更新、ito19 さん意見実装の完了状況 + 動作確認シナリオ + 残課題 ②③④ を引き続き引継ぎ
+- memory `project_ai_education.md` / `MEMORY.md` 更新
+
 ---
 
 ## §4. 現状確認方法 (dev server で動かす)
@@ -338,7 +384,7 @@ AI-Education プロジェクトの作業を継続します。
 2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 5: 学習戦略エンジン」「## 教材アップロード設計 (2026-05-25 grill)」「## 科目追加設計 (2026-05-25 grill)」セクションを確認
 3. memory MEMORY.md の project_ai_education.md を確認
 
-【今日の状態 (42 commit、Phase 5 + grill 1+2 ガワ + 緊急 fix 5 件 + SSoT 同期、教材登録動線完走 + material-detail 表示 + スクロール OK)】
+【今日の状態 (47 commit、Phase 5 + grill 1+2 ガワ + 緊急 fix 5 件 + SSoT 同期 3 回 + ito19 さん意見実装 4 件 で教材ハブ動線完全実装)】
 - Phase 3 レビュー追従 完了 (C1-C6)
 - Phase 4 中学生向け設計軌道修正 完了 (C7-C13)
 - Phase 5 学習戦略エンジン 試作型 + mock (C14)
@@ -351,8 +397,14 @@ AI-Education プロジェクトの作業を継続します。
   - **C40 `f93cc83`**: fix: TutorWorkspace.viewFromParam に "material-detail" 抜け fix (C32 ガワ実装時に URL parser 許可リスト追加忘れ → URL が material-detail でも DefaultPane 表示の致命バグ)
   - **C41 `04074b4`**: fix: MaterialDetailView スクロール不能 fix (flex 子の min-height: auto 規則で overflow が効かない問題、WeeklyMonthlyReportView 二層パターンに統一)
   - これで教材登録ウィザード Step1 → Step2 → Step3 → material-detail 自動展開 → 体系図全件スクロール閲覧、まで **2 セッション越しに初めて全動線完走**
-- **C42 (今 push): C40-C41 を ARCHITECTURE / SESSION_HANDOFF / memory に同期 + 残課題 ②③④ を明記**
-- 42 commit / main 直 push 済 / tsc + lint クリア
+- **C42 `e8f42d7`**: docs: C40-C41 を ARCHITECTURE / SESSION_HANDOFF / memory に同期 + 残課題 ②③④ を明記
+- **2026-05-26 ito19 さん意見実装 (C43-C46)** で教材ハブ動線完全実装 (詳細は §3「2026-05-26 ito19 さん意見実装 (C43-C46)」セクション):
+  - **C43 `79ee7b0`**: feat: MaterialDetailView に体系図フローチャート (G、MindMapPane 流用、ノードリスト + フローチャート 2 表現)
+  - **C44 `21f6a22`**: feat: ゆいメニュー「教材」+ MaterialsListPane (A+B、残課題⑤ 完全解消、δ プランの左配置 + 科目別 grouping)
+  - **C45 `5b0623d`**: feat: 教材詳細にスケジュール組み込み状況 + 遷移リンク (D+E α 案、当月 SI 集計 + today-tasks 遷移)
+  - **C46 `63a4f6b`**: feat: 教材編集・削除 (F α 案、MaterialEditDialog 再利用、materials state 管理)
+- **C47 (今 push): C43-C46 を ARCHITECTURE / SESSION_HANDOFF / memory に SSoT 同期**
+- 47 commit / main 直 push 済 / tsc + lint クリア
 
 【本セッション中対応しなかった残課題 (ito19 さん明示「一旦終了」)】
 教材登録動線 C40-C41 fix の後、画面確認で見つかった以下の問題は **次セッション以降**:
@@ -360,18 +412,23 @@ AI-Education プロジェクトの作業を継続します。
 - ③ **2 回目以降の教材登録で「テスト」発話の重複** → 複数登録時の挙動 grill 要
 - ④ **計画立案フロー + material-detail 並走** (左:plan-await-material / 右:material-detail) → grill 1 確定 5「疎結合」の UX 違和感、grill 要
 
-【次の作業 — 計画立案フロー grill (P6 前段) 再開】
+【次の作業 — 計画立案フロー grill (P6 前段) 再開、または残課題対応】
 前々回セッションで ito19 さん明示確定:
 - **Phase 6 = ゆい AI 化 (コーチング担当の AI 実装) を core スコープ**
 - ただしその前に **計画立案フロー grill を再度詰める** が確定 (grill 順序: 計画立案 grill 先 → ゆい AI 化 grill)
-- grill 候補 9 個 (前々回提示、本書 §5 後段の選択肢構造とは別):
+- 計画立案 grill 候補 9 個:
   ① 計画立案の「起点」(本人発話 only? ゆいから「そろそろ計画見直し時期?」と提案?) ← 推奨
   ② 教材ピッカー UX 細部 / ③「科目がない」自動検出 / ④ roadmap-preview 表示内容 /
   ⑤ キャンセル・一時保留 / ⑥ 複数並走計画 / ⑦ ゆいの事前情報 /
   ⑧ 既存計画との関係 / ⑨ 1 計画 1 教材 vs 複数教材
 
-ito19 さんに「先に **本セッション残課題 ②③④** を片付けるか、それとも **計画立案フロー grill (①〜⑨)** から進めるか?」をアスクして start。
-推奨: ②③④ は educational 動線の UX に直結するので、計画立案 grill より先に片付けた方が dev server で挙動が見える状態を保てる。
+【本セッション中対応せず次セッション以降に持ち越しの残課題】
+- ② 表示教材が MOCK_MATERIALS[0] (中2英語教科書) 固定 (アップロード時 fallback 設計、in-memory mock push 実装で即解消可能、Phase 7 永続化とは別件)
+- ③ 2 回目以降の教材登録で「テスト」発話の重複 (複数登録時のゆい振る舞い + material-detail 更新ロジック未定義、設計 grill 要)
+- ④ 計画立案フロー + material-detail 並走 (左 plan-await-material / 右 material-detail の UX 違和感、grill 1 確定 5「疎結合」の解釈 grill 要)
+
+ito19 さんに **「(a) 残課題 ②③④ を先に片付ける / (b) 計画立案フロー grill (①〜⑨) から進める / (c) 別の作業」** をアスクして start。
+推奨: 教材ハブ動線が完成した今、次は計画立案 grill (b の ①) から進めるのが自然 (Phase 6 ゆい AI 化の前段として枠を固める)。残課題 ②③④ は educational 動線の UX 細部だが、Phase 6 AI 化と同時に振る舞いが変わる可能性があり、優先度は低め。
 
 各 commit ごとに tsc --noEmit + eslint クリアを確認、conventional commit
 (feat: / fix: / docs: / refactor:) + 「なぜ / 何を / どう動くか」を本文に書く。
