@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { SubjectTeacherAvatar } from "@/components/ui/subject-teacher-avatar";
+import { MindMapPane } from "@/components/learn/MindMapPane";
 import { BookText, MessageCircle, Send, Sparkles } from "lucide-react";
 import type { KnowledgeNode, Material, Subject } from "@/lib/learn/types";
 
@@ -114,6 +115,26 @@ export function MaterialDetailView({ material, subject, nodes }: Props) {
             ※ 現状は mock 表示。Phase 6 で本物の {subject?.teacher?.displayName ?? "葵先生"}{" "}
             (Claude Opus) が教材を読んで体系図 + 評価コメントを生成します。
           </p>
+        </CardContent>
+      </Card>
+
+      {/*
+        体系図フローチャート (ito19 さん 2026-05-26 意見「学習画面のフローチャートと
+        同じものを教材詳細にも」= G 案実装、C43)。
+        MindMapPane は React Flow + dagre LR レイアウトで階層図を描画。
+        内部に独自ヘッダ「体系の地図 - 教材名 (N ノード)」を持つので Card Header は省く。
+        currentNodeId は教材詳細では「今ここ」概念が無いため coveredNodes[0]?.id を仮指定
+        (ハイライト用、ノードクリックは no-op、将来「ノードごと chat」入口にできる)。
+      */}
+      <Card className="overflow-hidden">
+        <CardContent className="h-[420px] p-0">
+          <MindMapPane
+            nodes={coveredNodes}
+            currentNodeId={coveredNodes[0]?.id ?? ""}
+            onSelectNode={() => {}}
+            viewTitle={material.name}
+            visibleNodeCount={coveredNodes.length}
+          />
         </CardContent>
       </Card>
 
