@@ -47,8 +47,13 @@ export function MaterialDetailView({ material, subject, nodes }: Props) {
   };
 
   return (
-    <div className="flex h-full w-full flex-col gap-4 overflow-y-auto bg-canvas p-5">
-      {/* 教材メタ */}
+    // 二層パターン: flex 子の min-height: auto 規則で overflow が効かない問題を回避。
+    // 外側 = h-full 固定 / 内側 = min-h-0 flex-1 overflow-y-auto で確実なスクロール領域。
+    // 参考実装: WeeklyMonthlyReportView.tsx:102-104
+    <div className="flex h-full w-full flex-col bg-canvas">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-4 p-5">
+          {/* 教材メタ */}
       <Card>
         <CardContent className="flex items-start gap-3 pt-5">
           {subject ? (
@@ -174,6 +179,8 @@ export function MaterialDetailView({ material, subject, nodes }: Props) {
           </div>
         </CardContent>
       </Card>
+        </div>
+      </div>
     </div>
   );
 }
