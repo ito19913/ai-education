@@ -15,7 +15,7 @@
  * - 評価コメントは葵生成 mock テキスト (Phase 6 で Claude Opus 出力に置換)
  * - 葵 chat 入力欄は placeholder 表示のみ (Phase 6 で本物の chat スレッド実装)
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,6 +65,25 @@ export function MaterialDetailView({
   // C48 2026-05-26 (ito19 さん意見): 体系図 リスト ⇄ マップ 切替モード
   // default = "list" (テキスト忠実、grill 1 確定 10 整合)、マップは MindMapPane 表示
   const [systemMapMode, setSystemMapMode] = useState<"list" | "map">("list");
+  // C52 2026-05-26 (ito19 さん意見「ノードリスト → 葵 chat 遷移」):
+  // ノードクリックで「そのノードについて葵に聞く」focus + chat エリアに scroll
+  // ガワ実装: 選択ノードを placeholder / ヘッダに反映、本物 thread 設計は Phase 6
+  // (grill 1 確定 12「教材ごと独立 chat スレッド」を「ノードごと thread」 or
+  //  「教材 thread 内のノードフォーカス」のどちらにするかは Phase 6 grill)
+  const [selectedChatNode, setSelectedChatNode] = useState<KnowledgeNode | null>(
+    null,
+  );
+  const chatCardRef = useRef<HTMLDivElement>(null);
+  const handleSelectNodeForChat = (node: KnowledgeNode) => {
+    setSelectedChatNode(node);
+    // ChatCard までスムーズスクロール
+    requestAnimationFrame(() => {
+      chatCardRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
 
   const coveredNodes = material.coveredNodeIds
     .map((nodeId) => nodes.find((n) => n.id === nodeId))
@@ -424,39 +443,95 @@ export function MaterialDetailView({
               この教材にはまだノードが紐付いていません。
             </p>
           ) : (
+            // C52: ノードリスト = 葵 chat 入口一覧。各行 button 化 + クリックで
+            // 「そのノードについて葵に聞く」chat エリアに scroll + 選択 state 保持。
+            // hover で border-primary + 右側 MessageCircle icon (chat 連想)
             <ul className="flex flex-col gap-1">
-              {coveredNodes.slice(0, 20).map((node) => (
-                <li
-                  key={node.id}
-                  className="rounded-md border border-border bg-card px-3 py-2 text-sm"
-                >
-                  <div className="font-medium">{node.name}</div>
-                  <div className="text-xs text-muted-foreground line-clamp-1">
-                    {node.description}
-                  </div>
-                </li>
-              ))}
+              {coveredNodes.slice(0, 20).map((node) => {
+                const isSelected = selectedChatNode?.id === node.id;
+                return (
+                  <li key={node.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectNodeForChat(node)}
+                      className={cn(
+                        "group flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                        isSelected
+                          ? "border-primary bg-primary/5"
+                          : "border-border bg-card hover:border-primary hover:bg-primary/5",
+                      )}
+                      title={`「${node.name}」について ${subject?.teacher?.displayName ?? "葵先生"} に聞く`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">{node.name}</div>
+                        <div className="text-xs text-muted-foreground line-clamp-1">
+                          {node.description}
+                        </div>
+                      </div>
+                      <MessageCircle
+                        className={cn(
+                          "size-4 shrink-0 transition-colors",
+                          isSelected
+                            ? "text-primary"
+                            : "text-muted-foreground/40 group-hover:text-primary",
+                        )}
+                      />
+                    </button>
+                  </li>
+                );
+              })}
               {coveredNodes.length > 20 && (
                 <li className="text-xs text-muted-foreground">
                   …他 {coveredNodes.length - 20} 件
                 </li>
               )}
+              <li className="mt-1 text-[11px] italic text-muted-foreground">
+                💬 ノードをクリックすると、そのノードについて
+                {subject?.teacher?.displayName ?? "葵先生"} に聞ける chat に飛びます
+              </li>
             </ul>
           )}
         </CardContent>
       </Card>
 
-      {/* 葵 chat 入力欄 (確定 12: 教材ごと独立スレッド、Phase 6 で本実装) */}
-      <Card>
+      {/* 葵 chat 入力欄 (確定 12: 教材ごと独立スレッド、Phase 6 で本実装)
+          C52 ito19 さん意見: 上のノードリストから選択された場合、そのノードを
+          chat focus 対象として ヘッダ + placeholder に反映。chatCardRef で
+          scroll target にもなる */}
+      <Card ref={chatCardRef}>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <MessageCircle className="size-4 text-primary" />
-            <span>{subject?.teacher?.displayName ?? "葵先生"}にこの教材について聞く</span>
+          <CardTitle className="flex items-center justify-between gap-2 text-sm">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="size-4 text-primary" />
+              <span>
+                {selectedChatNode ? (
+                  <>
+                    「<span className="text-primary">{selectedChatNode.name}</span>」について
+                    {subject?.teacher?.displayName ?? "葵先生"}に聞く
+                  </>
+                ) : (
+                  <>{subject?.teacher?.displayName ?? "葵先生"}にこの教材について聞く</>
+                )}
+              </span>
+            </div>
+            {selectedChatNode && (
+              <button
+                type="button"
+                onClick={() => setSelectedChatNode(null)}
+                className="text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                教材全体に戻す
+              </button>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           <Textarea
-            placeholder={`例: 「この教材の第3章ってどんな内容?」「この問題集と前の教科書の違いは?」`}
+            placeholder={
+              selectedChatNode
+                ? `例: 「${selectedChatNode.name}って何?」「${selectedChatNode.name}の例文を見せて」`
+                : `例: 「この教材の第3章ってどんな内容?」「この問題集と前の教科書の違いは?」`
+            }
             rows={3}
             disabled
             className="resize-none"
