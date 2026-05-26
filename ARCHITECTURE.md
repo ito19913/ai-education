@@ -1656,7 +1656,8 @@ type MaterialReview = {
 | C51 | `225d385` | fix: スケジュール組み込み状況 - 今月 0 件時の [今月の予定を見る] ボタン非表示化 (ito19 さん「学習スケジュールに組み込まれていない場合は予定の画面に遷移できなくていい」、計画には紐付くが今月分 SI が 0 件のケースは「今月の予定はまだありません」テキストに切替) |
 | C52 | `f59ddd3` | feat: ノードリスト → 葵 chat 遷移ガワ (ito19 さん「ノードリスト = チャット一覧、押すと chat に遷移」、各ノード button 化 + hover/icon + クリックで chat エリア scroll + 選択ノードで chat ヘッダ/placeholder 動的更新、本物 thread 設計は Phase 6 grill) |
 | C53 | `2269131` | feat: 教材詳細最上部に「← 教材一覧に戻る」ボタン追加 (ito19 さん「教材一覧に戻るボタンが欲しい」、ghost button、ゆいメニュー経由せず 1 クリックで MaterialsListPane 復帰) |
-| C54 | (今 push) | style: TutorWorkspace ヘッダから「/ ゆい先生」breadcrumb 削除 (ito19 さん「ヘッダのこの表示いらない」、ページタイトル「ゆい先生（司令室）」と重複していたため整理) |
+| C54 | `e3e8717` | style: TutorWorkspace ヘッダから「/ ゆい先生」breadcrumb 削除 (ito19 さん「ヘッダのこの表示いらない」、ページタイトル「ゆい先生（司令室）」と重複していたため整理) |
+| C55 | (今 push) | docs: 教材セクション完成 + 次セッション「プラン (計画立案) grill = 一番の肝、慎重に」引継ぎ準備 (ito19 さん「教材の作成 OK、次はプランの作成、ここが一番の肝、慎重に」明示、SESSION_HANDOFF Header + §3 末尾ラップアップ + §6 状態+次作業 全更新) |
 
 ガワ実装範囲: 確定 9/11/13 のうち UI + フロー部分のみ。Phase 6 (本物の葵 Claude Opus 接続 + 評価コメント生成 + 教材ごと独立 chat 本実装) + Phase 7 (Material/MaterialReview/chat の Supabase 永続化) は未着手。
 
