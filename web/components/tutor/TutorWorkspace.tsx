@@ -26,6 +26,7 @@ import { RightPaneRouter } from "./RightPaneRouter";
 import {
   buildInitialTutorThread,
   buildNextTutorReply,
+  buildNextTutorReplyAsync,
   EVENING_RITUAL_LAST_DATE_KEY,
   emptySchoolReportDraft,
   shouldStartEveningRitual,
@@ -391,9 +392,11 @@ export function TutorWorkspace({
   );
 
   // ----- ゆい chat: 返信生成（mock + rightPaneAction 適用） -----
+  // Phase 6 smoke test: buildNextTutorReplyAsync 経由で「計画立てよう」入口だけ Claude Opus 4.7 化。
+  // フラグ off / それ以外 keyword は内部で同期 buildNextTutorReply に委譲、Claude 失敗時も mock fallback。
   const generateReply = useCallback(
-    ({ userInput }: { userInput: string; history: TutorMessage[] }): TutorMessage => {
-      const result = buildNextTutorReply({
+    async ({ userInput }: { userInput: string; history: TutorMessage[] }): Promise<TutorMessage> => {
+      const result = await buildNextTutorReplyAsync({
         state: tutorStepRef.current,
         userInput,
       });

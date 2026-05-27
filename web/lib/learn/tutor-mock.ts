@@ -41,6 +41,7 @@ import {
   MOCK_TREE,
 } from "./mock-data";
 import { searchTutorThreads } from "./tutor-thread-storage";
+import { tutorClaudeRespondToPlanRequest } from "./tutor-claude";
 import {
   detectTeachingRequest,
   labelForTeachingCategory,
@@ -3044,4 +3045,60 @@ function detectSearchIntent(input: string): string | null {
   // とアーカイブ全体を開く動線になる
   if (query.length === 0) return null;
   return query;
+}
+
+// Phase 6 smoke test: NEXT_PUBLIC_USE_CLAUDE_API=true のときに「計画立てよう」入口の
+// 1 発話だけ Claude Opus 4.7 で生成する async wrapper。matchesPlanRequest 以外は
+// 既存の同期 buildNextTutorReply に委譲、Claude 呼び出し失敗時も mock に fallback する。
+// 既存同期関数を破壊しない並走方式 — caller (TutorWorkspace) だけが await に切替わる。
+export async function buildNextTutorReplyAsync(args: {
+  state: TutorStep;
+  userInput: string;
+}): Promise<{ reply: TutorMessage; nextState: TutorStep }> {
+  const useClaude = process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true";
+  if (!useClaude) return buildNextTutorReply(args);
+
+  const lower = args.userInput.toLowerCase().trim();
+  const matchesPlanRequest =
+    lower.includes("計画立て") ||
+    lower.includes("計画作") ||
+    lower.includes("学習計画") ||
+    lower.includes("プラン作") ||
+    lower.includes("新しい計画立") ||
+    lower.includes("plan");
+
+  if (!matchesPlanRequest) return buildNextTutorReply(args);
+
+  try {
+    const claudeText = await tutorClaudeRespondToPlanRequest(args.userInput);
+    const now = new Date().toISOString();
+    const reply: TutorMessage = {
+      id: makeId(),
+      role: "tutor",
+      text: claudeText,
+      card: {
+        kind: "subject-picker",
+        options: MOCK_SUBJECTS.map((s) => ({
+          subjectId: s.id,
+          label: s.name,
+        })),
+      },
+      createdAt: now,
+    };
+    reply.topic = deriveTutorTopic("plan-await-subject", reply.rightPaneAction);
+    return {
+      nextState: {
+        ...args.state,
+        state: "plan-await-subject",
+        proposedPlanType: "regular-study",
+      },
+      reply,
+    };
+  } catch (err) {
+    console.error(
+      "[Phase 6 smoke test] Claude call failed, fallback to mock:",
+      err,
+    );
+    return buildNextTutorReply(args);
+  }
 }

@@ -44,11 +44,12 @@ type Props = {
   scheduleItems: ScheduleItem[];
   /** Phase 3 拡張: TutorHubMenu の「先生との対話」プルダウン用 */
   subjects: Subject[];
-  /** チャットの「次の返信」を生成する純関数（mock スクリプト or API 呼び出し）*/
+  /** チャットの「次の返信」を生成する関数（mock スクリプト or Claude API 呼び出し）。
+   *  Phase 6 smoke test 以降は async (Server Action 経由) を許容する。*/
   generateReply: (args: {
     userInput: string;
     history: TutorMessage[];
-  }) => TutorMessage;
+  }) => Promise<TutorMessage>;
   /** カード（教科ピッカー / 教材ピッカー）が選択された時に、
    *  会話の状態を進めるためのフック */
   onPickSubject: (subjectId: string, label: string) => TutorMessage;
@@ -118,13 +119,16 @@ export function TutorChat({
     setMessages((prev) => [...prev, userMsg]);
     setIsThinking(true);
     // 少しタメてから AI 返信（人間味）
-    window.setTimeout(() => {
-      const reply = generateReply({
-        userInput: userMsg.text ?? "",
-        history: [...messages, userMsg],
-      });
-      setMessages((prev) => appendReplyWithSection(prev, reply));
-      setIsThinking(false);
+    window.setTimeout(async () => {
+      try {
+        const reply = await generateReply({
+          userInput: userMsg.text ?? "",
+          history: [...messages, userMsg],
+        });
+        setMessages((prev) => appendReplyWithSection(prev, reply));
+      } finally {
+        setIsThinking(false);
+      }
     }, 600);
   };
 
