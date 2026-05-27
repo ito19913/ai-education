@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-26 (Phase 4 完了 + Phase 5 grill 確定 + C15-C24 全実装完了 + 2026-05-25 追加 grill 1+2 (C26-C27) + 両 grill ガワ実装 (C28-C34) + C35 SSoT 同期 + 緊急 fix 5 件 (C36-C38, C40-C41) + 2 回 SSoT 同期 (C39, C42) + 2026-05-26 ito19 さん意見実装 11 件 (C43-C46 + C48-C54) で **教材ハブ動線 (登録 → 一覧 → 詳細 [体系図リスト⇄マップ / スケジュール組み込み + 信号機進捗 / 編集削除 / ← 教材一覧戻る / ノード→chat 遷移] → 葵 chat 拠点) 完全実装、ito19 さん OK 確認済 → 次セッションは「プラン (計画立案フロー) grill = 一番の肝、慎重に」**)
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-26 (Phase 4-5 全実装完了 + 教材ハブ動線完成 (C43-C54 ito19 さん OK) + **Phase 6 着手 (C56 feat + C57 docs)**: 「計画立てよう」入口 1 発話だけ Claude Opus 4.7 smoke test 完了 + ito19 さん「対応してくれました」OK 確認済 + env 衝突問題 (`AI_EDU_*` prefix) Lesson Learned 記録 → 次は **Phase 6 拡大 A-G grill (推奨: D = プラン立案 core の AI 化、Phase 6 本丸)**)
 
 ---
 
@@ -333,6 +333,72 @@ C48 push 後 ito19 さん追加意見「学習スケジュールの進捗状況�
 - 表示位置 (今月セクション内 / Card ヘッダー / メイン表示 等)
 - 「今月」以外の集計範囲 (全期間 / 今週 / 今月 等の選択)
 
+### 2026-05-26 Phase 6 着手 (C56-C57): プラン grill 9 候補は保留 → Claude API smoke test 完了
+
+C55 で「次セッション = プラン (計画立案) grill = 一番の肝」と引き継ぎ準備したが、**ito19 さんが grill 開始直後に方針転換**:
+
+> 「プランはAIが立てることを前提としていて、ここでそろそろAIの動きを確かめる必要があるので、Claudeの API を入れましょうか」
+
+= mock のまま「ゆいが計画をどう立てるか」議論しても地に足つかない判断 → Phase 6 着手に切り替え。grill 9 候補 (①〜⑨) は AI の動きを見てから議論する流れに。
+
+**8 論点 grill 確定** (詳細は ARCHITECTURE.md「## Phase 6: Claude API 接続」セクション):
+
+| # | 確定 |
+|---|---|
+| 1 | 起点 = Phase 6 着手 (smoke test 先行)、プラン grill 9 候補は AI 化後に議論 |
+| 2 | smoke test = 最小単位で「動くこと」確認、Phase 6 全体着手はしない |
+| 3 | 代入点 = 「計画立てよう」入口のゆい応答 1 発話 (context 不要、最小単位) |
+| 4 | モデル = Claude Opus 4.7 (`claude-opus-4-7`、本番想定通り) |
+| 5 | 呼び出し場所 = Server Action (Next.js 16 標準、`'use server'`、API key は server-only) |
+| 6 | mock 切替 = `NEXT_PUBLIC_USE_CLAUDE_API=true` + 「計画立てよう」keyword のみ Claude、失敗時 mock fallback |
+| 7 | system prompt = TUTOR-ROLE.md + PHILOSOPHY.md 全文そのまま (prompt caching ephemeral)、SSoT 整合 |
+| 8 | env 名 = `AI_EDU_ANTHROPIC_API_KEY` (= 親 harness の `ANTHROPIC_API_KEY=""` injection と衝突回避) |
+
+**実装 (C56)**:
+
+| # | SHA | 内容 |
+|---|---|---|
+| C56 | `859bff5` | feat: Phase 6 smoke test — Claude Opus 4.7 で「計画立てよう」入口 1 発話の AI 化 |
+
+**変更ファイル (6 件 + 1 新規)**:
+- `web/lib/learn/tutor-claude.ts` (new) — Server Action `tutorClaudeRespondToPlanRequest`
+- `web/lib/learn/tutor-mock.ts` — `buildNextTutorReplyAsync` async wrapper 追加
+- `web/components/tutor/TutorChat.tsx` — `generateReply` 型 Promise 化 + setTimeout コールバック async + try/finally
+- `web/components/tutor/TutorWorkspace.tsx` — `buildNextTutorReplyAsync` import + `generateReply` async/await
+- `web/.env.local.example` — `AI_EDU_ANTHROPIC_API_KEY` + `NEXT_PUBLIC_USE_CLAUDE_API=true` template + 衝突理由 comment
+- `web/package.json` + `package-lock.json` — `@anthropic-ai/sdk` 依存追加
+
+**動作確認 OK 例** (ゆい応答、mock 文言「OK、学習計画立てよう! まず科目から。（教材を 3 回まわす計画を立てるよ）」と明確に異なる):
+
+> いいね、計画立てよっか！
+> じゃあまず、どの科目からいく？下に出てくるカードから選んでみて。
+> 「これが一番気になる」とか「これ後回しにしたい」とか、なんとなくでも OK だよ〜
+
+- ✅ ゆいキャラ整合 (「だよ〜」「いいね」温かい口調)
+- ✅ PHILOSOPHY「ふわっと → 具体化」軸 (「なんとなくでも OK」)
+- ✅ subject-picker への自然な誘導
+- ✅ TUTOR-ROLE「コーチング軸」(具体例で本人発話を引き出す)
+
+ito19 さん 2026-05-26「対応してくれました」OK 確認済。
+
+### 2026-05-26 env 衝突問題の Lesson Learned (Phase 7 でも踏襲)
+
+最初の動作確認で `ANTHROPIC_API_KEY is not set in .env.local` エラー連発。.env.local に key を正しく書いても読まれない問題:
+
+- **原因**: Claude Code 等の親 harness は子プロセス起動時に `ANTHROPIC_API_KEY=""` (空文字列) と `ANTHROPIC_BASE_URL` を inject する (= ユーザー key 漏洩防止のための harness 設計)
+- **影響**: Next.js (内部 dotenv) は「既存 env を上書きしない」規律 → .env.local の値が無視される (空文字列が勝つ)
+- **回避**: env 名をプロジェクト固有 prefix (`AI_EDU_*`) にする
+- **debug の決め手**: `Object.keys(process.env).filter(k => /ANTHROPIC|SUPABASE/i.test(k))` で「キー名は存在するが値が空」を検出。env 関連の不具合は値ではなくキーの存在/値長さを別々に確認するのが第一歩
+
+Phase 7 Supabase 接続でも同じ問題が起こる可能性あり (= `SUPABASE_*` を harness が inject する場合)。予防的に `AI_EDU_SUPABASE_*` prefix も検討。
+
+### 2026-05-26 SSoT 同期 (C57)
+
+- `ARCHITECTURE.md` に「## Phase 6: Claude API 接続 (2026-05-26 smoke test 着手)」セクション新設 (8 論点 + 実装ファイル表 + 動作確認結果 + Lesson Learned + 次 grill 候補 A-G)
+- `ARCHITECTURE.md`「フェーズ別 実装ロードマップ」の Phase 6 行を「未着手」→「smoke test 着手済 (C56)」に更新
+- 本 SESSION_HANDOFF.md §3 に本セクション追加 + §6 スタータープロンプト全更新
+- memory `project_ai_education.md` / `MEMORY.md` 更新
+
 ---
 
 ## §4. 現状確認方法 (dev server で動かす)
@@ -441,73 +507,61 @@ Phase 5 全実装 (C15-C24) + 2026-05-25 追加 grill (C26、教材アップロ�
 AI-Education プロジェクトの作業を継続します。
 
 1. C:\dev\projects\home\Ai-Education\SESSION_HANDOFF.md を読んで状況把握
-2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 5: 学習戦略エンジン」「## 教材アップロード設計 (2026-05-25 grill)」「## 科目追加設計 (2026-05-25 grill)」セクションを確認
+2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 5: 学習戦略エンジン」「## Phase 6: Claude API 接続」「## 教材アップロード設計」「## 科目追加設計」セクションを確認
 3. memory MEMORY.md の project_ai_education.md を確認
 
-【今日の状態 (55 commit、教材ハブ動線完全実装 + ito19 さん最終 OK 確認済、次は「プラン (計画立案) grill = 一番の肝、慎重に」)】
-- Phase 3-5 全実装完了 + grill 1+2 ガワ実装 + 緊急 fix 5 件 + SSoT 同期 3 回
-- 2026-05-26 ito19 さん意見実装 11 件 (C43-C46 + C48-C54) で教材ハブ動線完成:
-  登録 → 一覧 → 詳細 [体系図リスト⇄マップ / スケジュール組み込み + 信号機進捗 /
-  編集削除 / ← 教材一覧戻る / ノード→chat 遷移] → 葵 chat 拠点
-- **教材セクション ito19 さん「OK」明示確認済** (2026-05-26 セッション末)
-- C55 (今 push) で SSoT 引継ぎ準備完了
-- 55 commit / main 直 push 済 / tsc + lint クリア
-- Phase 3 レビュー追従 完了 (C1-C6)
-- Phase 4 中学生向け設計軌道修正 完了 (C7-C13)
-- Phase 5 学習戦略エンジン 試作型 + mock (C14)
-- **Phase 5 grill 確定 (P5-Q1〜Q7 + サブ問い計 11 問、ARCHITECTURE.md SSoT 反映済み)**
-- **Phase 5 全実装完了 (C15-C24 + C25 ARCHITECTURE 同期)**
-- **2026-05-25 追加 grill 1+2 (C26-C27): 教材アップロード設計 13 + 科目追加設計 9 SSoT 同期**
-- **両 grill のガワ実装完了 (C28-C34) + C35 SSoT 同期**
-- **2026-05-26 緊急 fix C36-C38 + C39 SSoT 同期** (材料ピッカー追加リンク / Radix Select quirk / C31 取り残し全 fix)
-- **2026-05-26 後段緊急 fix C40-C41 + C42 SSoT 同期**:
-  - **C40 `f93cc83`**: fix: TutorWorkspace.viewFromParam に "material-detail" 抜け fix (C32 ガワ実装時に URL parser 許可リスト追加忘れ → URL が material-detail でも DefaultPane 表示の致命バグ)
-  - **C41 `04074b4`**: fix: MaterialDetailView スクロール不能 fix (flex 子の min-height: auto 規則で overflow が効かない問題、WeeklyMonthlyReportView 二層パターンに統一)
-  - これで教材登録ウィザード Step1 → Step2 → Step3 → material-detail 自動展開 → 体系図全件スクロール閲覧、まで **2 セッション越しに初めて全動線完走**
-- **C42 `e8f42d7`**: docs: C40-C41 を ARCHITECTURE / SESSION_HANDOFF / memory に同期 + 残課題 ②③④ を明記
-- **2026-05-26 ito19 さん意見実装 (C43-C46)** で教材ハブ動線完全実装 (詳細は §3「2026-05-26 ito19 さん意見実装 (C43-C46)」セクション):
-  - **C43 `79ee7b0`**: feat: MaterialDetailView に体系図フローチャート (G、MindMapPane 流用、ノードリスト + フローチャート 2 表現)
-  - **C44 `21f6a22`**: feat: ゆいメニュー「教材」+ MaterialsListPane (A+B、残課題⑤ 完全解消、δ プランの左配置 + 科目別 grouping)
-  - **C45 `5b0623d`**: feat: 教材詳細にスケジュール組み込み状況 + 遷移リンク (D+E α 案、当月 SI 集計 + today-tasks 遷移)
-  - **C46 `63a4f6b`**: feat: 教材編集・削除 (F α 案、MaterialEditDialog 再利用、materials state 管理)
-- **C47 (今 push): C43-C46 を ARCHITECTURE / SESSION_HANDOFF / memory に SSoT 同期**
-- 47 commit / main 直 push 済 / tsc + lint クリア
+【今日の状態 (57 commit、Phase 6 smoke test 完了 + ito19 さん OK 確認済、次は Phase 6 拡大 A-G grill)】
+- Phase 3-5 全実装完了 + 教材セクション完了 (C1-C55)
+- **Phase 6 smoke test 着手 + 動作 OK** (C56 feat + C57 docs):
+  - ito19 さん grill 開始直後に方針転換「プランは AI が立てる前提、AI の動きを確かめる必要があるので Claude API を入れましょうか」
+  - = mock のままプラン grill しても地に足つかない判断 → Phase 6 着手
+  - smoke test 確定 8 論点 (Phase 6 / 「計画立てよう」入口 / Opus 4.7 / Server Action / feature flag / mock fallback / TUTOR-ROLE+PHILOSOPHY 全文 / `AI_EDU_ANTHROPIC_API_KEY` env 衝突回避)
+  - 動作確認 OK: 「いいね、計画立てよっか！...なんとなくでも OK だよ〜」(mock 文言と明確に異なる、ゆいキャラ + コーチング軸整合)
+  - 詳細は §3「2026-05-26 Phase 6 着手 (C56-C57)」セクション + ARCHITECTURE「## Phase 6: Claude API 接続」セクション
+- **env 衝突問題の Lesson Learned** (詳細は §3):
+  - Claude Code 等の親 harness は子プロセスに `ANTHROPIC_API_KEY=""` (空) を inject
+  - Next.js dotenv の「既存 env 非上書き」規律で .env.local が読まれない
+  - 回避 = プロジェクト固有 prefix (`AI_EDU_*`)、Phase 7 Supabase 接続でも踏襲検討
+- 57 commit / main 直 push 済 / tsc + lint クリア
 
-【本セッション中対応しなかった残課題 (ito19 さん明示「一旦終了」)】
-教材登録動線 C40-C41 fix の後、画面確認で見つかった以下の問題は **次セッション以降**:
+【本セッション中対応しなかった残課題 (引き続き次セッション以降)】
 - ② **表示教材が MOCK_MATERIALS[0] (中2英語教科書) 固定** → in-memory mock push 実装で解決、Phase 7 永続化とは別件
 - ③ **2 回目以降の教材登録で「テスト」発話の重複** → 複数登録時の挙動 grill 要
 - ④ **計画立案フロー + material-detail 並走** (左:plan-await-material / 右:material-detail) → grill 1 確定 5「疎結合」の UX 違和感、grill 要
+- ⑥ **信号機進捗の本物の閾値ロジック** → Phase 6/7 で要件 grill (単純進捗率 vs 日付経過率 / 教材ごと / PlanType 別 / 配色アクセシビリティ / 集計範囲)
+- **プラン grill 9 候補 (①〜⑨)** = Phase 6 smoke test 着手判断で一旦保留、Phase 6 拡大候補 G として再浮上の可能性
 
-【次の作業 — プラン (計画立案フロー) grill = 一番の肝、慎重に】
-ito19 さん 2026-05-26 セッション末で明示:
-> 「教材の作成はこれで OK です。次はプランの作成に行きましょう。ここが多分このシステムの一番の肝なんで慎重に行きましょう。」
+【次の作業 — Phase 6 拡大 grill (A-G のどこから?)】
+smoke test 動いたので、Phase 6 拡大論点を grill で詰める段階:
 
-**前提**:
-- Phase 5 grill 確定済 (P5-Q1〜Q7、Q11 = ゆい対話 + カードハイブリッド、subject → material → duration → weak-node-picker → roadmap-preview 動線)
-- C8/C17/C19/C20/C21/C22/C23 で実装完了
-- 教材ハブ動線完成で、計画立案中の「+ 新規教材を追加」も動く
-
-**残論点 9 個 (本 grill で詰める)**:
-① 計画立案の **起点** (本人発話 only? ゆいから「そろそろ見直し時期?」提案?) ← 推奨
-② 教材ピッカー UX 細部 / ③「科目がない」自動検出 / ④ roadmap-preview 表示内容 /
-⑤ キャンセル・一時保留 / ⑥ 複数並走計画 / ⑦ ゆいの事前情報 /
-⑧ 既存計画との関係 / ⑨ 1 計画 1 教材 vs 複数教材
+| # | 論点 | コメント |
+|---|---|---|
+| A | conversation history | ユーザー発話 1 件のみ → 過去履歴も渡すか? ゆいが文脈を持つ前提 |
+| B | context 渡し | 現在の科目 / WeakNodes / 過去 LearningPlan を system or messages に |
+| C | tool use | Claude が `subject-picker` カード type を構造化出力で返す等 |
+| D | **プラン立案 core の AI 化** ← 推奨 | LearningPlan + GT[] + SI[] を Claude が tool use で生成、Phase 6 本丸、ito19 さん「プランは AI が立てる前提」直結 |
+| E | ゆいの他発話の AI 化 | 帰宅儀式 / レポート / 課題受付 (プラン以外への発話拡大) |
+| F | 葵先生先行 | 教材 PDF → 体系図 + 評価コメントを Claude Opus で生成 (ARCHITECTURE 当初 Phase 6 主役) |
+| G | プラン grill 9 候補に戻る | ① 起点 / ② 教材ピッカー UX / ③ 科目自動検出 / ④ roadmap-preview / ⑤ キャンセル / ⑥ 複数並走 / ⑦ 事前情報 / ⑧ 既存計画との関係 / ⑨ 1 計画 1 教材 vs 複数 |
 
 **次セッション開始時のアスク内容**:
-「9 候補のどれから始める? / ito19 さん別アジェンダあり? / まず現状動線 (subject → material → ... → roadmap) を dev server で一周してから起点決める?」
-推奨: ① 計画立案の起点 (PHILOSOPHY「コーチング」軸最重要、Phase 6 ゆい AI 化の core 論点に直結)
+「A-G のどこから? まず /tutor で「計画立てよう」発話を ito19 さん自身で何度か触って動きを見てから決める? それとも D (プラン立案 core) に直接行く?」
 
-**grill アプローチ (ito19 さん「慎重に」)**:
+推奨: **D (プラン立案 core の AI 化)** = Phase 6 本丸、ito19 さん「プランは AI が立てる前提」「AI の動きを確かめる」の核心。tool use 設計 (subject / material / duration / weakNodes 入力 → GT[] + SI[] 構造化出力) を grill で詰めて実装。
+
+**grill アプローチ (Phase 6 拡大も「慎重に」、ただし smoke test で動きが見えた前提で速度上がる)**:
 - 1 問ずつ詰める、推奨案を必ず添える (memory `feedback_grill_me.md` 規律)
-- 確定論点は ARCHITECTURE.md に即同期、実装は全 grill 確定後
-- 「一番の肝」 = ツール全体の中核、Phase 6 ゆい AI 化の前提 → 慎重に時間をかける
+- 確定論点は ARCHITECTURE.md「## Phase 6: Claude API 接続」セクションに即同期
+- 実装は grill 確定後、smoke test 同様 feature flag + mock fallback の並走パターンを基本に
+- conversation history / context 渡し / tool use はどれも繊細、慎重に
 
-【次セッション以降の優先度低残課題 (= 後回し可)】
-- ② 表示教材が MOCK_MATERIALS[0] 固定 (in-memory mock push で解消、Phase 7)
-- ③ 2 回目以降の教材登録で「テスト」発話の重複 (Phase 6 ゆい AI 化と同時に解消の可能性)
-- ④ 計画立案フロー + material-detail 並走 UX (= プラン grill ⑥ 並走計画と一部関連)
-- ⑥ 信号機進捗表示の本物の閾値ロジック (Phase 6/7 で要件 grill)
+【動作確認時の注意 (Phase 6)】
+- dev server 起動: `cd C:\dev\projects\home\Ai-Education\web && npm run dev`
+- env 変更後は dev server 再起動 (Next.js は env hot reload しない)
+- 親 harness の env 衝突回避のため、Claude 関連の env は `AI_EDU_*` prefix
+- `NEXT_PUBLIC_USE_CLAUDE_API=false` で smoke test を flag off にして mock fallback 確認可能
+- API key の取り扱い: `.env.local` で管理、AI 経由で key を context に乗せない (Claude Code transcript リスク)
+  - 必要な場合は `PASTE_NEW_KEY_HERE_AND_SAVE` プレースホルダで Edit + ito19 さんが手動置換、の運用も可
 
 各 commit ごとに tsc --noEmit + eslint クリアを確認、conventional commit
 (feat: / fix: / docs: / refactor:) + 「なぜ / 何を / どう動くか」を本文に書く。

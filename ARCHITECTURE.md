@@ -1003,6 +1003,81 @@ REVIEW コーチング指摘「中2 女子は親に何が伝わるか神経質�
 
 ---
 
+## Phase 6: Claude API 接続 (2026-05-26 smoke test 着手)
+
+ito19 さん 2026-05-26 セッション末で「プランは AI が立てる前提、ここでそろそろ AI の動きを確かめる必要がある、Claude の API を入れましょうか」と方針確定 → Phase 6 着手。プラン grill 9 候補 (①〜⑨) は AI の動きを見てから議論する流れに変更 (= mock のままで「ゆいが計画をどう立てるか」議論しても地に足つかない、という ito19 さん判断)。
+
+### 着手範囲 (smoke test)
+
+**最小単位**: ゆいの「計画立てよう」入口の **1 発話だけ** Claude Opus 4.7 で生成。他の発話 (帰宅儀式 / レポート / 課題受付 / カード選択後 / 葵 chat 等) は引き続き mock。
+
+### 設計確定 8 論点 (2026-05-26 grill)
+
+| # | 確定 |
+|---|---|
+| 1 | 起点 = Claude API 接続 (Phase 6 着手)、プラン grill 9 候補は AI 化後に議論 |
+| 2 | smoke test 先行 (Phase 6 全体着手ではなく、最小単位で「動くこと」確認) |
+| 3 | 代入点 = 「計画立てよう」入口のゆい応答 1 発話 (context 不要、最小単位) |
+| 4 | モデル = Claude Opus 4.7 (`claude-opus-4-7`、本番想定通り、cost は smoke test なら 1 円未満) |
+| 5 | 呼び出し場所 = Server Action (Next.js 16 標準、`'use server'`、API key は server-only) |
+| 6 | mock 切替 = `NEXT_PUBLIC_USE_CLAUDE_API=true` + 「計画立てよう」keyword のみ Claude、それ以外 / 失敗時も mock fallback |
+| 7 | system prompt = TUTOR-ROLE.md + PHILOSOPHY.md 全文そのまま (prompt caching ephemeral)、SSoT 整合 |
+| 8 | env 名 = `AI_EDU_ANTHROPIC_API_KEY` (= 親 harness の `ANTHROPIC_API_KEY=""` injection と衝突回避) |
+
+### 実装ファイル
+
+| ファイル | 役割 |
+|---|---|
+| `web/lib/learn/tutor-claude.ts` (新規) | Server Action `tutorClaudeRespondToPlanRequest(userInput): Promise<string>`、TUTOR-ROLE + PHILOSOPHY を fs.readFile で system prompt 化、Anthropic SDK で Opus 4.7 呼び出し、prompt caching (ephemeral) 有効化 |
+| `web/lib/learn/tutor-mock.ts` | 末尾に `buildNextTutorReplyAsync(args): Promise` 追加、`NEXT_PUBLIC_USE_CLAUDE_API=true` + plan keyword 一致時のみ Claude 経由、それ以外 / 失敗時は同期 `buildNextTutorReply` に fallback |
+| `web/components/tutor/TutorChat.tsx` | `generateReply` prop 型を `Promise<TutorMessage>` 返却に変更、`appendThenReply` の setTimeout コールバックを async + try/finally で `setIsThinking(false)` 保証 |
+| `web/components/tutor/TutorWorkspace.tsx` | `buildNextTutorReplyAsync` import 追加、`generateReply` を async/await 化 (他 `onPick*` ハンドラは同期のまま — カード選択経由は keyword 解析を経ないため Claude 化対象外) |
+| `web/.env.local.example` | `AI_EDU_ANTHROPIC_API_KEY` + `NEXT_PUBLIC_USE_CLAUDE_API=true` template 追加、env 名衝突の理由コメント追記 |
+| `web/package.json` | `@anthropic-ai/sdk` 依存追加 |
+
+### 動作確認結果 (2026-05-26)
+
+「計画立てよう」発話に対するゆい応答例:
+
+> いいね、計画立てよっか！
+> じゃあまず、どの科目からいく？下に出てくるカードから選んでみて。
+> 「これが一番気になる」とか「これ後回しにしたい」とか、なんとなくでも OK だよ〜
+
+合格判定:
+- ✅ ゆいキャラ整合 (「だよ〜」「いいね」温かい口調)
+- ✅ PHILOSOPHY「ふわっと → 具体化」軸そのまま (「なんとなくでも OK」)
+- ✅ subject-picker への自然な誘導
+- ✅ TUTOR-ROLE「コーチング軸」(「これが一番気になる / 後回しにしたい」の具体例で投げかけ、本人発話を引き出す)
+- ✅ mock 文言「OK、学習計画立てよう! まず科目から。（教材を 3 回まわす計画を立てるよ）」と明確に異なる多様な応答
+
+ito19 さん 2026-05-26「対応してくれました」OK 確認済。
+
+### 環境変数衝突問題の Lesson Learned
+
+Claude Code 等の親 harness は子プロセス起動時に **`ANTHROPIC_API_KEY=""`** (空文字列) と **`ANTHROPIC_BASE_URL`** を inject する (= ユーザー key 漏洩防止のための harness 設計)。Next.js (内部 dotenv) は「既存 env を上書きしない」規律なので、`.env.local` に `ANTHROPIC_API_KEY=sk-ant-...` と書いても **親 harness の空文字列が勝つ** 状態になる。
+
+→ プロジェクト固有 prefix (`AI_EDU_`) で衝突回避するのが筋。同じパターンは葵 Phase 6 拡張、Phase 7 Supabase 接続 (`SUPABASE_*` は別 prefix も検討) でも踏襲する。
+
+debug の決め手は `Object.keys(process.env).filter(k => /ANTHROPIC|SUPABASE/i.test(k))` で「envキー名は存在するが値が空」を検出した点。env 関連の不具合は値ではなくキーの存在を確認するのが第一歩。
+
+### Phase 6 拡大の次の grill 候補
+
+smoke test 動いた後の論点 (どこから着手するかは次セッション以降で grill):
+
+| # | 論点 |
+|---|---|
+| A | **conversation history**: 現在ユーザー発話 1 件のみ messages、過去履歴も渡すか? (= ゆいが文脈を持つ前提) |
+| B | **context 渡し**: 現在の科目 / WeakNodes / 過去 LearningPlan を system prompt or messages に渡すか? |
+| C | **tool use**: Claude が `subject-picker` カード type を構造化出力で返すなど (現状 card 分岐は mock 維持) |
+| D | **プラン立案 core の AI 化**: LearningPlan + GT[] + SI[] を Claude が tool use で生成 (= ゆいが本当に計画を立てる、Phase 6 の本丸) |
+| E | **ゆいの他発話の AI 化**: 帰宅儀式 / レポート / 課題受付 (プラン以外の発話拡大) |
+| F | **葵先生先行**: 教材 PDF → 体系図 + 評価コメントを Claude Opus で生成 (ARCHITECTURE 当初の Phase 6 主役、現在 mockExtractNodes) |
+| G | **プラン grill 9 候補に戻る**: ① 計画立案の起点 / ② 教材ピッカー UX / ③ 科目自動検出 / ④ roadmap-preview / ⑤ キャンセル / ⑥ 複数並走 / ⑦ ゆいの事前情報 / ⑧ 既存計画との関係 / ⑨ 1 計画 1 教材 vs 複数教材 |
+
+次セッション開始時、ito19 さんに「A〜G のどこから? まず /tutor 動線一周してから?」アスク。
+
+---
+
 ## ゆい→葵への申し送り（TutorHandoff）
 
 ARCHITECTURE 既存の「葵 → ゆい：`Issue.summary` 経由」の **逆方向**。
@@ -1286,7 +1361,7 @@ TutorHandoff {
 | **Phase 3.5** | 学習開始の儀式 + 経過時間計測 + 離席検知 + 終了儀式（下記 Phase 3.5 スコープ参照） | 中盤の追加機能で部分実装済 (auto-pause / ending dialogue / 3 状態タイマー)、残りは next |
 | **Phase 4** | **中学生向け設計軌道修正 (2026-05-25 grill)**: LearningPlan + 帰宅儀式 (2 部構成) + SchoolDailyReport + 週次/月次レポート (4 セクション) + 達成バッジ + 親共有 (本人同意制)。**既存 Phase 4 (宿題タスク) と旧 Phase 5 (授業の新しい学び) は本 Phase に統合** | ✓ 完了 (C7-C13、2026-05-25) |
 | **Phase 5** | **学習戦略エンジン (2026-05-25 grill)**: 4 軸分離 (Plan Type / Mode / Resource / Node) + GeneratedTask × ScheduleItem 並走 + WeakNodes 半自動 + Replan Engine (3 トリガー) + NodeReviewSuggestion 即時 accept + Plan Engine ダッシュボード + 今日のタスクルート整理 | ✓ 完了 (C14 試作 + C15-C24、2026-05-25) |
-| **Phase 6** | Claude API 接続、scripted mock を本物の対話に置換、コンテキスト圧縮（rolling summary / prompt cache）、ゆいによるサマリー読み込み、**葵先生による教材読み込み (体系図 + 評価コメント、本書「## 教材アップロード設計 (2026-05-25 grill)」参照)**、教材詳細ページ + 教材ごと独立 chat、WeakNodes 自動判定の AI 化、`MaterialEditWizard` の 3 step 化 (監修ステップ撤去) | 未着手 |
+| **Phase 6** | Claude API 接続、scripted mock を本物の対話に置換、コンテキスト圧縮（rolling summary / prompt cache）、ゆいによるサマリー読み込み、**葵先生による教材読み込み (体系図 + 評価コメント、本書「## 教材アップロード設計 (2026-05-25 grill)」参照)**、教材詳細ページ + 教材ごと独立 chat、WeakNodes 自動判定の AI 化、`MaterialEditWizard` の 3 step 化 (監修ステップ撤去) | **smoke test 着手済 (2026-05-26 C56、本書「## Phase 6: Claude API 接続」参照)**: 「計画立てよう」入口 1 発話のみ Opus 4.7 化、Server Action + feature flag + mock fallback、TUTOR-ROLE + PHILOSOPHY 全文 system prompt、`AI_EDU_ANTHROPIC_API_KEY` で親 harness env 衝突回避。次拡大 grill 候補 A-G は本書 Phase 6 セクション末尾参照 |
 | **Phase 7** | Supabase スキーマ + mock → 永続化 (LearningPlan / SchoolDailyReport / ScheduleItem 拡張 / GeneratedTask / バッジ等含む) | 未着手 |
 | **Phase 8** | Web Speech API（STT）+ OpenAI TTS で音声対話 | 未着手 |
 
