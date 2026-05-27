@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-26 (Phase 4-5 全実装完了 + 教材ハブ動線完成 (C43-C54 ito19 さん OK) + **Phase 6 着手 (C56 feat + C57 docs)**: 「計画立てよう」入口 1 発話だけ Claude Opus 4.7 smoke test 完了 + ito19 さん「対応してくれました」OK 確認済 + env 衝突問題 (`AI_EDU_*` prefix) Lesson Learned 記録 → 次は **Phase 6 拡大 A-G grill (推奨: D = プラン立案 core の AI 化、Phase 6 本丸)**)
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-27 (**プロジェクト前提から大転換**: PHILOSOPHY 全書き換え C58 = **コーチング・ファースト型 学習アプリ** へ + 学習プラン再設計 grill 16 問 33 論点確定 + C59 SSoT 同期。**Phase 5 で実装した骨格 (LearningPlan 9 ヶ月 / 全期間 GT 化 / 教材ノード生成 / PlanType 5 種等) は解体・再構築方向**。次は **学習プラン再設計 grill 残り 7 論点** (失敗扱い / 中学生主体性 / PlanType / カリキュラム DB / 系統可視性 / 時間予算 / 統合管制))
 
 ---
 
@@ -399,6 +399,42 @@ Phase 7 Supabase 接続でも同じ問題が起こる可能性あり (= `SUPABAS
 - 本 SESSION_HANDOFF.md §3 に本セクション追加 + §6 スタータープロンプト全更新
 - memory `project_ai_education.md` / `MEMORY.md` 更新
 
+### 2026-05-27 PHILOSOPHY 全書き換え + 学習プラン再設計 grill (C58-C59)
+
+C57 で「次セッション = Phase 6 拡大 A-G grill」と引き継ぎ準備したが、**ito19 さんが引継ぎ受領後にプロジェクト前提から見直し方針** を提示。同セッション中に 17 問 grill を進めて以下を確定:
+
+**C58 `8c5b1f0` docs: PHILOSOPHY 全書き換え — コーチング・ファースト型へ思想転換**:
+- 旧 PHILOSOPHY (AI 提案ベース、ito19 さん未納得、暗記からの脱却・体系図・なぜを問う) を **全廃止**
+- 新中心宣言: **「コーチング・ファースト型 学習アプリ」**
+- 読者: 子供 (毎回腹落ち儀式) → **親 (アプリ使う前に必ず読む)** へ転換
+- 5 章構成: 軸はコーチング / 構造的空白 / 直線進行と分からない地獄 / プロ野球コーチアナロジー / 親へのお願い
+- **親⇄ゆいコーチ対話チャネル** 明示 (4 方向: 報告 / ヒアリング / 質問 / 答え)
+- 差別化軸:「AI で質疑応答」はあるが「AI でコーチング」を狙うのは我々だけ
+
+**C59 docs: 学習プラン再設計 grill 16 問 SSoT 同期**:
+- ARCHITECTURE.md に新セクション「## 学習プラン再設計 grill (2026-05-27)」追加 (確定 33+ 論点 + 未確定 7 + Phase 5 解体級判断)
+- ARCHITECTURE.md「フェーズ別 実装ロードマップ」の Phase 5/6 行に「2026-05-27 解体・再構築方向」追記
+- 本 SESSION_HANDOFF.md Header + §3 + §6 全更新
+- memory `project_ai_education.md` + `MEMORY.md` 更新
+
+**確定論点 33+ の要旨** (詳細 ARCHITECTURE「## 学習プラン再設計 grill (2026-05-27)」参照):
+- **思想・対象 8**: コーチング・ファースト軸 / 読者=親 / 旧 PHILOSOPHY 全廃止 / 親⇄ゆい対話 4 方向 / 通信教育 (Z会・進研ゼミ等) 対象 / 学年共通基盤 / 葵=受動的補助 / 高校拡張 2 年後
+- **プラン構造 6**: 長期計画なし / 1 ヶ月更新 / 学校+塾二系統 / 学校>塾優先 / 外部スケジュール起点 / 今日+1 ヶ月全タスク見せる
+- **つまずき遡及 5**: 学年超え / 教材ノード生成廃止 → 小〜高カリキュラム事前 DB / 高校まで (中高一貫対応) / AI 対話駆動 / 親通知絶対
+- **主体性等 7**: 親承認モデル (小学生) / 中学生未確定 / 弱点絶対親共有 / 朝振り返り廃止 or 小学校のみ / 帰宅後フリーに / AI 通訳 / 主用途
+- **試験前モード 9**: 状態モデル / ハイブリッド発火 / 3 周 × 重点変化 / 学校停止+塾並走 / 3 周フェーズ別配分 / コーチング駆動振り返り / 3 週前発火 / 親手入力 / 親フィードバック救済
+
+**Phase 5 実装への影響**: 🔴 解体級。LearningPlan の 9 ヶ月期間 + 全期間 GT 化、教材ノード生成 (葵による体系図)、PlanType 5 種、完全本人主体 (Q15)、朝振り返り (morning モード)、本人同意制親共有 — これらほぼ作り直し。「**Phase 7 (永続化) の前に Phase 5 解体・再構築**」ステージに入る。
+
+**未確定論点 (残り 7、次セッション以降で grill 推奨順)**:
+1. 失敗扱い (carry-over / 破綻許容、コーチング・ファースト整合の核) ← 重
+2. 中学生の主体性モデル (小学生 = 親承認確定済、中学生は?)
+3. PlanType 5 種の扱い (廃止 / 再編 / 系統との関係)
+4. カリキュラム DB の作成・運用 (AI 検索駆動、具体運用、信頼性担保)
+5. 系統 A/B 子に見せるか (ito19 さん「全タスク見せていい」発言、確認のみ)
+6. 時間予算自動制御 (別チャット案、ito19 さんスルー、保留 or 採用?)
+7. 2 系統の統合管制エンジン (別チャット案の核、採用?)
+
 ---
 
 ## §4. 現状確認方法 (dev server で動かす)
@@ -507,61 +543,77 @@ Phase 5 全実装 (C15-C24) + 2026-05-25 追加 grill (C26、教材アップロ�
 AI-Education プロジェクトの作業を継続します。
 
 1. C:\dev\projects\home\Ai-Education\SESSION_HANDOFF.md を読んで状況把握
-2. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## Phase 5: 学習戦略エンジン」「## Phase 6: Claude API 接続」「## 教材アップロード設計」「## 科目追加設計」セクションを確認
-3. memory MEMORY.md の project_ai_education.md を確認
+2. C:\dev\projects\home\Ai-Education\PHILOSOPHY.md を必ず読む (2026-05-27 全書き換え版、コーチング・ファースト型 学習アプリ宣言)
+3. C:\dev\projects\home\Ai-Education\ARCHITECTURE.md の「## 学習プラン再設計 grill (2026-05-27)」セクションを必ず読む (確定 33 論点 + 未確定 7)
+4. ARCHITECTURE.md「## Phase 6: Claude API 接続」セクションも確認 (smoke test 残置、拡大 grill は方針転換で保留)
+5. memory MEMORY.md と project_ai_education.md を確認
 
-【今日の状態 (57 commit、Phase 6 smoke test 完了 + ito19 さん OK 確認済、次は Phase 6 拡大 A-G grill)】
-- Phase 3-5 全実装完了 + 教材セクション完了 (C1-C55)
-- **Phase 6 smoke test 着手 + 動作 OK** (C56 feat + C57 docs):
-  - ito19 さん grill 開始直後に方針転換「プランは AI が立てる前提、AI の動きを確かめる必要があるので Claude API を入れましょうか」
-  - = mock のままプラン grill しても地に足つかない判断 → Phase 6 着手
-  - smoke test 確定 8 論点 (Phase 6 / 「計画立てよう」入口 / Opus 4.7 / Server Action / feature flag / mock fallback / TUTOR-ROLE+PHILOSOPHY 全文 / `AI_EDU_ANTHROPIC_API_KEY` env 衝突回避)
-  - 動作確認 OK: 「いいね、計画立てよっか！...なんとなくでも OK だよ〜」(mock 文言と明確に異なる、ゆいキャラ + コーチング軸整合)
-  - 詳細は §3「2026-05-26 Phase 6 着手 (C56-C57)」セクション + ARCHITECTURE「## Phase 6: Claude API 接続」セクション
-- **env 衝突問題の Lesson Learned** (詳細は §3):
-  - Claude Code 等の親 harness は子プロセスに `ANTHROPIC_API_KEY=""` (空) を inject
-  - Next.js dotenv の「既存 env 非上書き」規律で .env.local が読まれない
-  - 回避 = プロジェクト固有 prefix (`AI_EDU_*`)、Phase 7 Supabase 接続でも踏襲検討
-- 57 commit / main 直 push 済 / tsc + lint クリア
+【今日の状態 (59 commit、プロジェクト前提の大転換)】
 
-【本セッション中対応しなかった残課題 (引き続き次セッション以降)】
-- ② **表示教材が MOCK_MATERIALS[0] (中2英語教科書) 固定** → in-memory mock push 実装で解決、Phase 7 永続化とは別件
-- ③ **2 回目以降の教材登録で「テスト」発話の重複** → 複数登録時の挙動 grill 要
-- ④ **計画立案フロー + material-detail 並走** (左:plan-await-material / 右:material-detail) → grill 1 確定 5「疎結合」の UX 違和感、grill 要
-- ⑥ **信号機進捗の本物の閾値ロジック** → Phase 6/7 で要件 grill (単純進捗率 vs 日付経過率 / 教材ごと / PlanType 別 / 配色アクセシビリティ / 集計範囲)
-- **プラン grill 9 候補 (①〜⑨)** = Phase 6 smoke test 着手判断で一旦保留、Phase 6 拡大候補 G として再浮上の可能性
+**C58 PHILOSOPHY 全書き換え** `8c5b1f0`:
+- 旧 PHILOSOPHY (AI 提案ベース、ito19 さん未納得、暗記からの脱却・体系図・なぜを問う) を全廃止
+- 新中心宣言: 「コーチング・ファースト型 学習アプリ」
+- 読者を子供 (毎回腹落ち儀式) → 親 (アプリ使う前に必ず読む) へ転換
+- 5 章構成 + 親⇄ゆいコーチ対話チャネル明示
+- 差別化軸: 「AI で質疑応答」はあるが「AI でコーチング」はいない、ここが構造的空白
 
-【次の作業 — Phase 6 拡大 grill (A-G のどこから?)】
-smoke test 動いたので、Phase 6 拡大論点を grill で詰める段階:
+**C59 SSoT 同期**:
+- ARCHITECTURE.md 新セクション「## 学習プラン再設計 grill (2026-05-27)」追加
+- 学習プラン構造 grill 16 問 33+ 論点確定 + 未確定 7 + Phase 5 解体級判断
+- フェーズ別実装ロードマップ Phase 5/6 行に「2026-05-27 解体・再構築方向」追記
+- SESSION_HANDOFF Header + §3 + §6 全更新、memory 更新
 
-| # | 論点 | コメント |
+**確定 33+ 論点の要旨** (詳細 ARCHITECTURE「## 学習プラン再設計 grill (2026-05-27)」):
+- 思想・対象 8: コーチング・ファースト軸 / 読者=親 / 旧 PHILOSOPHY 全廃止 / 親⇄ゆい対話 4 方向 / 通信教育 (Z会・進研ゼミ等) も対象 / 学年共通基盤 / 葵=受動的補助 / 高校拡張 2 年後
+- プラン構造 6: 長期計画なし / 1 ヶ月更新 / 学校+塾二系統 / 学校>塾優先 / 外部スケジュール起点 / 今日+1ヶ月全タスク
+- つまずき遡及 5: 学年超え / 教材ノード生成廃止 → 小〜高カリキュラム事前 DB / 中高一貫対応 / AI 対話駆動 / 親通知絶対
+- 主体性等 7: 親承認モデル (小学生) / 中学生未確定 / 弱点絶対親共有 / 朝振り返り廃止 or 小学校のみ / 帰宅後フリーに / AI 通訳 / 主用途
+- 試験前モード 9: 状態モデル / ハイブリッド発火 / 3 周×重点変化 / 学校停止+塾並走 / 3 周フェーズ別配分 / コーチング駆動振り返り / 3 週前発火 / 親手入力 / 親フィードバック救済
+
+**Phase 5 実装 (C15-C24) の扱い = 🔴 解体・再構築方向**:
+- LearningPlan 9 ヶ月 + 全期間 GT 化 → 1 ヶ月更新へ
+- 教材ノード生成 (葵による体系図) → 小〜高カリキュラム事前 DB へ
+- 系統 = 科目別 LearningPlan → 学校 + 塾 + 通信教育の二系統へ
+- 完全本人主体 (Q15) → 親承認モデル (小学生)、中学生未確定
+- 朝振り返り (morning モード) → 廃止 or 小学校のみ
+- 本人同意制親共有 → 弱点絶対親共有 + 親⇄ゆい対話
+
+**Phase 7 (永続化) 着手の前に Phase 5 解体・再構築が必要**。
+
+**Phase 6 smoke test (C56) の扱い**:
+- 「計画立てよう」入口 1 発話の Opus 4.7 化 (Server Action + feature flag + mock fallback) はそのまま残置
+- system prompt 内 PHILOSOPHY.md は C58 で全書き換えされた新版が反映される (動作確認推奨)
+- 元の Phase 6 拡大 A-G grill (ARCHITECTURE「## Phase 6: Claude API 接続」末尾) は着手前に方針転換で保留
+
+【次セッションで進める論点 — 学習プラン再設計 grill 残り 7 論点】
+
+未確定 7 件、推奨着手順:
+
+| # | 論点 | 性格 |
 |---|---|---|
-| A | conversation history | ユーザー発話 1 件のみ → 過去履歴も渡すか? ゆいが文脈を持つ前提 |
-| B | context 渡し | 現在の科目 / WeakNodes / 過去 LearningPlan を system or messages に |
-| C | tool use | Claude が `subject-picker` カード type を構造化出力で返す等 |
-| D | **プラン立案 core の AI 化** ← 推奨 | LearningPlan + GT[] + SI[] を Claude が tool use で生成、Phase 6 本丸、ito19 さん「プランは AI が立てる前提」直結 |
-| E | ゆいの他発話の AI 化 | 帰宅儀式 / レポート / 課題受付 (プラン以外への発話拡大) |
-| F | 葵先生先行 | 教材 PDF → 体系図 + 評価コメントを Claude Opus で生成 (ARCHITECTURE 当初 Phase 6 主役) |
-| G | プラン grill 9 候補に戻る | ① 起点 / ② 教材ピッカー UX / ③ 科目自動検出 / ④ roadmap-preview / ⑤ キャンセル / ⑥ 複数並走 / ⑦ 事前情報 / ⑧ 既存計画との関係 / ⑨ 1 計画 1 教材 vs 複数 |
+| 1 | **失敗扱い** ← 推奨スタート | 重 (carry-over / 破綻許容、コーチング・ファースト整合の核) |
+| 2 | 中学生の主体性モデル | 中 (小学生 = 親承認確定、中学生は?) |
+| 3 | PlanType 5 種の扱い | 中 (廃止 / 再編 / 系統との関係) |
+| 4 | カリキュラム DB の作成・運用 | 中 (AI 検索駆動、具体運用、信頼性担保) |
+| 5 | 系統 A/B 子に見せるか | 軽 (ito19 さん「全タスク見せていい」発言、確認のみ) |
+| 6 | 時間予算自動制御 | 軽 (別チャット案、ito19 さんスルー、保留 or 採用?) |
+| 7 | 2 系統の統合管制エンジン | 中 (別チャット案の核、採用?) |
 
-**次セッション開始時のアスク内容**:
-「A-G のどこから? まず /tutor で「計画立てよう」発話を ito19 さん自身で何度か触って動きを見てから決める? それとも D (プラン立案 core) に直接行く?」
+**次セッション開始時のアスク**:
+「学習プラン再設計 grill 残り 7 論点のうち、(1) 失敗扱い から始める? それとも別の論点から?」
 
-推奨: **D (プラン立案 core の AI 化)** = Phase 6 本丸、ito19 さん「プランは AI が立てる前提」「AI の動きを確かめる」の核心。tool use 設計 (subject / material / duration / weakNodes 入力 → GT[] + SI[] 構造化出力) を grill で詰めて実装。
+推奨: (1) 失敗扱い = 「壊れにくいシステム設計」の核。コーチング・ファースト「ミスは学びの瞬間」「破綻許容」のロジック化。子供は計画通り動かない前提なので、ここを決めないと UX が止まる。
 
-**grill アプローチ (Phase 6 拡大も「慎重に」、ただし smoke test で動きが見えた前提で速度上がる)**:
-- 1 問ずつ詰める、推奨案を必ず添える (memory `feedback_grill_me.md` 規律)
-- 確定論点は ARCHITECTURE.md「## Phase 6: Claude API 接続」セクションに即同期
-- 実装は grill 確定後、smoke test 同様 feature flag + mock fallback の並走パターンを基本に
-- conversation history / context 渡し / tool use はどれも繊細、慎重に
+【grill アプローチ】
+- grill-me モード厳守 (memory feedback_grill_me.md 規律)、1 問ずつ詰める、推奨案必ず添える
+- 確定論点は即 SSoT 同期: ARCHITECTURE「## 学習プラン再設計 grill (2026-05-27)」セクションへ追記 + SESSION_HANDOFF + memory
+- 実装着手は 全 grill 完了 + Phase 5 解体プラン確定後 (現状 Phase 5 mock 実装は残置、新方針への移行設計を先に詰める)
 
-【動作確認時の注意 (Phase 6)】
-- dev server 起動: `cd C:\dev\projects\home\Ai-Education\web && npm run dev`
+【env / 動作確認時の注意】
+- dev server: cd C:\dev\projects\home\Ai-Education\web && npm run dev
 - env 変更後は dev server 再起動 (Next.js は env hot reload しない)
-- 親 harness の env 衝突回避のため、Claude 関連の env は `AI_EDU_*` prefix
-- `NEXT_PUBLIC_USE_CLAUDE_API=false` で smoke test を flag off にして mock fallback 確認可能
-- API key の取り扱い: `.env.local` で管理、AI 経由で key を context に乗せない (Claude Code transcript リスク)
-  - 必要な場合は `PASTE_NEW_KEY_HERE_AND_SAVE` プレースホルダで Edit + ito19 さんが手動置換、の運用も可
+- 親 harness の env 衝突回避: Claude 関連 env は AI_EDU_* prefix (Phase 6 Lesson Learned)
+- NEXT_PUBLIC_USE_CLAUDE_API=false で mock fallback 確認可能
 
 各 commit ごとに tsc --noEmit + eslint クリアを確認、conventional commit
 (feat: / fix: / docs: / refactor:) + 「なぜ / 何を / どう動くか」を本文に書く。
