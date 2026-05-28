@@ -66,6 +66,14 @@ export const TUTOR_PERSONA = {
 } as const;
 
 /**
+ * D5 (学習プラン再設計 grill 2026-05-27 確定): 朝の振り返り (morning モード)
+ * は中学生向けは廃止方向、小学校のみ将来検討。Phase 5 解体プラン確定後に
+ * 最終判定 (完全削除 or 小学校 flag 化)、現状は flag で off に切替してハブ
+ * 挨拶モードに置換。flag = true に戻せば既存 5 セクションが動くので safety net。
+ */
+export const MORNING_MODE_ENABLED = false as const;
+
+/**
  * 初回ログイン時の挨拶メッセージ。
  *
  * Phase 3 拡張: コーチング型に変更。ぐだぐだ雑談ではなく、
@@ -136,16 +144,29 @@ export function buildInitialTutorThread(
           ? "おかえり〜、お疲れさま。"
           : "もうこんな時間か。来てくれてありがとう。";
 
-  const messages: TutorMessage[] = [
-    {
-      id: "t-1",
-      role: "tutor",
-      topic: "morning-reflection",
-      text: `${greeting}\n\nまず軽く振り返りからいこっか。**昨日はどこまで進んだ?**\n\n覚えてなかったら「えっと…」でも OK、一緒に思い出そう。すぐ取り掛かりたい時は、上のメニューからも始められるよ。`,
-      quickReplies: ["覚えてない", "不定詞のとこまでやった", "昨日はやらなかった"],
-      createdAt: now.toISOString(),
-    },
-  ];
+  // D5 (2026-05-27 確定): 中学生向け朝振り返り廃止 = flag 経由でハブ挨拶に置換。
+  // Interrupt / Suggestion の冒頭付与は廃止モードでも残す (緊急情報なので飛ばさない)。
+  const messages: TutorMessage[] = !MORNING_MODE_ENABLED
+    ? [
+        {
+          id: "t-1",
+          role: "tutor",
+          topic: "morning-reflection",
+          text: `${greeting}\n\n今日はどうする?\n- **計画を立てる**\n- **教材** を確認・追加する\n- **課題** を見せる\n- **今日のタスク** をやる\n\n上のメニューからもすぐ始められるよ。`,
+          quickReplies: ["計画を立てる", "教材", "今日のタスク"],
+          createdAt: now.toISOString(),
+        },
+      ]
+    : [
+        {
+          id: "t-1",
+          role: "tutor",
+          topic: "morning-reflection",
+          text: `${greeting}\n\nまず軽く振り返りからいこっか。**昨日はどこまで進んだ?**\n\n覚えてなかったら「えっと…」でも OK、一緒に思い出そう。すぐ取り掛かりたい時は、上のメニューからも始められるよ。`,
+          quickReplies: ["覚えてない", "不定詞のとこまでやった", "昨日はやらなかった"],
+          createdAt: now.toISOString(),
+        },
+      ];
 
   // C19 Phase 5 P5-Q3: 未処理 Interrupt があれば冒頭で Replan 提案
   // (Suggestion より優先度高、急ぎだから先に処理)

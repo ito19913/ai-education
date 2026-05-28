@@ -28,6 +28,7 @@ import {
   buildNextTutorReply,
   buildNextTutorReplyAsync,
   EVENING_RITUAL_LAST_DATE_KEY,
+  MORNING_MODE_ENABLED,
   emptySchoolReportDraft,
   shouldStartEveningRitual,
   type TutorStep,
@@ -181,9 +182,14 @@ export function TutorWorkspace({
     }
 
     // 今日初めて: 朝の挨拶で新規 thread
+    // D5 (2026-05-27 確定): 中学生向け朝振り返り廃止。MORNING_MODE_ENABLED=false の
+    // 時は morning モードのハブ挨拶のみ + state を reflection-plan (振り返り完了相当 =
+    // 通常 chat 受付状態) で起動 = 5 セクション質問に巻き込まれずに本人がメニュー操作できる
     return {
       messages: buildInitialTutorThread(new Date(), "morning").messages,
-      state: "reflection-yesterday" as const,
+      state: (MORNING_MODE_ENABLED
+        ? "reflection-yesterday"
+        : "reflection-plan") as TutorStep["state"],
       endingVentItems: [] as string[],
     };
   });
