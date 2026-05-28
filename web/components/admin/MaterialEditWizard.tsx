@@ -17,7 +17,11 @@ import { useState } from "react";
 import { Step1MetaAndUpload } from "./steps/Step1MetaAndUpload";
 import { Step2Extraction } from "./steps/Step2Extraction";
 import { Step4Save } from "./steps/Step4Save";
-import { mockExtractNodes } from "@/lib/admin/mock-extraction";
+import {
+  matchToExistingNodes,
+  mockExtractNodes,
+} from "@/lib/admin/mock-extraction";
+import { extractKnowledgeNodesViaClaude } from "@/lib/admin/extract-claude";
 import type {
   AiExtractedNode,
   KnowledgeNode,
@@ -64,12 +68,49 @@ export function MaterialEditWizard({
   });
   const [extracted, setExtracted] = useState<AiExtractedNode[]>([]);
 
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractionError, setExtractionError] = useState<string | null>(null);
+
   const goNext = () => setStep((s) => Math.min(s + 1, STEP_LABELS.length - 1));
   const goPrev = () => setStep((s) => Math.max(s - 1, 0));
 
-  const handleExtractionDone = () => {
-    setExtracted(mockExtractNodes(existingNodes));
-    goNext();
+  /**
+   * C71 (2026-05-28): Step2 アニメーション完了 → 「保存に進む」クリック時の処理を async + flag 分岐に。
+   *
+   * - NEXT_PUBLIC_USE_CLAUDE_API=true: Claude Opus 4.7 (Step A、教材メタのみ)
+   * - false or 未設定: 既存 mockExtractNodes (固定 12 ノード mock)
+   * - Claude 失敗時: mock fallback (= 動線が止まらないように、Phase 6 smoke test と同じ規律)
+   *
+   * 「保存に進む」ボタンクリックから Claude 応答が返るまでの間 (= 数秒) は
+   * isExtracting=true で Step2 のボタンを disabled + label を切り替える。
+   */
+  const handleExtractionDone = async () => {
+    const useClaudeApi = process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true";
+    setIsExtracting(true);
+    setExtractionError(null);
+
+    try {
+      if (useClaudeApi) {
+        const subject = subjects.find((s) => s.id === draft.subjectId);
+        const rawNodes = await extractKnowledgeNodesViaClaude({
+          materialName: draft.name,
+          subjectName: subject?.name ?? "英語",
+          gradeLevel: draft.gradeLevel,
+          label: draft.label,
+        });
+        setExtracted(matchToExistingNodes(rawNodes, existingNodes));
+      } else {
+        setExtracted(mockExtractNodes(existingNodes));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[C71] Claude extraction failed, fallback to mock:", msg);
+      setExtractionError(msg);
+      setExtracted(mockExtractNodes(existingNodes));
+    } finally {
+      setIsExtracting(false);
+      goNext();
+    }
   };
 
   return (
@@ -140,6 +181,8 @@ export function MaterialEditWizard({
           draft={draft}
           onComplete={handleExtractionDone}
           onBack={goPrev}
+          isExtracting={isExtracting}
+          extractionError={extractionError}
         />
       )}
       {step === 2 && (

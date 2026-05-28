@@ -13,8 +13,15 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   draft: MaterialDraft;
-  onComplete: () => void;
+  onComplete: () => void | Promise<void>;
   onBack: () => void;
+  /**
+   * C71 (2026-05-28): true の時、葵 (Claude) が裏で実抽出中。
+   * 「保存に進む」を disabled + ラベル切替で 2 重押し防止 + 進捗を見せる。
+   */
+  isExtracting?: boolean;
+  /** Claude 失敗時のエラーメッセージ (UI で「mock fallback で進めるよ」表示用) */
+  extractionError?: string | null;
 };
 
 const STAGES: ExtractionStage[] = [
@@ -25,7 +32,13 @@ const STAGES: ExtractionStage[] = [
   "done",
 ];
 
-export function Step2Extraction({ draft, onComplete, onBack }: Props) {
+export function Step2Extraction({
+  draft,
+  onComplete,
+  onBack,
+  isExtracting = false,
+  extractionError = null,
+}: Props) {
   const [stageIndex, setStageIndex] = useState(0);
   const isDone = stageIndex >= STAGES.length - 1;
 
@@ -85,18 +98,42 @@ export function Step2Extraction({ draft, onComplete, onBack }: Props) {
         </CardContent>
       </Card>
 
+      {extractionError ? (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-amber-700">
+              ⚠️ 葵 (Claude) の抽出に失敗したので、mock データで先に進めるよ。<br />
+              <span className="text-xs text-muted-foreground">{extractionError}</span>
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <div className="flex justify-between">
         <Button
           variant="outline"
           onClick={onBack}
-          disabled={!isDone}
+          disabled={!isDone || isExtracting}
           className="gap-2"
         >
           <ArrowLeft />
           <span>戻る</span>
         </Button>
-        <Button size="lg" onClick={onComplete} disabled={!isDone}>
-          {isDone ? "保存に進む" : "解析中…"}
+        <Button
+          size="lg"
+          onClick={onComplete}
+          disabled={!isDone || isExtracting}
+        >
+          {isExtracting ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              <span>葵が抽出中…</span>
+            </>
+          ) : isDone ? (
+            "保存に進む"
+          ) : (
+            "解析中…"
+          )}
         </Button>
       </div>
     </div>

@@ -115,16 +115,31 @@ const MOCK_EXTRACTION_TEMPLATE: Omit<AiExtractedNode, "matchedNodeId">[] = [
 export function mockExtractNodes(
   existingNodes: KnowledgeNode[],
 ): AiExtractedNode[] {
-  return MOCK_EXTRACTION_TEMPLATE.map((tmpl) => {
-    // 名前で既存ノードを探す
+  return matchToExistingNodes(MOCK_EXTRACTION_TEMPLATE, existingNodes);
+}
+
+/**
+ * AI 抽出ノード (matchedNodeId なし) を既存体系図と照合して
+ * matchedNodeId を付与する汎用関数。
+ *
+ * C70 (extract-claude.ts) からの戻り値 (Claude 抽出) と
+ * MOCK_EXTRACTION_TEMPLATE (mock 抽出) の両方で再利用するため切り出し。
+ *
+ * 照合ルール: 名前一致 (完全一致 + 前方一致 / 後方一致を含む)
+ */
+export function matchToExistingNodes(
+  extracted: Array<Omit<AiExtractedNode, "matchedNodeId">>,
+  existingNodes: KnowledgeNode[],
+): AiExtractedNode[] {
+  return extracted.map((node) => {
     const matched = existingNodes.find(
       (n) =>
-        n.name === tmpl.name ||
-        n.name.startsWith(tmpl.name) ||
-        tmpl.name.startsWith(n.name),
+        n.name === node.name ||
+        n.name.startsWith(node.name) ||
+        node.name.startsWith(n.name),
     );
     return {
-      ...tmpl,
+      ...node,
       matchedNodeId: matched?.id ?? null,
     };
   });
