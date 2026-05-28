@@ -13,6 +13,7 @@
  * 実モデルの system prompt + tool calling に置き換わる。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { ChevronDown, GraduationCap } from "lucide-react";
 import type {
   Issue,
@@ -485,6 +486,18 @@ function TutorHubMenu({
       >
         教材
       </button>
+
+      {/* 「カリキュラム」ボタン (C67 2026-05-28): /curriculum へのリンク。
+          英語の中1〜高3 体系図全体俯瞰 (C66 仮実装)。
+          AI つまずき認定 (黄) / 戻り誘導候補 (赤) が見える地図 */}
+      <Link
+        href="/curriculum?subject=english"
+        aria-disabled={disabled}
+        className={`rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary ${disabled ? "pointer-events-none opacity-50" : ""}`}
+        title="英語の中1〜高3 体系図全体俯瞰 (仮実装、C66)。AI つまずき認定の地図"
+      >
+        カリキュラム
+      </Link>
 
       {/* 「プラン」ボタン (右端): C21 Phase 5 P5-Q6 で Plan Engine ダッシュボード入口に変更 */}
       <button
