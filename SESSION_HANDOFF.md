@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-28 (**プロジェクト前提から大転換** + **第 1 段階 mock 反映** + **カリキュラム DB 仮実装** + **C2/C3 撤回 + 教材ベース回帰**: PHILOSOPHY 全書き換え C58 = **コーチング・ファースト型 学習アプリ** へ + 学習プラン再設計 grill 累計 30 問 / 47 論点確定 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) → **C69 で C2/C3 撤回 + 教材ベース体系図回帰 + 読まれていない範囲フォロー機構 (新 G1-G5)** 確定、C66 仮実装は再目的化方針で残置。**Phase 5 で実装した骨格は解体・再構築方向、ただし既存 Phase 5/6F 教材セクション (C28-C54) が本流に戻り解体規模縮小**。次は **学習プラン再設計 grill 残り 5 論点 + 新 G1-G5** (推奨スタート = PlanType 5 種扱い))
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-28 (**プロジェクト前提から大転換** + **第 1 段階 mock 反映** + **カリキュラム DB 仮実装** + **C2/C3 撤回 + 教材ベース回帰** + **Phase 6 教材体系図 AI 抽出 Step A**: PHILOSOPHY 全書き換え C58 + grill 累計 30 問 / 47 論点 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) + C69 で C2/C3 撤回 + 教材ベース体系図回帰確定 + **C70-C72 で Phase 6 教材体系図 AI 抽出 Step A 実装** (葵 Claude Opus 4.7 で教材メタ → 体系図 JSON 抽出、MaterialEditWizard で flag 分岐 + mock fallback)。**Phase 5 で実装した骨格は解体・再構築方向、既存 Phase 5/6F 教材セクション (C28-C54) が本流復活で解体規模縮小**。次は **学習プラン再設計 grill 残り 5 論点 + 新 G1-G5** (推奨スタート = PlanType 5 種扱い))
 
 ---
 
@@ -627,6 +627,49 @@ C68 push 後、ito19 さんから **方針転換**: 「公的カリキュラム 
 
 **Phase 5 解体プランへの影響**: 教材ベース回帰により既存実装 (C28-C54) が活きる → 解体規模は **縮小**。Phase 7 (Supabase 永続化) や Phase 8 (音声) の優先度判断に影響する可能性あり。
 
+### 2026-05-28 後段後段: Phase 6 教材体系図 AI 抽出 Step A (C70-C72)
+
+C69 push 後、ito19 さん「教材を実際取り込み、体系図を作るまで AI に処理させたらどういう風になるか見てみたい」要望 → 既存 MaterialEditWizard (固定 12 ノード mock) を実際の Claude Opus 4.7 で置換する **Step A 実装** を着手。
+
+| # | SHA | 内容 |
+|---|---|---|
+| **C70** | `8064b06` | feat: 教材体系図 AI 抽出 Server Action `extract-claude.ts` 新設 (葵 persona system prompt + 教材メタ → Claude Opus 4.7 → JSON 体系図抽出) |
+| **C71** | `acbf9ec` | feat: MaterialEditWizard で Claude API flag 分岐 + async 化 (mock-extraction の照合ロジック切り出し + handleExtractionDone async + Step2Extraction にローディング UI 追加) |
+| **C72** | (本 commit) | docs: Phase 6 教材体系図 AI 抽出 SSoT 同期 |
+
+**Step 段階分け**:
+- ✅ **Step A** (C70-C72): 教材メタのみで Claude 推測 (PDF 解析なし)
+- (Step B) PDF.js テキスト抽出 — 検討中
+- (Step C) PDF を base64 で Claude native PDF support に渡す (= 「実際の教材取り込み」感最大) — 将来
+
+**動作の前提 env** (web/.env.local):
+- `AI_EDU_ANTHROPIC_API_KEY` (Phase 6 smoke test C56 と共通)
+- `NEXT_PUBLIC_USE_CLAUDE_API=true`
+- dev server **再起動必須** (Next.js は env hot reload しない)
+
+**動作確認動線**:
+1. /tutor → ゆいに「計画立てよう」発話 → subject (英語) → material picker
+2. 「+ 新規テキスト追加」リンク → MaterialEditWizard 起動
+3. Step1: 教材名 (例「中2 英語 教科書 (光村図書)」) + 何かの PDF アップロード (PDF 自体は Step A では使われない) → 「次へ」
+4. Step2: 5 秒アニメーション → 「保存に進む」クリック
+   - flag=true: ボタンが「葵が抽出中…」(spin) に変化 → 数秒待ち → Claude が JSON 抽出 → Step3 (保存) に進む
+   - flag=false / 未設定: 即時 mock 12 ノードで Step3 に (従来通り)
+   - 失敗時: 「葵 (Claude) の抽出に失敗、mock データで先に進めるよ」Card 表示 → mock fallback で Step3
+5. Step3 で保存 → ゆい「葵先生が読んだよ」発話 + 教材詳細ページに切替 → 体系図フローチャートで Claude 抽出ノードを目視確認
+
+**Phase 6 smoke test (C56 ゆい入口 1 発話) との関係**:
+- 同 env / 同モデル / 同 flag / 同 mock fallback 規律 = 設計一貫
+- C56 = ゆい (担任) の発話 1 つ、C70-C72 = 葵 (教科の先生) の構造化出力
+
+**次の段階**:
+- 動作確認 (ito19 さん dev server で実際に試す)
+- プロンプト調整 (Claude の出力品質を見てから)
+- Step C 拡張 (PDF native 解析、別セッション)
+- G1: 抽出ノードの学年/分野マッピング → C66 マトリックスに乗せる
+- G2: 「読まれていない範囲」検出 → 抽出ノードと C66 範囲を比較
+
+詳細は ARCHITECTURE.md「## カリキュラム DB 仮実装 (2026-05-28) > ### Phase 6 教材体系図 AI 抽出 (C70-C72、2026-05-28)」セクション参照。
+
 ---
 
 ## §4. 現状確認方法 (dev server で動かす)
@@ -740,7 +783,7 @@ AI-Education プロジェクトの作業を継続します。
 4. ARCHITECTURE.md「## Phase 6: Claude API 接続」セクションも確認 (smoke test 残置、拡大 grill は方針転換で保留)
 5. memory MEMORY.md と project_ai_education.md を確認
 
-【今日の状態 (69 commit、プロジェクト前提の大転換 + 失敗扱い grill 完結 + 中学生主体性 grill 完結 + 第 1 段階 mock 反映完了 + カリキュラム DB 仮実装 + C2/C3 撤回 + 教材ベース体系図回帰)】
+【今日の状態 (72 commit、プロジェクト前提の大転換 + 失敗扱い grill 完結 + 中学生主体性 grill 完結 + 第 1 段階 mock 反映完了 + カリキュラム DB 仮実装 + C2/C3 撤回 + 教材ベース体系図回帰 + Phase 6 教材体系図 AI 抽出 Step A)】
 
 **C58 PHILOSOPHY 全書き換え** `8c5b1f0`:
 - 旧 PHILOSOPHY (AI 提案ベース、ito19 さん未納得、暗記からの脱却・体系図・なぜを問う) を全廃止
