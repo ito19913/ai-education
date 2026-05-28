@@ -1233,7 +1233,43 @@ D2 は C59/C60 時点で未確定だったが、本 grill で 6 論点に分解�
 4. **カリキュラム DB の作成・運用** grill (ノード設計大転換の具体、つまずき遡及エンジンの基盤)
 5. 残り 3 (系統可視性 / 時間予算 / 2 系統統合管制) はまとめて確定
 
-各 grill 完了後に SSoT 同期 (本セクションへ追記 + SESSION_HANDOFF + memory)。**実装着手は全 grill 完了 + 解体プラン確定後**。
+各 grill 完了後に SSoT 同期 (本セクションへ追記 + SESSION_HANDOFF + memory)。**実装着手は全 grill 完了 + 解体プラン確定後** が SSoT 原則。
+
+### 第 1 段階 mock 反映 (2026-05-28、C62-C65)
+
+C61 (中学生主体性 grill 完結) 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段階のみ、軽量範囲)」で着手。Phase 5 解体プラン確定前の **軽量・即効性ある思想反映だけ** に絞り、未確定 5 論点と衝突しない範囲で実施。
+
+| commit | 内容 | 結果 |
+|---|---|---|
+| **C62** | feat: D2-5 ゆい mock に「親にも伝えたよ」発話追加 | ✅ 計画立案完了発話 + Replan accept 発話の 2 箇所に「お母さん・お父さんにも伝えたよ ✉️ + 24h 異議窓口」1 段落追加 |
+| **C63** | feat: D5 朝振り返り (morning モード) を MORNING_MODE_ENABLED フラグで off | ✅ 定数 export 追加 + buildInitialTutorThread morning 分岐 + TutorWorkspace 初期 state 切替 = 朝振り返り 5 セクションを skip して即ハブ挨拶 (Interrupt/Suggestion 冒頭付与は維持) |
+| **C64** | docs: ゆい mock の人格コメント + persona description を C58 新 PHILOSOPHY に整合 | ✅ ファイル冒頭コメント + TUTOR_PERSONA.description + buildNextTutorReply docstring を「コーチング・ファースト型 + 親⇄ゆい対話 (A4) + 葵=受動的補助 (A7) + 掘り起こし (F4)」明示に更新 (Phase 6 Claude API system prompt 元) |
+| **C65** | docs: 第 1 段階 mock 反映 SSoT 同期 + F1 既に整合済確認 | 本セクション追記 + SESSION_HANDOFF / memory 同期 |
+
+**F1 子供 UI ラベル「失敗」「達成」緩和の調査結果** (C65 で skip 判断):
+- TodayTaskList は既に「完了 / 未完了 (中立)」のみで F1 違反なし
+- 達成バッジ (C12) は ito19 さん明示「バッジ概念残す」= 維持
+- weekly-report 「達成 → 学校 → 弱いところ → 来週」は「達成」をポジティブ感情表現として残し OK
+- 「失敗」表現は全て内部 (型名 / mock description / 技術エラー画面) で子供 UI に直接出ない
+- → 現状 Mock は偶然 F1 整合的に実装されていた、本格的な F1 内部 3 分類 (サボリ / 誤答 / お休み) は Phase 5 解体時に実装
+
+**第 1 段階の動作確認動線** (dev server `cd web && npm run dev` 起動後):
+1. `/philosophy` で C58 新 PHILOSOPHY (コーチング・ファースト型 + 5 章) が render されていることを目視確認
+2. `/tutor` 初回アクセス → 朝振り返り 5 セクションに突入しない (C63)、ハブ挨拶「今日はどうする?計画 / 教材 / 課題 / 今日のタスク」のみ表示
+3. ゆいに「計画立てよう」発話 → 既存フロー → 「これで OK」確定後の発話に「お母さん・お父さんにも伝えたよ ✉️」が出る (C62)
+4. 「ペース変えて」「教材変える」等の Replan accept 発話にも「親にも変更点を伝えた」が出る (C62)
+
+**残し (Phase 5 解体時にまとめて実装)**:
+- D2-1 OPT-OUT 親承認の親 chat UI 新設 / D2-2 24h 異議窓口バナー / D2-4 親発議 (= 親アカウント ハブ / parent ハブ未構想)
+- F1 内部 3 分類 (サボリ / 誤答 / お休み) + 子供 UI 自動マッピング
+- F3 carry-over + 3 日連続検知ロジック
+- F4 AI 主導誤答ヒアリング (= Phase 6 Claude API 拡大と連動)
+- F5 戻り誘導の親 OPT-OUT 通知 UI
+- B1-B2 1 ヶ月更新化 (LearningPlan 期間 9 ヶ月 → 1 ヶ月)
+- B3 二系統 (学校+塾+通信教育) UI
+- C カリキュラム DB (教材ノード生成廃止)
+- E1-E9 試験前モード
+- PlanType 5 種扱い (= 未確定 grill #1 後)
 
 ---
 

@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-28 (**プロジェクト前提から大転換**: PHILOSOPHY 全書き換え C58 = **コーチング・ファースト型 学習アプリ** へ + 学習プラン再設計 grill 累計 30 問 / 47 論点確定 (C59 SSoT 同期 + 失敗扱い 6 論点 F1-F6 = C60 + 中学生主体性 6 論点 D2-1〜D2-6 = C61)。**Phase 5 で実装した骨格 (LearningPlan 9 ヶ月 / 全期間 GT 化 / 教材ノード生成 / PlanType 5 種等) は解体・再構築方向**。次は **学習プラン再設計 grill 残り 5 論点** (推奨スタート = PlanType 5 種扱い / カリキュラム DB / 系統可視性 / 時間予算 / 統合管制))
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-28 (**プロジェクト前提から大転換** + **C58 以降の第 1 段階 mock 反映完了**: PHILOSOPHY 全書き換え C58 = **コーチング・ファースト型 学習アプリ** へ + 学習プラン再設計 grill 累計 30 問 / 47 論点確定 (C59 + 失敗扱い 6 論点 = C60 + 中学生主体性 6 論点 = C61) + **第 1 段階 mock 反映 C62-C65** (D2-5 親通知発話 / D5 朝振り返り mute / 新 PHILOSOPHY persona / F1 整合済確認)。**Phase 5 で実装した骨格は解体・再構築方向**。次は **学習プラン再設計 grill 残り 5 論点** (推奨スタート = PlanType 5 種扱い))
 
 ---
 
@@ -523,6 +523,43 @@ C60 push 後の新セッションで ito19 さん指示通り **中学生主体�
 | 4 | 時間予算自動制御 | 軽 (別チャット案、保留 or 採用?) |
 | 5 | 2 系統の統合管制エンジン | 中 (別チャット案の核、採用?) |
 
+### 2026-05-28 第 1 段階 mock 反映 (C62-C65)
+
+C61 (中学生主体性 grill 完結) 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段階のみ、軽量範囲)」で着手。Phase 5 解体プラン確定前の **軽量・即効性ある思想反映だけ** に絞り、未確定 5 論点と衝突しない範囲で実施。
+
+| # | SHA | 内容 |
+|---|---|---|
+| **C62** | `5aae267` | feat: D2-5 ゆい mock に「親にも伝えたよ」発話追加 (計画立案完了発話 + Replan accept 発話の 2 箇所に「お母さん・お父さんにも伝えたよ ✉️ + 24h 異議窓口」1 段落追加) |
+| **C63** | `e4331d9` | feat: D5 朝振り返り (morning モード) を MORNING_MODE_ENABLED フラグで off (定数 export + buildInitialTutorThread morning 分岐 + TutorWorkspace 初期 state 切替 = 朝振り返り 5 セクション skip して即ハブ挨拶。Interrupt/Suggestion 冒頭付与は維持) |
+| **C64** | `960dd6c` | docs: ゆい mock の人格コメント + persona description を C58 新 PHILOSOPHY に整合 (Phase 6 Claude API system prompt 元、「コーチング・ファースト型 + 親⇄ゆい対話 A4 + 葵=受動的補助 A7 + 掘り起こし F4」明示) |
+| **C65** | (本 commit) | docs: 第 1 段階 mock 反映 SSoT 同期 + F1 既に整合済確認 |
+
+**F1 子供 UI ラベル「失敗」「達成」緩和の調査結果** (C65 で skip 判断):
+- TodayTaskList は既に「完了 / 未完了 (中立)」のみで F1 違反なし
+- 達成バッジ (C12) は ito19 さん明示「バッジ概念残す」= 維持
+- weekly-report 「達成 → 学校 → 弱いところ → 来週」は「達成」をポジティブ感情表現として残し OK
+- 「失敗」表現は全て内部 (型名 / mock description / 技術エラー画面) で子供 UI に直接出ない
+- → 現状 Mock は偶然 F1 整合的に実装されていた、本格的な F1 内部 3 分類 (サボリ / 誤答 / お休み) は Phase 5 解体時に実装
+
+**第 1 段階の動作確認動線** (dev server `cd web && npm run dev` 起動後):
+1. `/philosophy` で C58 新 PHILOSOPHY (コーチング・ファースト型 + 5 章) が render されていることを目視確認
+2. `/tutor` 初回アクセス → 朝振り返り 5 セクションに突入しない (C63)、ハブ挨拶「今日はどうする? 計画 / 教材 / 課題 / 今日のタスク」のみ表示
+3. ゆいに「計画立てよう」発話 → 既存フロー (subject → material → duration → weak-node-picker → roadmap-preview) → 「これで OK」確定後の発話に「お母さん・お父さんにも伝えたよ ✉️」が出る (C62)
+4. 「ペース変えて」「教材変える」等の Replan accept 発話にも「親にも変更点を伝えた」が出る (C62)
+5. Interrupt 由来の Replan draft / pending Suggestion は朝振り返り skip しても従来通り冒頭付与される (C63)
+
+**第 2 段階以降に持ち越し** (Phase 5 解体プラン確定後にまとめて実装):
+- D2-1 OPT-OUT 親承認の親 chat UI 新設 / D2-2 24h 異議窓口バナー / D2-4 親発議 (= 親アカウント / parent ハブ未構想)
+- F1 内部 3 分類 (サボリ / 誤答 / お休み) + 子供 UI 自動マッピング
+- F3 carry-over + 3 日連続検知ロジック
+- F4 AI 主導誤答ヒアリング (= Phase 6 Claude API 拡大と連動)
+- F5 戻り誘導の親 OPT-OUT 通知 UI
+- B1-B2 1 ヶ月更新化 (LearningPlan 期間 9 ヶ月 → 1 ヶ月)
+- B3 二系統 (学校+塾+通信教育) UI
+- C カリキュラム DB (教材ノード生成廃止)
+- E1-E9 試験前モード
+- PlanType 5 種扱い (= 未確定 grill #1 後)
+
 ---
 
 ## §4. 現状確認方法 (dev server で動かす)
@@ -636,7 +673,7 @@ AI-Education プロジェクトの作業を継続します。
 4. ARCHITECTURE.md「## Phase 6: Claude API 接続」セクションも確認 (smoke test 残置、拡大 grill は方針転換で保留)
 5. memory MEMORY.md と project_ai_education.md を確認
 
-【今日の状態 (61 commit、プロジェクト前提の大転換 + 失敗扱い grill 完結 + 中学生主体性 grill 完結)】
+【今日の状態 (65 commit、プロジェクト前提の大転換 + 失敗扱い grill 完結 + 中学生主体性 grill 完結 + 第 1 段階 mock 反映完了)】
 
 **C58 PHILOSOPHY 全書き換え** `8c5b1f0`:
 - 旧 PHILOSOPHY (AI 提案ベース、ito19 さん未納得、暗記からの脱却・体系図・なぜを問う) を全廃止
@@ -700,6 +737,21 @@ AI-Education プロジェクトの作業を継続します。
 → 3 つの主要更新フロー (子発議 D2-3 / AI 発議 F5 / 親発議 D2-4) が「動く側が即時発火 + 反対側が異議窓口 (24h、ゆい仲介)」で対称構造。
 
 詳細は ARCHITECTURE.md「## 学習プラン再設計 grill (2026-05-27) > D2 詳細」セクション参照。
+
+【セッション末で追加完了: 第 1 段階 mock 反映 C62-C65】
+
+C61 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段階のみ、軽量範囲)」で着手。Phase 5 解体プラン確定前の軽量・即効性ある思想反映だけに絞った。
+
+| # | SHA | 内容 |
+|---|---|---|
+| C62 | `5aae267` | feat: D2-5 ゆい mock に「親にも伝えたよ」発話追加 (計画立案完了 + Replan accept の 2 箇所、「24h 異議窓口」明示) |
+| C63 | `e4331d9` | feat: D5 朝振り返り (morning モード) を MORNING_MODE_ENABLED フラグで off (5 セクション skip → ハブ挨拶のみ、Interrupt/Suggestion 冒頭付与は維持) |
+| C64 | `960dd6c` | docs: ゆい mock の人格コメント + persona description を C58 新 PHILOSOPHY に整合 (Phase 6 Claude API system prompt 元) |
+| C65 | (本 commit) | docs: 第 1 段階 mock 反映 SSoT 同期 + F1 既に整合済を確認 (現状 mock の達成 / 完了表現は F1 整合的、内部 3 分類は Phase 5 解体時) |
+
+**動作確認**: dev server `cd web && npm run dev` 起動後、`/philosophy` (C58 新版 render) + `/tutor` (ハブ挨拶 = 朝振り返り skip) + 計画立案完了発話の「親にも伝えたよ」を目視確認。
+
+**第 2 段階以降に持ち越し** (Phase 5 解体プラン確定後にまとめて実装): 親 chat UI / 24h 異議窓口バナー / F1 内部 3 分類 / F3 carry-over 3 日連続検知 / B1-B2 1 ヶ月更新化 / B3 二系統 / カリキュラム DB / E1-E9 試験前モード 等。
 
 【次セッションで進める論点 — 学習プラン再設計 grill 残り 5 論点】
 
