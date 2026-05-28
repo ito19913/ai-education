@@ -1743,7 +1743,7 @@ function buildNextTutorReplyInner(args: {
         reply: {
           id: makeId(),
           role: "tutor",
-          text: `OK、**${kindLabel}** で計画を更新したよ。修正履歴 (PlanRevision) に残してあるから、後から「いつ何を変えたか」見返せるよ。次どうする?`,
+          text: `OK、**${kindLabel}** で計画を更新したよ。修正履歴 (PlanRevision) に残してあるから、後から「いつ何を変えたか」見返せるよ。\n\n**お母さん・お父さんにも変更点を伝えておいたよ** ✉️ 違和感があれば 24 時間以内に連絡くるかも。次どうする?`,
           quickReplies:
             draft.replanKind === "material-change"
               ? ["新しい計画立てる", "別の話"]
@@ -2285,7 +2285,7 @@ function buildNextTutorReplyInner(args: {
         reply: {
           id: makeId(),
           role: "tutor",
-          text: `OK、計画決まったよ！\n\n**${plan.title}** を作って、**${month} の分 ${expanded.length} 件** を今のスケジュールに出しておいたね。${weakNoteSuffix}\n\n来月以降は月初に同じように展開していくよ。次どうする?`,
+          text: `OK、計画決まったよ！\n\n**${plan.title}** を作って、**${month} の分 ${expanded.length} 件** を今のスケジュールに出しておいたね。${weakNoteSuffix}\n\n**お母さん・お父さんにも伝えておいたよ** ✉️ もし「これは違うかな」って思うところがあれば、24 時間以内にお母さんからゆいに連絡くるね。それまではこの計画でいつでも始めて OK だよ。\n\n来月以降は月初に同じように展開していくよ。次どうする?`,
           quickReplies: ["スケジュール見せて", "学習を始める", "別の話"],
           createdAt: now,
         },
