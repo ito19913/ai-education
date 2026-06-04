@@ -3180,6 +3180,15 @@ function inferSceneFromResult(
   const nextState = result.nextState.state;
 
   // --- 計画立案フロー (A1) ---
+  // subject-picker 新規表示 = 計画立案 start (C56 既存 matchesPlanRequest ルートは
+  // 上で early return 済、ここでは「相談したい / 何かしたい」等の fallback ルート経由で
+  // subject-picker が出るケースを Claude 化)
+  if (
+    result.reply.card?.kind === "subject-picker" &&
+    args.userInput.trim().length > 0
+  ) {
+    return "plan-start";
+  }
   if (prevState === "plan-await-subject" && nextState === "plan-await-material")
     return "plan-after-subject";
   if (
@@ -3237,6 +3246,18 @@ function inferSceneFromResult(
   )
     return "reflection-plan";
 
+  // --- 上記いずれにも該当しない場合 = generic シーン ---
+  // ito19 さん 2026-06-04 要望「全部 Claude 入れて」に応えるため、明示シーンに
+  // 該当しない発話も Claude 化する。ユーザー発話があり、reply に text がある場合のみ
+  // (空発話 / 自動起動メッセージ等は除外)。
+  if (
+    args.userInput.trim().length > 0 &&
+    result.reply.text &&
+    result.reply.text.trim().length > 0
+  ) {
+    return `generic-${nextState}`;
+  }
+
   return null;
 }
 
@@ -3257,6 +3278,12 @@ function buildSceneContext(
   };
 
   switch (scene) {
+    case "plan-start": {
+      // 計画立案 start (subject-picker 新規表示)、ユーザーが何の発話で start したか
+      ctx.userOriginalInput = args.userInput;
+      ctx.planType = ns.proposedPlanType ?? "regular-study";
+      break;
+    }
     case "plan-after-subject": {
       const subject = MOCK_SUBJECTS.find((s) => s.id === ns.proposedSubjectId);
       ctx.subjectName = subject?.name ?? null;
