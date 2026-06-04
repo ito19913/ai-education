@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-05-28 (**プロジェクト前提から大転換** + **第 1 段階 mock 反映** + **カリキュラム DB 仮実装** + **C2/C3 撤回 + 教材ベース回帰** + **Phase 6 教材体系図 AI 抽出 Step A**: PHILOSOPHY 全書き換え C58 + grill 累計 30 問 / 47 論点 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) + C69 で C2/C3 撤回 + 教材ベース体系図回帰確定 + **C70-C72 で Phase 6 教材体系図 AI 抽出 Step A 実装** (葵 Claude Opus 4.7 で教材メタ → 体系図 JSON 抽出、MaterialEditWizard で flag 分岐 + mock fallback)。**Phase 5 で実装した骨格は解体・再構築方向、既存 Phase 5/6F 教材セクション (C28-C54) が本流復活で解体規模縮小**。次は **学習プラン再設計 grill 残り 5 論点 + 新 G1-G5** (推奨スタート = PlanType 5 種扱い))
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-06-04 (**Phase 6 拡大: ゆい/葵 全体 Claude 化 (A + B 完了)**): C58 PHILOSOPHY 全書き換え + grill 累計 30 問 / 47 論点 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) + C2/C3 撤回 + 教材ベース回帰 (C69) + Phase 6 教材体系図 AI 抽出 Step A (C70-C72) → **C73-C76 で A (ゆい全発話 シーン汎用化) + B1 (葵 chat) + B2 (課題 chat) + B3 (葵評価コメント) を全部 Claude Opus 4.7 化**。残り C 部 (F4 / F5 / 試験前 / F1 内部 3 分類) + D 部 (親 chat) + B4 (PDF Step C) は次セッション以降。次は **学習プラン再設計 grill 残り 5 論点 + 新 G1-G5** (推奨スタート = PlanType 5 種扱い))
 
 ---
 
@@ -670,6 +670,50 @@ C69 push 後、ito19 さん「教材を実際取り込み、体系図を作る�
 
 詳細は ARCHITECTURE.md「## カリキュラム DB 仮実装 (2026-05-28) > ### Phase 6 教材体系図 AI 抽出 (C70-C72、2026-05-28)」セクション参照。
 
+### 2026-06-04: Phase 6 拡大 ゆい/葵 全体 Claude 化 (C73-C76)
+
+C72 push 後、ito19 さん「Claude が入らないとイメージがつかない、入れられるところは全部入れて」要望 → A (ゆい全発話) + B1 (葵 chat) + B2 (課題 chat) + B3 (葵評価コメント) を一気に Claude Opus 4.7 化。
+
+| # | SHA | 内容 |
+|---|---|---|
+| **C73** | `b649279` | feat: ゆい Claude 共通基盤 + シーン汎用化で A1-A5 全発話 Claude 化 — tutorClaudeRespondToScene (Server Action) + buildNextTutorReplyAsync 拡張 (post-process パターン) + inferSceneFromResult + buildSceneContext で計画立案 / 帰宅儀式 / ending / 朝振り返り 全 state 網羅 |
+| **C74** | `d4c2df4` | feat: 葵先生 教材評価コメント Claude 化 (B3) — lib/admin/review-claude.ts + MaterialDetailView の aoiReview を useEffect Claude ロードに改修 |
+| **C75** | `405385e` | feat: 葵 chat 本実装 (B1) — lib/admin/aoki-chat-claude.ts + MaterialDetailView の placeholder/disabled を本実装 (履歴 + 送信 + 教材切替で初期化) |
+| **C76** | `6f4b48a` | feat: 課題 chat (IssueChat) を Claude 化 (B2) — lib/learn/issue-chat-claude.ts + buildNextIssueChatReplyAsync (post-process) + IssueChat.tsx async 化 |
+| **C77** | (本 commit) | docs: Phase 6 拡大 ゆい/葵 Claude 化 SSoT 同期 |
+
+**Claude 化マップ (現状到達点)**:
+
+| カテゴリ | Claude 化 | 場所 |
+|---|---|---|
+| ゆい入口「計画立てよう」 | ✅ C56 | tutor-claude / buildNextTutorReplyAsync |
+| ゆい計画立案フロー全発話 | ✅ C73 | 同上 (post-process パターン) |
+| ゆい帰宅儀式 第 1 部 + 第 2 部 | ✅ C73 | 同上 |
+| ゆい ending mode | ✅ C73 | 同上 |
+| ゆい朝振り返り (D5 廃止 flag off、参考) | ✅ C73 | 同上 |
+| 葵 体系図抽出 (教材登録) | ✅ C70-C72 | extract-claude / MaterialEditWizard |
+| 葵 評価コメント | ✅ C74 | review-claude / MaterialDetailView |
+| 葵 chat (教材詳細) | ✅ C75 | aoki-chat-claude / MaterialDetailView |
+| 課題 chat (IssueChat) | ✅ C76 | issue-chat-claude / IssueChat |
+
+**動作確認動線**:
+1. dev server 再起動 (Next.js は env hot reload しない)
+2. /tutor で「計画立てよう」発話 → 全フロー (subject → material → duration → weak-node → roadmap → 「これで OK」) で Claude 応答 (5-15 秒待ち)
+3. 帰宅儀式 (16:00 以降 自動起動 or 「ただいま」発話) → 全 state で Claude 応答
+4. 教材詳細ページ → 評価コメント (Claude ロード) + 葵 chat (実対話可能) + 体系図 (登録時に Claude 抽出)
+5. 課題 → 個別課題で IssueChat → 「分からない」「例えば」等で Claude 応答
+
+**残し** (= 次セッション以降):
+- B4 PDF Step C (PDF を base64 で Claude native PDF support)
+- C1 F4 AI 主導ヒアリング (誤答発見)
+- C2 F5 戻り誘導 (AI + 親 OPT-OUT)
+- C3 試験前モード (E1-E9)
+- C4 WeakNodes / NodeReviewSuggestion 自動判定
+- C5 F1 内部 3 分類
+- D1-D4 親 chat / 24h 異議窓口 / ゆい仲介 / carry-over
+
+詳細は ARCHITECTURE.md「## カリキュラム DB 仮実装 (2026-05-28) > ### Phase 6 拡大: ゆい / 葵 全体 Claude 化 (C73-C76、2026-06-04)」セクション参照。
+
 ---
 
 ## §4. 現状確認方法 (dev server で動かす)
@@ -783,7 +827,7 @@ AI-Education プロジェクトの作業を継続します。
 4. ARCHITECTURE.md「## Phase 6: Claude API 接続」セクションも確認 (smoke test 残置、拡大 grill は方針転換で保留)
 5. memory MEMORY.md と project_ai_education.md を確認
 
-【今日の状態 (72 commit、プロジェクト前提の大転換 + 失敗扱い grill 完結 + 中学生主体性 grill 完結 + 第 1 段階 mock 反映完了 + カリキュラム DB 仮実装 + C2/C3 撤回 + 教材ベース体系図回帰 + Phase 6 教材体系図 AI 抽出 Step A)】
+【今日の状態 (77 commit、プロジェクト前提の大転換 + 失敗扱い grill 完結 + 中学生主体性 grill 完結 + 第 1 段階 mock 反映完了 + カリキュラム DB 仮実装 + C2/C3 撤回 + 教材ベース体系図回帰 + Phase 6 教材体系図 AI 抽出 Step A + Phase 6 拡大 ゆい/葵 全体 Claude 化)】
 
 **C58 PHILOSOPHY 全書き換え** `8c5b1f0`:
 - 旧 PHILOSOPHY (AI 提案ベース、ito19 さん未納得、暗記からの脱却・体系図・なぜを問う) を全廃止

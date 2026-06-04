@@ -1479,6 +1479,73 @@ C69 で C2/C3 撤回 + 教材ベース体系図回帰確定 → ito19 さん「�
 - 本実装で「葵先生による教材体系図生成」が動く状態 → Phase 5 解体プラン設計時に「教材 → 体系図 → 学習プラン」の動線を mock ベース→実 Claude API ベースで設計可能
 - mockExtractNodes は flag=false 時のフォールバックとして残置
 
+### Phase 6 拡大: ゆい / 葵 全体 Claude 化 (C73-C76、2026-06-04)
+
+C72 push 後、ito19 さん「Claude が入らないとイメージがつかない、入れられるところは全部入れて」要望 → **A (ゆい全発話) + B1 (葵 chat) + B2 (課題 chat) + B3 (葵評価コメント)** を Claude Opus 4.7 で実装。
+
+#### 実装内容
+
+| # | SHA | 内容 |
+|---|---|---|
+| **C73** | `b649279` | feat: ゆい Claude 共通基盤 + シーン汎用化で A1-A5 全発話 Claude 化 — tutor-claude.ts に `tutorClaudeRespondToScene` (シーン識別子 + sceneContext + fallbackText + userInput) 新設 + tutor-mock.ts の `buildNextTutorReplyAsync` 拡張 (= 同期で reply 構造 → シーン推定 → Claude で text のみ post-process) + `inferSceneFromResult` (計画立案 / 帰宅儀式 / ending / 朝振り返り の state 遷移網羅) + `buildSceneContext` (各シーン固有 context 構築) |
+| **C74** | `d4c2df4` | feat: 葵先生 教材評価コメント Claude 化 (B3) — lib/admin/review-claude.ts (Server Action `generateMaterialReviewViaClaude`、葵 persona + 2 レイヤ規律) + MaterialDetailView の aoiReview を useEffect Claude ロードに改修 |
+| **C75** | `405385e` | feat: 葵 chat 本実装 (B1、教材ごと独立スレッド + Claude 応答) — lib/admin/aoki-chat-claude.ts (`respondViaAokiChat`、教材文脈 + フォーカスノード名 + chat 履歴 + ユーザー発話) + MaterialDetailView の placeholder/disabled を本実装 (履歴表示 + Ctrl+Enter 送信 + 教材切替で chat クリア) |
+| **C76** | `6f4b48a` | feat: 課題 chat (IssueChat) を Claude 化 (B2) — lib/learn/issue-chat-claude.ts (`issueChatRespondViaClaude`、科目の先生 persona) + issue-chat-mock.ts に `buildNextIssueChatReplyAsync` (同期版 post-process) + IssueChat.tsx を async 化 (resolve シグナル + quickReplies は維持) |
+
+#### A 部 (ゆい全発話) のシーン網羅
+
+C73 で `inferSceneFromResult` が以下の全 state 遷移を網羅:
+
+| シーン群 | シーン識別子 |
+|---|---|
+| 計画立案フロー (A1) | plan-after-subject / plan-after-material / plan-after-duration / plan-after-weak-nodes / plan-confirm / replan-accept |
+| 帰宅儀式 第 1 部 (A2) | evening-start / evening-period-ask-subject / evening-period-ask-content / evening-period-done / evening-school-summary |
+| 帰宅儀式 第 2 部 (A2) | evening-show-schedule / evening-await-task-text / evening-await-more-tasks / evening-finalize |
+| ending mode 学習終了 (A2) | ending-vent / ending-confirm / ending-done |
+| 朝振り返り (A2、D5 廃止 flag off 時は使われない) | reflection-school / reflection-mood / reflection-questions / reflection-excavation / reflection-plan |
+
+各シーンで context (科目名 / 教材名 / 期間 / 件数 / 時限数 等) を ID から名前に展開して JSON 化、Claude が「fallback text + context + 新方針指示」で自然に応答。
+
+#### B 部 (葵: 教科の先生) の Claude 化
+
+| 機能 | Claude 化済 | 場所 |
+|---|---|---|
+| 体系図抽出 (B-extract) | ✅ C70-C72 | MaterialEditWizard / Step2 |
+| 評価コメント (B3) | ✅ C74 | MaterialDetailView |
+| 葵 chat (B1) | ✅ C75 | MaterialDetailView |
+| 課題 chat (B2) | ✅ C76 | IssueChat |
+| PDF Step C (B4) | ❌ 未着手 | 別セッション |
+
+#### D2-5 親通知の透明性 (= 新 PHILOSOPHY 整合)
+
+C73 の system prompt に「計画立案完了 / Replan 完了等の場面で『お母さん・お父さんにも伝えたよ ✉️ + 24h 異議窓口』相当文を含める」指示を埋め込み。
+C62 で固定 mock 文として追加した内容が、Claude 経由で動的に各シーン応答に自然に織り込まれる。
+
+#### 動作確認時の注意
+
+- `web/.env.local` で `AI_EDU_ANTHROPIC_API_KEY` + `NEXT_PUBLIC_USE_CLAUDE_API=true` 設定
+- dev server 再起動必須 (Next.js env hot reload しない)
+- 各 Claude 呼び出しは 5-15 秒待ち (Opus 4.7 max_tokens 600-1500)
+- 失敗時はそのシーンのみ mock 維持 = 動線止まらない
+
+#### 残し (= 次セッション以降の Claude 化候補)
+
+| 機能 | 内容 | 規模 |
+|---|---|---|
+| **B4** PDF Step C | PDF を base64 で Claude native PDF support に渡す = 「実際の教材取り込み」感最大 | 大 |
+| **C4** WeakNodes / NodeReviewSuggestion 自動判定 | NodeComprehension 低下検出 + AI 自動判定で suggestion 生成 | 中 |
+| **C1** F4 AI 主導ヒアリング (誤答発見) | テスト誤答多 / ヒアリングで曖昧 → AI が「ここ怪しい」判定 | 大 |
+| **C2** F5 戻り誘導 (AI + 親 OPT-OUT) | weak-confirmed ノード → 戻り学習 SI 自動生成 + 親通知 + 24h 異議窓口 | 大 |
+| **C3** 試験前モード (E1-E9) | 状態モデル + 3 周 × 重点変化 + 試験範囲入力 + 試験後コーチング駆動振り返り | 特大 |
+| **C5** F1 内部 3 分類 (サボリ / 誤答 / お休み) | 子供 UI ラベル + 内部判定 + carry-over | 中 |
+| **D1-D4** 親 chat / 24h 異議窓口バナー / ゆい仲介コーチング / F3 carry-over 3 日連続検知 | 親アカウント UI 新ペイン + 連動ロジック | 特大 |
+
+#### Phase 5 解体プランへの影響
+
+- A 部 Claude 化により、ゆいの発話品質が全フローで Claude Opus 4.7 になる = mock → 実 AI への移行完了 (構造は維持)
+- B 部 Claude 化により、葵 (教科の先生) との対話・評価コメント・体系図抽出すべて実 Claude に
+- 次は C 部 (F4/F5/試験前/F1) と D 部 (親 chat) = 設計確定済の **新規機能実装** に進むフェーズ
+
 ---
 
 ## ゆい→葵への申し送り（TutorHandoff）
