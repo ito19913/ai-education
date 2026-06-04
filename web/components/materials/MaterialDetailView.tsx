@@ -22,6 +22,10 @@ import {
   generateMaterialReviewViaClaude,
   type MaterialReviewOutput,
 } from "@/lib/admin/review-claude";
+import {
+  respondViaAokiChat,
+  type AokiChatMessage,
+} from "@/lib/admin/aoki-chat-claude";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -197,6 +201,50 @@ export function MaterialDetailView({
     [material.name, material.gradeLevel, subject?.name],
   );
   const [aoiReview, setAoiReview] = useState<MaterialReviewOutput>(mockReview);
+
+  // B1 葵 chat (C75 2026-06-04 本実装): 教材ごと in-memory スレッド
+  const [aokiChatHistory, setAokiChatHistory] = useState<AokiChatMessage[]>([]);
+  const [aokiChatDraft, setAokiChatDraft] = useState("");
+  const [aokiChatSending, setAokiChatSending] = useState(false);
+
+  // 教材切替時に chat をクリア (= 別教材は別スレッド、確定 12)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAokiChatHistory([]);
+    setAokiChatDraft("");
+  }, [material.id]);
+
+  const handleAokiChatSend = async () => {
+    const userMessage = aokiChatDraft.trim();
+    if (userMessage.length === 0 || aokiChatSending) return;
+    setAokiChatSending(true);
+    const newUserMsg: AokiChatMessage = { role: "user", text: userMessage };
+    const newHistory = [...aokiChatHistory, newUserMsg];
+    setAokiChatHistory(newHistory);
+    setAokiChatDraft("");
+    try {
+      const aiText = await respondViaAokiChat({
+        materialName: material.name,
+        subjectName: subject?.name ?? "教科",
+        gradeLevel: material.gradeLevel ?? "中2",
+        focusNodeName: selectedChatNode?.name ?? null,
+        history: aokiChatHistory,
+        userMessage,
+      });
+      setAokiChatHistory([...newHistory, { role: "assistant", text: aiText }]);
+    } catch (err) {
+      console.error("[B1] aoki-chat failed:", err);
+      setAokiChatHistory([
+        ...newHistory,
+        {
+          role: "assistant",
+          text: "ごめん、ちょっと今うまく考えがまとまらない…もう一度送ってもらえる?",
+        },
+      ]);
+    } finally {
+      setAokiChatSending(false);
+    }
+  };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -546,10 +594,9 @@ export function MaterialDetailView({
         </CardContent>
       </Card>
 
-      {/* 葵 chat 入力欄 (確定 12: 教材ごと独立スレッド、Phase 6 で本実装)
-          C52 ito19 さん意見: 上のノードリストから選択された場合、そのノードを
-          chat focus 対象として ヘッダ + placeholder に反映。chatCardRef で
-          scroll target にもなる */}
+      {/* 葵 chat 入力欄 (確定 12: 教材ごと独立スレッド、B1 C75 2026-06-04 本実装)
+          - chat 履歴は本コンポーネント内 useState 管理 (in-memory、リロードで消える)
+          - Phase 7 永続化で Supabase に保存予定 (教材ごとスレッド) */}
       <Card ref={chatCardRef}>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center justify-between gap-2 text-sm">
@@ -577,24 +624,66 @@ export function MaterialDetailView({
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        <CardContent className="flex flex-col gap-3">
+          {/* 過去の対話履歴 */}
+          {aokiChatHistory.length > 0 && (
+            <ul className="flex flex-col gap-2 rounded-md border border-border bg-muted/30 p-3 max-h-[400px] overflow-y-auto">
+              {aokiChatHistory.map((m, i) => (
+                <li
+                  key={i}
+                  className={cn(
+                    "rounded-md px-3 py-2 text-sm whitespace-pre-wrap",
+                    m.role === "user"
+                      ? "ml-8 bg-primary/10 text-foreground"
+                      : "mr-8 bg-card border border-border text-foreground",
+                  )}
+                >
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
+                    {m.role === "user" ? "あなた" : subject?.teacher?.displayName ?? "葵先生"}
+                  </div>
+                  {m.text}
+                </li>
+              ))}
+              {aokiChatSending && (
+                <li className="mr-8 rounded-md border border-dashed border-border bg-card px-3 py-2 text-sm italic text-muted-foreground">
+                  {subject?.teacher?.displayName ?? "葵先生"}が考えてるよ…
+                </li>
+              )}
+            </ul>
+          )}
           <Textarea
+            value={aokiChatDraft}
+            onChange={(e) => setAokiChatDraft(e.target.value)}
             placeholder={
               selectedChatNode
                 ? `例: 「${selectedChatNode.name}って何?」「${selectedChatNode.name}の例文を見せて」`
                 : `例: 「この教材の第3章ってどんな内容?」「この問題集と前の教科書の違いは?」`
             }
             rows={3}
-            disabled
+            disabled={aokiChatSending}
             className="resize-none"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                handleAokiChatSend();
+              }
+            }}
           />
           <div className="flex items-center justify-between">
             <p className="text-[11px] italic text-muted-foreground">
-              ※ 現状は placeholder 表示。Phase 6 で教材ごと独立 chat スレッドを実装します。
+              ※ chat 履歴は in-memory、リロードで消えます (Phase 7 で永続化)
+              {" / "}Ctrl+Enter で送信
             </p>
-            <Button size="sm" disabled className="gap-1.5">
+            <Button
+              size="sm"
+              disabled={
+                aokiChatSending || aokiChatDraft.trim().length === 0
+              }
+              onClick={handleAokiChatSend}
+              className="gap-1.5"
+            >
               <Send className="size-3.5" />
-              <span>送信</span>
+              <span>{aokiChatSending ? "送信中…" : "送信"}</span>
             </Button>
           </div>
         </CardContent>
