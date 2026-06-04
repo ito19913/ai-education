@@ -42,3 +42,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# C85 一時デバッグ (スキャン PDF の目次画像ダンプ)
+debug-toc/

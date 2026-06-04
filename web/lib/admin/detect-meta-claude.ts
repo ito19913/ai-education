@@ -25,7 +25,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 const SYSTEM_PROMPT = `あなたは葵 (あおい) 先生、AI-Education プロジェクトの教科の先生 (= ティーチング担当)。
-教材 PDF の表紙・目次・奥付から抽出されたテキストを読み、その教材のメタ情報を判定します。
+教材 PDF の表紙・目次・奥付 (テキスト、またはスキャン PDF ではページ画像) を読み、その教材のメタ情報を判定します。
 
 ## 判定ルール (2026-06-04 grill 確定)
 
@@ -51,8 +51,14 @@ function getClient(): Anthropic {
 }
 
 export type DetectMetaInput = {
-  /** クライアントで抽出した表紙・目次・奥付テキスト */
+  /** クライアントで抽出した表紙・目次・奥付テキスト (デジタル PDF) */
   coverText: string;
+  /**
+   * スキャン / 自炊 PDF の表紙ページ画像 (base64 JPEG、prefix 無し、C85)。
+   * coverText が空でこちらに値があれば、葵が vision で表紙を読んでメタ判定する。
+   * 改行 (\n) 区切りで 1 文字列に連結して渡す (Server Action の配列ガード回避、extract-claude と同様)。
+   */
+  coverImagesPacked?: string;
   /** 科目の選択肢 (id を返させる) */
   subjects: { id: string; name: string }[];
   /** 種別の選択肢 (テキスト / 問題集 / 副教材) */
@@ -78,19 +84,29 @@ const EMPTY: DetectMetaOutput = {
 export async function detectMaterialMetaViaClaude(
   input: DetectMetaInput,
 ): Promise<DetectMetaOutput> {
-  // テキストが取れていない (スキャン PDF 等) なら呼ばずに全項目 null
-  if (!input.coverText.trim()) return EMPTY;
+  const coverImages = input.coverImagesPacked
+    ? input.coverImagesPacked.split("\n").filter((s) => s.length > 0)
+    : [];
+  const hasImages = coverImages.length > 0;
+  // テキストも画像も無い (抽出失敗) なら呼ばずに全項目 null
+  if (!input.coverText.trim() && !hasImages) return EMPTY;
 
   const subjectList = input.subjects
     .map((s) => `  - id: "${s.id}" / 科目名: "${s.name}"`)
     .join("\n");
 
-  const userPrompt = `次の教材 PDF から抽出した表紙・目次・奥付のテキストを読み、メタ情報を判定してください。
-
-## 抽出テキスト
+  // スキャン PDF は表紙画像、デジタル PDF は抽出テキストを根拠に判定させる。
+  const sourceSection = hasImages
+    ? `## 教材の表紙ページ画像
+(以下の画像が教材 PDF の表紙・最初のページです。タイトル・出版社・対象学年などを読み取ってください)`
+    : `## 抽出テキスト
 """
 ${input.coverText}
-"""
+"""`;
+
+  const userPrompt = `次の教材 PDF の表紙から、メタ情報を判定してください。
+
+${sourceSection}
 
 ## 選択肢
 - 科目 (subjectId には下記の id をそのまま返す。当てはまらなければ null):
@@ -106,6 +122,17 @@ ${subjectList}
   "gradeLevel": "上記 学年のいずれか または null"
 }`;
 
+  // 画像があれば画像ブロック → テキストの順で 1 メッセージにまとめる。
+  const content: Anthropic.ContentBlockParam[] = [
+    ...coverImages.map(
+      (b64): Anthropic.ImageBlockParam => ({
+        type: "image",
+        source: { type: "base64", media_type: "image/jpeg", data: b64 },
+      }),
+    ),
+    { type: "text", text: userPrompt },
+  ];
+
   const res = await getClient().messages.create({
     model: "claude-opus-4-8",
     max_tokens: 512,
@@ -116,7 +143,7 @@ ${subjectList}
         cache_control: { type: "ephemeral" },
       },
     ],
-    messages: [{ role: "user", content: userPrompt }],
+    messages: [{ role: "user", content }],
   });
 
   const textBlock = res.content.find((b) => b.type === "text");

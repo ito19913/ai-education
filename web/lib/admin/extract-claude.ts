@@ -89,9 +89,20 @@ export type ExtractMaterialInput = {
   /**
    * 教材 PDF の目次・章立てから抽出したテキスト (段階1-A、2026-06-04)。
    * 与えられた場合はこれに忠実に体系図を作る (推測でなく実構造)。
-   * undefined / 空文字なら従来の教材名からの推測にフォールバック。
+   * undefined / 空文字なら tocImages → 教材名からの推測の順にフォールバック。
    */
   tocText?: string;
+  /**
+   * スキャン / 自炊 PDF の目次ページ画像 (base64 JPEG、prefix 無し、C85)。
+   * tocText が無くこちらに値があれば、葵が vision で目次を読んで忠実に体系図化する。
+   * 真・英文法大全 (186MB スキャン) のような文字レイヤー無し教材への対応。
+   *
+   * **改行 (\n) 区切りで 1 本の文字列に連結して渡す**こと。Server Action 引数に
+   * 大きな配列を直接渡すと Next.js の "Maximum array nesting exceeded" ガードで
+   * 500 になるため、配列ではなく 1 文字列にして回避する (C85 で判明)。
+   * base64 (A-Za-z0-9+/=) に改行は出現しないので分割は安全。
+   */
+  tocImagesPacked?: string;
 };
 
 /**
@@ -104,19 +115,33 @@ export type ExtractMaterialInput = {
 export async function extractKnowledgeNodesViaClaude(
   input: ExtractMaterialInput,
 ): Promise<Array<Omit<AiExtractedNode, "matchedNodeId">>> {
-  const hasToc = !!(input.tocText && input.tocText.trim().length > 0);
-  // 一時診断ログ (段階1-A デバッグ、原因特定後に削除)
-  console.log(
-    "[extract diag] material:",
-    input.materialName,
-    "hasToc:",
-    hasToc,
-    "tocLen:",
-    input.tocText?.length ?? 0,
-  );
-  if (input.tocText) {
-    console.log("[extract diag] tocHead:", input.tocText.slice(0, 400));
-  }
+  const hasTocText = !!(input.tocText && input.tocText.trim().length > 0);
+  const tocImages = input.tocImagesPacked
+    ? input.tocImagesPacked.split("\n").filter((s) => s.length > 0)
+    : [];
+  const hasTocImages = tocImages.length > 0;
+  // 目次の根拠 (テキスト or 画像) があれば忠実抽出、無ければ教材名から推測。
+  const hasToc = hasTocText || hasTocImages;
+
+  // 目次の提示部分: 画像なら「画像を見て」、テキストならテキストを埋め込む。
+  const tocSection = hasTocImages
+    ? `
+## 教材 PDF の先頭〜前付けページ画像 (スキャン教材、最大 32 ページ)
+添付画像は教材 PDF の先頭ページ群です。表紙・著者紹介・はじめに・**もくじ (目次/CONTENTS)** などが混在しています。
+- この中から **「もくじ」のページを探し出して**、そこに載っている単元・章・節を忠実に構造化してください。
+- もくじには各単元の右側に**開始ページ番号**が必ず書かれています。1 つ残らず読み取ってください (ページ番号が今回の最重要項目)。
+- 「はじめに」などの本文・前書きの散文は構造の根拠にしないでください (あくまで**もくじを最優先**)。
+- もくじがどうしても見当たらない場合のみ、各ページの見出しから推定してください。
+`
+    : hasTocText
+      ? `
+## 教材の目次・章立てテキスト (PDF 先頭ページから抽出)
+"""
+${input.tocText}
+"""
+`
+      : "";
+
   const userPrompt = `次の教材の体系図 (= ノード構造) を抽出してください。
 
 教材メタ情報:
@@ -124,22 +149,16 @@ export async function extractKnowledgeNodesViaClaude(
 - 科目: ${input.subjectName}
 - 学年: ${input.gradeLevel}
 - 種別: ${input.label}
-${
-  hasToc
-    ? `
-## 教材の目次・章立てテキスト (PDF 先頭ページから抽出)
-"""
-${input.tocText}
-"""
-`
-    : ""
-}
+${tocSection}
 要求:
 ${
   hasToc
     ? `- 上記の目次・章立てに**忠実に**、教材に実際に載っている単元・章・節を構造化する (テキスト忠実、推測で項目を足さない)
 - ノード数は目次の実際の単元数に合わせる (大単元 + 中単元 + 小単元の階層、最大 60 程度まで)
-- pageRange は目次に書かれたページ番号から埋める (不明なら "p.?-?")`
+- **ページ番号 (重要)**: 目次では各行の右端に、その単元の**開始ページ番号**が書かれている。これを 1 つ残らず読み取ること。
+  - pageRange は「p.{開始ページ}-{次の単元の開始ページ - 1}」の形で埋める (例: ある単元が p.154、次が p.180 なら "p.154-179")
+  - その単元が目次の最後で次が分からない場合は "p.154-" (開始のみ) とする
+  - 右端の数字がどうしても読み取れない行だけ "p.?-?" にする (安易に "?" にせず、まず読む努力をすること)`
     : `- 教材名から、その教材の一般的な体系 (= 章立て、節立て) を 3-4 階層で推測抽出 (目次テキストが取れなかったため)
 - ノード数は 10-15 個程度 (root 1 + 大単元 3-5 + 中単元 5-9)
 - pageRange は概算 (例: "p.42-58"、不明なら "p.?-?")`
@@ -155,9 +174,22 @@ ${
 
 体系図 JSON:`;
 
+  // 目次画像があれば画像ブロック → テキストの順で 1 メッセージにまとめる。
+  const content: Anthropic.ContentBlockParam[] = [
+    ...tocImages.map(
+      (b64): Anthropic.ImageBlockParam => ({
+        type: "image",
+        source: { type: "base64", media_type: "image/jpeg", data: b64 },
+      }),
+    ),
+    { type: "text", text: userPrompt },
+  ];
+
   const res = await getClient().messages.create({
     model: "claude-opus-4-8",
-    max_tokens: hasToc ? 8000 : 4000,
+    // 目次から多数ノード (最大 60) + 各 description を出すと 8000 では足りず途中で
+    // JSON が切れる (C85)。余裕を持って 16000 に。不足時は下の salvage で救う。
+    max_tokens: hasToc ? 16000 : 4000,
     system: [
       {
         type: "text",
@@ -165,7 +197,7 @@ ${
         cache_control: { type: "ephemeral" },
       },
     ],
-    messages: [{ role: "user", content: userPrompt }],
+    messages: [{ role: "user", content }],
   });
 
   const textBlock = res.content.find((b) => b.type === "text");
@@ -173,17 +205,33 @@ ${
     throw new Error("Claude returned no text block (C70 extract).");
   }
 
-  // JSON 抽出: 最初の [ から最後の ] までを切り出す
-  // (Claude が前後に挨拶や説明を付けても parse できるようにする保険)
+  // JSON 抽出: 最初の [ から JSON 配列を切り出す。
+  // ノード数が多いと max_tokens で出力が途中で切れて閉じ ] が無いことがあるため、
+  // その場合は最後の完全な } までを救って配列を閉じる (truncation salvage、C85)。
   const text = textBlock.text;
   const start = text.indexOf("[");
-  const end = text.lastIndexOf("]");
-  if (start === -1 || end === -1 || start >= end) {
+  if (start === -1) {
     throw new Error(
       `Claude response does not contain JSON array (C70 extract). First 200 chars: ${text.slice(0, 200)}`,
     );
   }
-  const jsonOnly = text.slice(start, end + 1);
+  const end = text.lastIndexOf("]");
+  let jsonOnly: string;
+  if (end > start) {
+    jsonOnly = text.slice(start, end + 1);
+  } else {
+    // 閉じ ] が無い = 途中で切れた。最後の完全なオブジェクト } までで配列を閉じる。
+    const lastObj = text.lastIndexOf("}");
+    if (lastObj <= start) {
+      throw new Error(
+        `Claude response JSON array is unrecoverable (C70 extract). First 200 chars: ${text.slice(0, 200)}`,
+      );
+    }
+    jsonOnly = text.slice(start, lastObj + 1) + "]";
+    console.warn(
+      "[extract] 出力が途中で切れたため salvage しました (末尾ノードが欠落した可能性)。",
+    );
+  }
 
   const parsed = JSON.parse(jsonOnly) as Array<{
     tempId: string;

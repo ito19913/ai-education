@@ -1,23 +1,31 @@
 "use client";
 
 /**
- * PDF テキスト抽出 (クライアント側、2026-06-04)
+ * PDF テキスト / 画像 抽出 (クライアント側、2026-06-04、C85 で vision 対応)
  *
  * 2 つの用途を 1 回の pdf.js ロードで賄う:
- * - **coverText** (メタ検知用、C81): 先頭数ページ + 末尾数ページ
- *   = 教材名・科目・種別・学年は表紙 / 奥付に集中するため
- * - **tocText** (体系図用、段階1-A): 先頭多めのページ
- *   = 目次・章立てから教材固有の体系図 (実単元 + ページ範囲) を作る材料
+ * - **coverText / coverImages** (メタ検知用、C81): 表紙・奥付
+ * - **tocText / tocImages** (体系図用、段階1-A): 目次・章立て
  *
- * 186MB 級の巨大 PDF 全文は Claude に渡せない (~32MB 上限 + コンテキスト上限) ため、
- * 必要な範囲だけ抽出する。葵が本文の中身を理解して教えるのは別レイヤ
- * (葵 chat 場所指定型 = ページ画像を vision、段階1-C)。
+ * ## C85: スキャン / 自炊 PDF (文字レイヤー無し) 対応
+ *
+ * 真・英文法大全 (186MB) のような自炊 PDF は全ページが画像で、getTextContent が
+ * 空文字列を返す (= 旧実装の tocLen:0 バグの正体)。文字を「抽出」できないので、
+ * **対象ページを画像化して Claude に vision で読ませる** 方式にフォールバックする:
+ *
+ * 1. まず従来通りテキスト抽出を試みる (デジタル PDF はこれで足りる = 安い・速い)。
+ * 2. テキストがほぼ取れなければ (スキャン判定) 対象ページを JPEG に描画して画像で返す。
+ * 3. 画像化も失敗すれば mode:"empty" (呼び出し側で従来のメタ推測 / 手入力に落ちる)。
+ *
+ * 葵が本文の中身を理解して教えるのは別レイヤ (段階1-C vision chat)。本ファイルは
+ * 登録時の「表紙メタ + 目次の体系図」だけを担う。
  *
  * 実装メモ:
  * - pdfjs-dist は SSR (Node) で import すると DOM 依存で壊れるため、関数内で動的 import。
  * - worker は web/public/pdf.worker.min.mjs に配置済 (pdfjs-dist と同バージョン)。
- * - スキャン PDF (文字レイヤー無し) はテキストが取れないので空文字列を返す
- *   → 呼び出し側で従来のメタ推測 / 手入力にフォールバックする。
+ * - 画像は long edge を Claude 推奨上限 (~1568px) 付近に抑え、JPEG で payload を圧縮する。
+ *   画像配列は Server Action 経由で Claude に渡すため、next.config の
+ *   serverActions.bodySizeLimit を引き上げてある。
  */
 
 // メタ検知 (cover) 用: 先頭・末尾でそれぞれ読むページ数
@@ -28,6 +36,22 @@ const TOC_HEAD_PAGES = 40;
 // Claude に渡すテキストの上限文字数
 const COVER_MAX_CHARS = 8000;
 const TOC_MAX_CHARS = 20000;
+
+// --- スキャン PDF の vision フォールバック設定 (C85) ---
+// テキスト抽出がこの文字数未満ならスキャン PDF と判定して画像化する。
+const SCANNED_TEXT_THRESHOLD = 40;
+// もくじは「長い はじめに」の後ろに来ることがあるので、先頭から広めに画像化する
+// (真・英文法大全は前付けが長く、もくじが先頭 12 ページに入らなかった = C85 で判明)。
+const TOC_IMAGE_PAGES = 32;
+// メタ検知は表紙 (先頭数ページ) で足りる。
+const COVER_IMAGE_PAGES = 3;
+// 画像の長辺ターゲット px。Claude は長辺 ~1568px 超を内部縮小するので、その上限に
+// 合わせる (目次右端の小さいページ番号まで読めるよう、これ以上は下げない)。
+const IMAGE_TARGET_LONG_EDGE = 1568;
+// JPEG 品質。小さな数字 (ページ番号) が潰れない程度を確保しつつ payload を抑える。
+const IMAGE_JPEG_QUALITY = 0.72;
+
+import type { PDFDocumentProxy } from "pdfjs-dist";
 
 let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 
@@ -54,18 +78,138 @@ function coverPageNumbers(total: number): number[] {
 }
 
 export type IngestionText = {
-  /** メタ検知用 (表紙・奥付) */
+  /**
+   * 抽出モード:
+   * - "text": 文字レイヤーから抽出 (デジタル PDF)。tocText に値。
+   * - "outline": スキャン PDF だが PDF のしおり (目次) があった。tocText にしおり由来の
+   *   目次 (正確なページ付き)、coverImages に表紙画像 (メタ検知用)。
+   * - "image": スキャン PDF でしおり無し。coverImages / tocImages に画像。
+   * - "empty": どれも取れず (呼び出し側で手入力にフォールバック)。
+   */
+  mode: "text" | "outline" | "image" | "empty";
+  /** メタ検知用テキスト (表紙・奥付)。mode:"text" のみ */
   coverText: string;
-  /** 体系図用 (目次・章立て、先頭多め) */
+  /** 体系図用テキスト (目次・章立て)。mode:"text" のみ */
   tocText: string;
+  /** メタ検知用ページ画像 (base64 JPEG、prefix 無し)。mode:"image" のみ */
+  coverImages: string[];
+  /** 体系図用ページ画像 (base64 JPEG、prefix 無し)。mode:"image" のみ */
+  tocImages: string[];
 };
 
+/** ページを JPEG に描画して base64 (prefix 無し) を返す。失敗時 null。 */
+async function renderPageToJpeg(
+  doc: PDFDocumentProxy,
+  pageNum: number,
+): Promise<string | null> {
+  try {
+    const page = await doc.getPage(pageNum);
+    const base = page.getViewport({ scale: 1 });
+    const longEdge = Math.max(base.width, base.height);
+    // 拡大はしない (scale<=3 で上限、潰れた小さい PDF の暴走防止)
+    const scale = Math.min(IMAGE_TARGET_LONG_EDGE / longEdge, 3);
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      page.cleanup();
+      return null;
+    }
+    // JPEG はアルファ無し。透過部分が黒く出ないよう、描画前に白で塗りつぶす。
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // v6 では canvas を渡すのが推奨 (canvasContext は後方互換)。
+    await page.render({ canvas, viewport }).promise;
+    const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_JPEG_QUALITY);
+    page.cleanup();
+    // canvas を解放 (大きな PDF を多数描画するときのメモリ対策)
+    canvas.width = 0;
+    canvas.height = 0;
+    const comma = dataUrl.indexOf(",");
+    return comma >= 0 ? dataUrl.slice(comma + 1) : null;
+  } catch (err) {
+    console.error(`[PDF 画像化] p.${pageNum} 描画失敗:`, err);
+    return null;
+  }
+}
+
+/** PDF の outline (しおり) ノードの最小型 */
+type OutlineNode = {
+  title: string;
+  dest: string | unknown[] | null;
+  items?: OutlineNode[];
+};
+
+/** outline の dest を 1-indexed のページ番号に解決する。失敗時 null。 */
+async function resolveOutlinePage(
+  doc: PDFDocumentProxy,
+  dest: string | unknown[] | null,
+): Promise<number | null> {
+  try {
+    const explicit = typeof dest === "string" ? await doc.getDestination(dest) : dest;
+    if (!Array.isArray(explicit) || explicit.length === 0) return null;
+    const ref = explicit[0];
+    if (ref == null || typeof ref !== "object") return null;
+    const pageIndex = await doc.getPageIndex(
+      ref as Parameters<typeof doc.getPageIndex>[0],
+    );
+    return pageIndex + 1;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * PDF File から、メタ検知用 (cover) と体系図用 (toc) のテキストを 1 回のロードで抽出する。
- * 失敗・テキスト無しは空文字列を返す (呼び出し側でフォールバック)。
+ * PDF のしおり (outline) を、ページ番号付きの目次テキストに変換する。
+ * しおりが無い / 取れない場合は "" を返す (呼び出し側で画像 vision にフォールバック)。
+ * スキャン PDF でもしおりが付いていれば、これが最も正確な目次 (実ページ付き)。
+ */
+async function extractOutlineAsText(doc: PDFDocumentProxy): Promise<string> {
+  let outline: OutlineNode[] | null = null;
+  try {
+    outline = (await doc.getOutline()) as OutlineNode[] | null;
+  } catch {
+    return "";
+  }
+  if (!outline || outline.length === 0) return "";
+
+  const lines: string[] = [];
+  const walk = async (nodes: OutlineNode[], depth: number): Promise<void> => {
+    for (const node of nodes) {
+      const title = (node.title ?? "").trim();
+      if (title) {
+        const page = await resolveOutlinePage(doc, node.dest);
+        // 階層は全角スペースで表現 (extract-claude がツリーに復元する)
+        lines.push(
+          `${"　".repeat(depth)}${title}${page ? ` …… p.${page}` : ""}`,
+        );
+      }
+      if (node.items && node.items.length > 0) {
+        await walk(node.items, depth + 1);
+      }
+    }
+  };
+  await walk(outline, 0);
+  return lines.join("\n");
+}
+
+/**
+ * PDF File から、メタ検知用 (cover) と体系図用 (toc) の素材を 1 回のロードで抽出する。
+ * デジタル PDF は文字列、スキャン PDF はしおり→ページ画像の順、どれも無理なら mode:"empty"。
  */
 export async function extractIngestionText(file: File): Promise<IngestionText> {
-  if (typeof window === "undefined") return { coverText: "", tocText: "" };
+  const EMPTY: IngestionText = {
+    mode: "empty",
+    coverText: "",
+    tocText: "",
+    coverImages: [],
+    tocImages: [],
+  };
+  if (typeof window === "undefined") return EMPTY;
 
   const pdfjs = await getPdfjs();
   const data = await file.arrayBuffer();
@@ -76,7 +220,7 @@ export async function extractIngestionText(file: File): Promise<IngestionText> {
     const total = doc.numPages;
     const tocLimit = Math.min(TOC_HEAD_PAGES, total);
 
-    // 必要ページ (先頭 tocLimit + 末尾 COVER_TAIL) を 1 回だけ読み、ページ→テキストに保持
+    // --- 1) 文字レイヤーからのテキスト抽出 (デジタル PDF はこれで完結) ---
     const need = new Set<number>();
     for (let n = 1; n <= tocLimit; n++) need.add(n);
     for (let i = 0; i < COVER_TAIL_PAGES; i++) need.add(total - i);
@@ -111,7 +255,47 @@ export async function extractIngestionText(file: File): Promise<IngestionText> {
       .slice(0, TOC_MAX_CHARS)
       .trim();
 
-    return { coverText, tocText };
+    // テキストが十分取れていれば text モードで完了 (安い・速い)
+    if (
+      coverText.length >= SCANNED_TEXT_THRESHOLD ||
+      tocText.length >= SCANNED_TEXT_THRESHOLD
+    ) {
+      return { mode: "text", coverText, tocText, coverImages: [], tocImages: [] };
+    }
+
+    // --- 2) スキャン / 自炊 PDF (C85) ---
+    // 表紙画像は常に必要 (メタ検知用)。先頭数ページを描画する。
+    const coverImages: string[] = [];
+    for (let n = 1; n <= Math.min(COVER_IMAGE_PAGES, total); n++) {
+      const img = await renderPageToJpeg(doc, n);
+      if (img) coverImages.push(img);
+    }
+
+    // 2a) PDF にしおり (outline) があれば、それが正確なページ付きの目次。
+    //     画像 vision より確実なので最優先で使う (画像描画も省ける)。
+    const outlineText = await extractOutlineAsText(doc);
+    if (outlineText.length >= SCANNED_TEXT_THRESHOLD) {
+      return {
+        mode: "outline",
+        coverText: "",
+        tocText: outlineText,
+        coverImages,
+        tocImages: [],
+      };
+    }
+
+    // 2b) しおり無し → もくじページを画像化して vision に回す。
+    //     もくじは長い前付けの後ろに来ることがあるので先頭から広めに描画する。
+    const tocImages: string[] = [];
+    for (let n = 1; n <= Math.min(TOC_IMAGE_PAGES, total); n++) {
+      const img = await renderPageToJpeg(doc, n);
+      if (img) tocImages.push(img);
+    }
+
+    if (tocImages.length === 0 && coverImages.length === 0) {
+      return EMPTY;
+    }
+    return { mode: "image", coverText: "", tocText: "", coverImages, tocImages };
   } finally {
     await loadingTask.destroy();
   }

@@ -1361,6 +1361,12 @@ export type MaterialDraft = {
    * 抽出できなかった (スキャン PDF 等) 場合は undefined → 従来のメタ推測にフォールバック。
    */
   tocText?: string;
+  /**
+   * スキャン / 自炊 PDF (文字レイヤー無し) の目次ページを画像化したもの (段階1-A、2026-06-04 C85)。
+   * base64 JPEG 文字列の配列 (data: prefix 無し)。tocText が空のときに葵が vision で目次を読む。
+   * 真・英文法大全 (186MB スキャン) のように getTextContent が空を返す教材への対応。
+   */
+  tocImages?: string[];
 };
 
 // 後方互換: 古い名前を残す（既存コードを徐々に移行する間に使う）

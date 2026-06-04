@@ -98,8 +98,11 @@ export function MaterialEditWizard({
           subjectName: subject?.name ?? "英語",
           gradeLevel: draft.gradeLevel,
           label: draft.label,
-          // 段階1-A: 目次テキストがあれば本物の体系図を作る (なければ従来の推測)
+          // 段階1-A: 目次テキスト or 目次画像 (スキャン PDF、C85) があれば本物の
+          // 体系図を作る (どちらも無ければ従来の教材名からの推測)。
+          // 画像は配列のまま渡すと Server Action のガードで 500 になるため改行連結。
           tocText: draft.tocText,
+          tocImagesPacked: draft.tocImages?.join("\n"),
         });
         setExtracted(matchToExistingNodes(rawNodes, existingNodes));
       } else {

@@ -20,7 +20,10 @@ import type {
   Subject,
 } from "@/lib/learn/types";
 import { cn } from "@/lib/utils";
-import { extractIngestionText } from "@/lib/admin/pdf-extract-text";
+import {
+  extractIngestionText,
+  type IngestionText,
+} from "@/lib/admin/pdf-extract-text";
 import { detectMaterialMetaViaClaude } from "@/lib/admin/detect-meta-claude";
 
 /** Select で「+ 新規科目を追加…」が選ばれた時の特殊 value。2026-05-25 grill 2 S8 由来 */
@@ -88,39 +91,44 @@ export function Step1MetaAndUpload({
 
     setIsDetecting(true);
 
-    // 1) PDF テキスト抽出 (体系図用 tocText は、メタ検知が失敗しても必ず保持する)。
-    //    186MB 級の巨大 PDF で抽出自体が失敗する可能性があるので独立した try に分ける。
-    let coverText = "";
-    let tocText = "";
+    // 1) PDF 抽出 (体系図用の目次素材は、メタ検知が失敗しても必ず保持する)。
+    //    デジタル PDF → テキスト、スキャン/自炊 PDF → ページ画像 (C85)。
+    //    巨大 PDF で抽出自体が失敗する可能性があるので独立した try に分ける。
+    let ing: IngestionText = {
+      mode: "empty",
+      coverText: "",
+      tocText: "",
+      coverImages: [],
+      tocImages: [],
+    };
     try {
-      const ing = await extractIngestionText(file);
-      coverText = ing.coverText;
-      tocText = ing.tocText;
-      console.log(
-        "[ingest diag] coverLen:",
-        coverText.length,
-        "tocLen:",
-        tocText.length,
-      );
+      ing = await extractIngestionText(file);
     } catch (err) {
-      console.error("[PDF 抽出] pdf.js 失敗 (186MB 等の可能性):", err);
+      console.error("[PDF 抽出] pdf.js 失敗:", err);
     }
 
-    // 目次テキストを先に draft に保存 (Step2 の体系図抽出で使う、メタ検知と独立)。
-    onChange({ ...base, tocText });
+    // 目次素材 (テキスト or 画像) を先に draft に保存 (Step2 の体系図抽出で使う、メタ検知と独立)。
+    onChange({ ...base, tocText: ing.tocText, tocImages: ing.tocImages });
 
-    if (coverText.length === 0) {
-      // テキストが取れない (スキャン PDF / 抽出失敗) → メタ検知はスキップ、手入力に。
-      // 目次が取れていれば体系図は本物になるので empty、両方ダメなら error。
-      setDetectMessage(tocText.length > 0 ? { kind: "empty" } : { kind: "error" });
+    // メタ検知 / 体系図 それぞれの素材有無 (画像はスキャン PDF 経路)。
+    const hasCoverSource =
+      ing.coverText.trim().length > 0 || ing.coverImages.length > 0;
+    const hasTocSource = ing.tocText.length > 0 || ing.tocImages.length > 0;
+
+    if (!hasCoverSource) {
+      // 表紙の素材が無い (抽出失敗) → メタ検知はスキップ、手入力に。
+      // 目次素材があれば体系図は本物になるので empty、両方ダメなら error。
+      setDetectMessage(hasTocSource ? { kind: "empty" } : { kind: "error" });
       setIsDetecting(false);
       return;
     }
 
-    // 2) メタ検知 (失敗しても上で tocText は保存済 = 体系図には影響しない)。
+    // 2) メタ検知 (失敗しても上で目次素材は保存済 = 体系図には影響しない)。
     try {
       const result = await detectMaterialMetaViaClaude({
-        coverText,
+        coverText: ing.coverText,
+        // 画像は配列のまま渡すと Server Action のガードで 500 になるため改行連結 (C85)。
+        coverImagesPacked: ing.coverImages.join("\n"),
         subjects: subjects.map((s) => ({ id: s.id, name: s.name })),
         labels: LABELS,
         grades: GRADES,
@@ -128,7 +136,8 @@ export function Step1MetaAndUpload({
 
       onChange({
         ...base,
-        tocText,
+        tocText: ing.tocText,
+        tocImages: ing.tocImages,
         // 教材名・学年は AI が確信を持てなければ空欄にする (grill 確定 5: 決め打ちしない)。
         name: result.name ?? "",
         gradeLevel: result.gradeLevel ?? "",
