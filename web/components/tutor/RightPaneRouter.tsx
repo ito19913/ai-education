@@ -71,7 +71,7 @@ type Props = {
    * 教材追加完了時のコールバック（material-new view 用）。
    * TutorWorkspace 側でゆいの完了発話を追加 + 右ペインを閉じる。
    */
-  onMaterialAdded: (materialName: string, approvedNodeCount: number) => void;
+  onMaterialAdded: (material: Material, approvedNodeCount: number) => void;
   /**
    * 教材編集 (C46 F、ito19 さん意見): メタ情報 patch を materials state に反映
    * (MaterialEditDialog の onSave)

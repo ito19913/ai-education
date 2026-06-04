@@ -25,6 +25,7 @@ import { extractKnowledgeNodesViaClaude } from "@/lib/admin/extract-claude";
 import type {
   AiExtractedNode,
   KnowledgeNode,
+  Material,
   MaterialDraft,
   Subject,
 } from "@/lib/learn/types";
@@ -44,7 +45,7 @@ type Props = {
    * 保存完了時のコールバック。
    * /tutor 右ペイン経由の時に親がゆい発話を追加して右ペインを閉じるために使う。
    */
-  onComplete?: (materialName: string, approvedNodeCount: number) => void;
+  onComplete?: (material: Material, approvedNodeCount: number) => void;
 };
 
 // C31 2026-05-25 grill 1 確定 9: 監修ステップ撤去で 4 step → 3 step
@@ -77,7 +78,7 @@ export function MaterialEditWizard({
   /**
    * C71 (2026-05-28): Step2 アニメーション完了 → 「保存に進む」クリック時の処理を async + flag 分岐に。
    *
-   * - NEXT_PUBLIC_USE_CLAUDE_API=true: Claude Opus 4.7 (Step A、教材メタのみ)
+   * - NEXT_PUBLIC_USE_CLAUDE_API=true: Claude Opus 4.8 (Step A、教材メタのみ)
    * - false or 未設定: 既存 mockExtractNodes (固定 12 ノード mock)
    * - Claude 失敗時: mock fallback (= 動線が止まらないように、Phase 6 smoke test と同じ規律)
    *

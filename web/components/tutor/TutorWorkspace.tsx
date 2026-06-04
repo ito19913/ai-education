@@ -342,26 +342,22 @@ export function TutorWorkspace({
     [materials, navigate],
   );
 
-  // ----- 教材追加完了時のゆい発話追加 + 右ペイン遷移 -----
+  // ----- 教材追加完了時: materials state に push + ゆい発話 + 新教材の詳細へ遷移 -----
   // C32 2026-05-25 grill 1 確定 13: アップ完了動線 = ゆいから「葵が読んだよ、見る?」
   // → 右ペインに material-detail (体系図 + 評価コメント + 葵 chat) 即時展開
-  // 暫定: MOCK_MATERIALS への動的 push は未実装 (Step4Save が console.log のみ)。
-  // 表示は MOCK_MATERIALS の先頭 (= 中2英語教科書) を仮表示。Phase 7 で永続化対応。
+  // 2026-06-04 (残課題② 解消): Step4Save が構築した Material を in-memory で materials に追加。
+  // これで一覧 (MaterialsListPane) にも詳細にも登録した教材が出る。Phase 7 で永続化に置換。
   const handleMaterialAdded = useCallback(
-    (materialName: string, approvedNodeCount: number) => {
+    (material: Material, approvedNodeCount: number) => {
+      setMaterials((prev) => [...prev, material]);
       const reply: TutorMessage = {
         id: `t-mat-${Date.now()}`,
         role: "tutor",
-        text: `「${materialName}」、葵先生が読んだよ！\n体系図 (${approvedNodeCount} ノード) と評価コメントをまとめてくれたから、右で見せるね。`,
+        text: `「${material.name}」、葵先生が読んだよ！\n体系図 (${approvedNodeCount} ノード) と評価コメントをまとめてくれたから、右で見せるね。`,
         createdAt: new Date().toISOString(),
       };
       setTutorMessages((prev) => [...prev, reply]);
-      const fallbackMaterialId = MOCK_MATERIALS[0]?.id;
-      if (fallbackMaterialId) {
-        navigate("material-detail", { materialId: fallbackMaterialId });
-      } else {
-        navigate("default");
-      }
+      navigate("material-detail", { materialId: material.id });
     },
     [navigate],
   );
@@ -398,7 +394,7 @@ export function TutorWorkspace({
   );
 
   // ----- ゆい chat: 返信生成（mock + rightPaneAction 適用） -----
-  // Phase 6 smoke test: buildNextTutorReplyAsync 経由で「計画立てよう」入口だけ Claude Opus 4.7 化。
+  // Phase 6 smoke test: buildNextTutorReplyAsync 経由で「計画立てよう」入口だけ Claude Opus 4.8 化。
   // フラグ off / それ以外 keyword は内部で同期 buildNextTutorReply に委譲、Claude 失敗時も mock fallback。
   const generateReply = useCallback(
     async ({ userInput }: { userInput: string; history: TutorMessage[] }): Promise<TutorMessage> => {

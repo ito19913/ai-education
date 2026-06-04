@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, CheckCircle2, Home, Save } from "lucide-react";
-import type { AiExtractedNode, MaterialDraft } from "@/lib/learn/types";
+import type { AiExtractedNode, Material, MaterialDraft } from "@/lib/learn/types";
 
 type Props = {
   draft: MaterialDraft;
@@ -16,7 +16,7 @@ type Props = {
    * - /admin/materials/new から呼ばれた時は未指定 → 既存 UI（教材一覧/学習画面リンク）を出す
    * - /tutor 右ペインから呼ばれた時は指定 → ゆいに完了発話 + 右ペインを閉じる動作を親が行う
    */
-  onComplete?: (materialName: string, approvedNodeCount: number) => void;
+  onComplete?: (material: Material, approvedNodeCount: number) => void;
 };
 
 export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
@@ -25,10 +25,21 @@ export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
   // 2026-05-25 grill 1 確定 9 (監修撤去) + 確定 10 (テキスト忠実、AI 解釈・取捨選択禁止):
   // 葵が抽出したノードはそのまま全保存する (人間が承認/編集して取捨選択しない)。
   const handleSave = () => {
-    // MVP モック: state だけ。後で Supabase Insert に置き換え。
-    console.log("[save material]", draft, extracted);
+    // MVP モック: in-memory の Material を構築して親に渡す (後で Supabase Insert に置き換え)。
+    // coveredNodeIds は既存体系図ノードにマッチしたものだけ (matchToExistingNodes 由来)。
+    const newMaterial: Material = {
+      id: `mat-manual-${Date.now()}`,
+      subjectId: draft.subjectId,
+      name: draft.name,
+      label: draft.label,
+      gradeLevel: draft.gradeLevel,
+      coveredNodeIds: extracted
+        .map((n) => n.matchedNodeId)
+        .filter((id): id is string => Boolean(id)),
+    };
+    console.log("[save material]", newMaterial, extracted);
     setSaved(true);
-    onComplete?.(draft.name, extracted.length);
+    onComplete?.(newMaterial, extracted.length);
   };
 
   if (saved) {
