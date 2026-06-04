@@ -574,6 +574,12 @@ export type Material = {
   coveredNodeIds: string[];
   /** 論理削除日時 (ISO)。undefined = アクティブ、値あり = ゴミ箱に入っている */
   deletedAt?: string;
+  /**
+   * 教材本文 (目次) から葵 AI が抽出した教材固有の体系図 (段階1-A、2026-06-04)。
+   * 設定時はこちらを体系図として表示 (共有 MOCK_TREE / coveredNodeIds より優先)。
+   * 現状 in-memory、Phase 7 (段階1-B) で Supabase 永続化予定。
+   */
+  extractedNodes?: AiExtractedNode[];
 };
 
 /** 科目（英語、数学など） */
@@ -1349,6 +1355,12 @@ export type MaterialDraft = {
   gradeLevel: string;
   fileName: string | null;
   fileSize: number | null;
+  /**
+   * Step1 で PDF の目次・章立てから抽出したテキスト (段階1-A、2026-06-04)。
+   * Step2 の体系図抽出 (extract-claude) に渡し、本物の体系図を作る材料にする。
+   * 抽出できなかった (スキャン PDF 等) 場合は undefined → 従来のメタ推測にフォールバック。
+   */
+  tocText?: string;
 };
 
 // 後方互換: 古い名前を残す（既存コードを徐々に移行する間に使う）

@@ -51,6 +51,15 @@ import {
 } from "@/lib/learn/mock-data";
 import type { KnowledgeNode, Material, Subject } from "@/lib/learn/types";
 
+/**
+ * 体系図リスト/マップ表示に使うノード型。
+ * 段階1-A: 教材固有体系図 (extractedNodes) はページ範囲を持つので KnowledgeNode を拡張。
+ */
+type DisplayNode = KnowledgeNode & {
+  /** 例 "p.42-58"。共有 MOCK_TREE 由来のノードは持たない */
+  pageRange?: string;
+};
+
 type Props = {
   material: Material;
   subject: Subject | null;
@@ -94,9 +103,22 @@ export function MaterialDetailView({
     });
   };
 
-  const coveredNodes = material.coveredNodeIds
-    .map((nodeId) => nodes.find((n) => n.id === nodeId))
-    .filter((n): n is KnowledgeNode => n !== undefined);
+  // 段階1-A: 教材固有の体系図 (extractedNodes、目次から抽出した実単元 + ページ範囲) が
+  // あればそれを表示。なければ従来の共有 MOCK_TREE (coveredNodeIds) を表示 (後方互換)。
+  const coveredNodes = useMemo<DisplayNode[]>(() => {
+    if (material.extractedNodes && material.extractedNodes.length > 0) {
+      return material.extractedNodes.map((n) => ({
+        id: n.tempId,
+        name: n.name,
+        parentId: n.parentRef,
+        description: n.description,
+        pageRange: n.pageRange,
+      }));
+    }
+    return material.coveredNodeIds
+      .map((nodeId) => nodes.find((n) => n.id === nodeId))
+      .filter((n): n is KnowledgeNode => n !== undefined);
+  }, [material.extractedNodes, material.coveredNodeIds, nodes]);
 
   // D + E 2026-05-26 (ito19 さん意見 α 案): スケジュール組み込み状況
   // - active LearningPlan を materialIds で逆引き
@@ -563,7 +585,14 @@ export function MaterialDetailView({
                       title={`「${node.name}」について ${subject?.teacher?.displayName ?? "葵先生"} に聞く`}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium">{node.name}</div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="font-medium">{node.name}</span>
+                          {node.pageRange && node.pageRange !== "p.?-?" && (
+                            <span className="shrink-0 text-[11px] font-normal text-primary/70">
+                              {node.pageRange}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground line-clamp-1">
                           {node.description}
                         </div>

@@ -98,6 +98,8 @@ export function MaterialEditWizard({
           subjectName: subject?.name ?? "英語",
           gradeLevel: draft.gradeLevel,
           label: draft.label,
+          // 段階1-A: 目次テキストがあれば本物の体系図を作る (なければ従来の推測)
+          tocText: draft.tocText,
         });
         setExtracted(matchToExistingNodes(rawNodes, existingNodes));
       } else {

@@ -57,8 +57,9 @@ ${philosophy}
 
 ## 今回のタスク
 
-ユーザー (= 親 or 子供本人) が教材を登録しました。教材メタ情報を基に体系図 (= 章立て、節立て) を抽出してください。
-PDF 自体は読めないので、教材名から一般的な構成を推測してください (= Step A 暫定実装、将来 PDF native 解析に拡張予定)。
+ユーザー (= 親 or 子供本人) が教材を登録しました。体系図 (= 章立て、節立て) を抽出してください。
+教材の目次・章立てテキストが与えられた場合は、それに**忠実に** (テキスト忠実、AI 解釈・取捨選択禁止) 構造化してください。目次に載っている単元・章・節をそのまま体系図ノードにし、推測で項目を足さないこと。
+目次テキストが無い場合のみ、教材名から一般的な構成を推測してください。
 出力は **JSON 配列のみ** (説明文・前置き・コードブロック禁止、parse できる pure JSON)。`;
 
   return cachedAokiSystemPrompt;
@@ -85,6 +86,12 @@ export type ExtractMaterialInput = {
   subjectName: string;
   gradeLevel: string;
   label: string;
+  /**
+   * 教材 PDF の目次・章立てから抽出したテキスト (段階1-A、2026-06-04)。
+   * 与えられた場合はこれに忠実に体系図を作る (推測でなく実構造)。
+   * undefined / 空文字なら従来の教材名からの推測にフォールバック。
+   */
+  tocText?: string;
 };
 
 /**
@@ -97,6 +104,19 @@ export type ExtractMaterialInput = {
 export async function extractKnowledgeNodesViaClaude(
   input: ExtractMaterialInput,
 ): Promise<Array<Omit<AiExtractedNode, "matchedNodeId">>> {
+  const hasToc = !!(input.tocText && input.tocText.trim().length > 0);
+  // 一時診断ログ (段階1-A デバッグ、原因特定後に削除)
+  console.log(
+    "[extract diag] material:",
+    input.materialName,
+    "hasToc:",
+    hasToc,
+    "tocLen:",
+    input.tocText?.length ?? 0,
+  );
+  if (input.tocText) {
+    console.log("[extract diag] tocHead:", input.tocText.slice(0, 400));
+  }
   const userPrompt = `次の教材の体系図 (= ノード構造) を抽出してください。
 
 教材メタ情報:
@@ -104,24 +124,40 @@ export async function extractKnowledgeNodesViaClaude(
 - 科目: ${input.subjectName}
 - 学年: ${input.gradeLevel}
 - 種別: ${input.label}
-
+${
+  hasToc
+    ? `
+## 教材の目次・章立てテキスト (PDF 先頭ページから抽出)
+"""
+${input.tocText}
+"""
+`
+    : ""
+}
 要求:
-- 教材名から、その教材の一般的な体系 (= 章立て、節立て) を 3-4 階層で抽出
+${
+  hasToc
+    ? `- 上記の目次・章立てに**忠実に**、教材に実際に載っている単元・章・節を構造化する (テキスト忠実、推測で項目を足さない)
+- ノード数は目次の実際の単元数に合わせる (大単元 + 中単元 + 小単元の階層、最大 60 程度まで)
+- pageRange は目次に書かれたページ番号から埋める (不明なら "p.?-?")`
+    : `- 教材名から、その教材の一般的な体系 (= 章立て、節立て) を 3-4 階層で推測抽出 (目次テキストが取れなかったため)
 - ノード数は 10-15 個程度 (root 1 + 大単元 3-5 + 中単元 5-9)
+- pageRange は概算 (例: "p.42-58"、不明なら "p.?-?")`
+}
 - 各ノードに以下のフィールドを含める:
   - tempId: 文字列 (例: "ai-1", "ai-2", ...)
   - name: 単元名 (短く、教科書/問題集の章節タイトルになるもの)
   - parentRef: 親の tempId (root ノードは null)
   - description: 1-2 文の概要 (中学生・高校生が読んで分かる平易な日本語)
-  - pageRange: 概算ページ範囲 (例: "p.42-58"、不明なら "p.?-?")
-  - confidence: 0.85-0.99 の数値 (Claude の確信度、教材名が具体的なら高め)
+  - pageRange: ページ範囲 (例: "p.42-58"、不明なら "p.?-?")
+  - confidence: 0.85-0.99 の数値
 - 出力は **JSON 配列のみ** (説明文・前置き・コードブロック禁止、parse できる pure JSON)
 
 体系図 JSON:`;
 
   const res = await getClient().messages.create({
     model: "claude-opus-4-8",
-    max_tokens: 4000,
+    max_tokens: hasToc ? 8000 : 4000,
     system: [
       {
         type: "text",

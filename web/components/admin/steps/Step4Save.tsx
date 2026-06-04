@@ -36,6 +36,9 @@ export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
       coveredNodeIds: extracted
         .map((n) => n.matchedNodeId)
         .filter((id): id is string => Boolean(id)),
+      // 段階1-A: 教材固有の体系図 (目次から抽出した実単元 + ページ範囲)。
+      // MaterialDetailView はこれがあれば共有 MOCK_TREE より優先表示する。
+      extractedNodes: extracted,
     };
     console.log("[save material]", newMaterial, extracted);
     setSaved(true);

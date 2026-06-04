@@ -20,7 +20,7 @@ import type {
   Subject,
 } from "@/lib/learn/types";
 import { cn } from "@/lib/utils";
-import { extractCoverText } from "@/lib/admin/pdf-extract-text";
+import { extractIngestionText } from "@/lib/admin/pdf-extract-text";
 import { detectMaterialMetaViaClaude } from "@/lib/admin/detect-meta-claude";
 
 /** Select で「+ 新規科目を追加…」が選ばれた時の特殊 value。2026-05-25 grill 2 S8 由来 */
@@ -87,8 +87,38 @@ export function Step1MetaAndUpload({
     if (!useClaudeApi) return;
 
     setIsDetecting(true);
+
+    // 1) PDF テキスト抽出 (体系図用 tocText は、メタ検知が失敗しても必ず保持する)。
+    //    186MB 級の巨大 PDF で抽出自体が失敗する可能性があるので独立した try に分ける。
+    let coverText = "";
+    let tocText = "";
     try {
-      const coverText = await extractCoverText(file);
+      const ing = await extractIngestionText(file);
+      coverText = ing.coverText;
+      tocText = ing.tocText;
+      console.log(
+        "[ingest diag] coverLen:",
+        coverText.length,
+        "tocLen:",
+        tocText.length,
+      );
+    } catch (err) {
+      console.error("[PDF 抽出] pdf.js 失敗 (186MB 等の可能性):", err);
+    }
+
+    // 目次テキストを先に draft に保存 (Step2 の体系図抽出で使う、メタ検知と独立)。
+    onChange({ ...base, tocText });
+
+    if (coverText.length === 0) {
+      // テキストが取れない (スキャン PDF / 抽出失敗) → メタ検知はスキップ、手入力に。
+      // 目次が取れていれば体系図は本物になるので empty、両方ダメなら error。
+      setDetectMessage(tocText.length > 0 ? { kind: "empty" } : { kind: "error" });
+      setIsDetecting(false);
+      return;
+    }
+
+    // 2) メタ検知 (失敗しても上で tocText は保存済 = 体系図には影響しない)。
+    try {
       const result = await detectMaterialMetaViaClaude({
         coverText,
         subjects: subjects.map((s) => ({ id: s.id, name: s.name })),
@@ -98,11 +128,11 @@ export function Step1MetaAndUpload({
 
       onChange({
         ...base,
+        tocText,
         // 教材名・学年は AI が確信を持てなければ空欄にする (grill 確定 5: 決め打ちしない)。
         name: result.name ?? "",
         gradeLevel: result.gradeLevel ?? "",
         // 科目 (必須) と種別 (3 択は必ず選べる) は、null のときデフォルト/既存を維持。
-        // 科目を空にすると次へ進めなくなる & MVP は英語のみのため。
         ...(result.subjectId ? { subjectId: result.subjectId } : {}),
         ...(result.label ? { label: result.label as MaterialLabel } : {}),
       });
@@ -118,7 +148,7 @@ export function Step1MetaAndUpload({
         filled.length > 0 ? { kind: "success", filled } : { kind: "empty" },
       );
     } catch (err) {
-      console.error("[PDF メタ自動検知] 失敗、手入力にフォールバック:", err);
+      console.error("[メタ検知] Claude 失敗 (tocText は保持済):", err);
       setDetectMessage({ kind: "error" });
     } finally {
       setIsDetecting(false);

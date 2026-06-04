@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-06-04 (**Phase 6 拡大: ゆい/葵 全体 Claude 化 (A + B 完了) + C78 generic シーン追加で最大カバレッジ**): C58 PHILOSOPHY 全書き換え + grill 累計 30 問 / 47 論点 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) + C2/C3 撤回 + 教材ベース回帰 (C69) + Phase 6 教材体系図 AI 抽出 Step A (C70-C72) + C73-C77 で A/B 全 Claude 化 + **C78 で「相談」等 fallback ルートも Claude 化 (plan-start + generic-{stateName} シーン追加)** → tutor-mock の全 mock 発話がほぼ Claude 経由で言い換えされる状態。残り C 部 (F4 / F5 / 試験前 / F1 内部 3 分類) + D 部 (親 chat) は次セッション以降。**2026-06-04 後段で C80-C82 追加**: 全 AI モデルを Opus 4.8 統一 (C80) + 教材登録 PDF メタ自動検知 (C81、grill 確定) + 教材一覧 in-memory 反映で残課題② 解消 (C82) + **教材本文理解システム (葵ティーチング基盤) grill 完結 (★未実装★、段階1/2)**。次は **教材本文理解システム 段階1 実装** (取り込み基盤 + 本物の体系図 + 葵 chat 場所指定型、Phase 7 Supabase 着手を含む大規模)。詳細は ARCHITECTURE「## PDF メタ自動検知 + 教材本文理解システム grill (2026-06-04)」。**動作確認時の注意 = dev server 再起動必須、Claude 応答 5-15 秒/呼**)
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-06-04 (**Phase 6 拡大: ゆい/葵 全体 Claude 化 (A + B 完了) + C78 generic シーン追加で最大カバレッジ**): C58 PHILOSOPHY 全書き換え + grill 累計 30 問 / 47 論点 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) + C2/C3 撤回 + 教材ベース回帰 (C69) + Phase 6 教材体系図 AI 抽出 Step A (C70-C72) + C73-C77 で A/B 全 Claude 化 + **C78 で「相談」等 fallback ルートも Claude 化 (plan-start + generic-{stateName} シーン追加)** → tutor-mock の全 mock 発話がほぼ Claude 経由で言い換えされる状態。残り C 部 (F4 / F5 / 試験前 / F1 内部 3 分類) + D 部 (親 chat) は次セッション以降。**2026-06-04 後段で C80-C82 追加**: 全 AI モデルを Opus 4.8 統一 (C80) + 教材登録 PDF メタ自動検知 (C81、grill 確定) + 教材一覧 in-memory 反映で残課題② 解消 (C82) + **教材本文理解システム (葵ティーチング基盤) grill 完結 (★未実装★、段階1/2)**。**段階1-A (本物の体系図、目次ベース、mock) に着手したが ★186MB の真英文法大全で目次が葵に届かないバグ未解決 (サーバーログ tocLen:0 を 2 回確認、C84 WIP commit)★**。次セッション最優先 = このバグ修正 (ブラウザ F12 Console で `[ingest diag]` 確認 → 186MB の pdf.js 抽出方式を変更)。詳細は SESSION_HANDOFF §3「### 2026-06-04 末: 段階1-A」+ ARCHITECTURE「## PDF メタ自動検知 + 教材本文理解システム grill (2026-06-04)」。**動作確認時の注意 = dev server 再起動必須、Claude 応答 5-15 秒/呼**)
 
 ---
 
@@ -736,6 +736,33 @@ C73-C78 で Claude 化した後、ito19 さんが実際に教材登録を試し�
 
 ---
 
+### 2026-06-04 末: 段階1-A 本物の体系図 実装 (★WIP = C84、目次が届かないバグ未解決★)
+
+教材本文理解 段階1-A (本物の体系図、目次ベース、mock、Supabase なし) を実装。目的 = 教材登録時に PDF の目次から実単元 + ページ範囲を Claude 4.8 で抽出し、推測 4 ノードからの脱却。設計は Plan ファイル `C:\Users\ito19\.claude\plans\tidy-kindling-creek.md` (段階1-A) 参照。
+
+**実装 7 ファイル (tsc/eslint クリア、C84 で WIP commit)**:
+- `lib/learn/types.ts`: MaterialDraft.tocText + Material.extractedNodes
+- `lib/admin/pdf-extract-text.ts`: extractIngestionText (1 回で cover + toc 抽出、目次は先頭40ページ)
+- `lib/admin/extract-claude.ts`: tocText 引数で目次忠実抽出 + ノード数緩和 (最大60) + **一時診断ログ `[extract diag]`**
+- `components/admin/steps/Step1MetaAndUpload.tsx`: 目次抽出→draft.tocText (メタ検知と分離、メタ検知失敗でも tocText 保持) + **一時診断ログ `[ingest diag]`**
+- `components/admin/MaterialEditWizard.tsx`: handleExtractionDone で tocText を extract-claude に渡す
+- `components/admin/steps/Step4Save.tsx`: Material に extractedNodes 格納
+- `components/materials/MaterialDetailView.tsx`: extractedNodes 優先表示 + pageRange + DisplayNode 型
+
+**★未解決バグ (次セッション最優先)★**: 真英文法大全 (186MB) を登録しても体系図が目次ベースにならず推測のまま (14-15 ノード、実際の目次 Chapter1 時制 p.41 等と不一致)。**サーバーログで `[extract diag] material: 真英文法大全 hasToc: false tocLen: 0` を 2 回確認** = tocText が extract-claude に一切届いていない。
+
+**原因候補 (切り分け順)**:
+1. **最有力 = extractIngestionText が 186MB で失敗 or 空テキストを返す** (pdf.js が巨大 arrayBuffer を処理しきれない)。→ ブラウザ F12 Console で `[ingest diag] coverLen: ◯ tocLen: ◯` の数字 + `[PDF 抽出] pdf.js 失敗` 赤エラーの有無を確認。tocLen 0 / エラーなら抽出方式を変更 (サーバー処理 / pdf.js range request / 読むページ数を絞る等)
+2. draft.tocText の closure / 配線切れ (ただし handleFile 修正後も tocLen 0 なので可能性低)
+3. (届いていればプロンプト問題だが tocLen 0 なので今は除外)
+
+**注意**:
+- 診断ログ (`[extract diag]` extract-claude.ts / `[ingest diag]` Step1MetaAndUpload.tsx) は **原因特定後に削除**すること
+- メタ検知 (C81) も同じ extractIngestionText 由来なので、186MB で抽出失敗ならメタ自動入力も動いていないはず (ito19 さんは手入力で「テスト」等を登録していた)
+- dev server: 末時点で `bvj08rtb1` 起動中 (診断ログ込み)。サーバーログ = そのタスク output ファイル
+
+---
+
 ## §4. 現状確認方法 (dev server で動かす)
 
 ```bash
@@ -957,9 +984,16 @@ C61 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段�
 
 **第 2 段階以降に持ち越し** (Phase 5 解体プラン確定後にまとめて実装): 親 chat UI / 24h 異議窓口バナー / F1 内部 3 分類 / F3 carry-over 3 日連続検知 / B1-B2 1 ヶ月更新化 / B3 二系統 / カリキュラム DB / E1-E9 試験前モード 等。
 
-【次セッションで進める論点 — ★最優先: 教材本文理解システム 段階1 実装★】
+【次セッションで進める論点 — ★最優先: 段階1-A の「186MB 目次が届かない」バグ修正★】
 
-2026-06-04 後段の grill で「葵ティーチングには教材本文の理解が必須、今それで進んでいない (体系図/評価/chat 全部推測)」が判明 → RAG 設計確定 (詳細 ARCHITECTURE「## PDF メタ自動検知 + 教材本文理解システム grill (2026-06-04)」)。次セッションの最優先 = **段階1 実装**:
+**まず C84 WIP の未解決バグを直す**: 真英文法大全 (186MB) を登録しても体系図が目次ベースにならず推測のまま (14-15 ノード)。サーバーログで `[extract diag] hasToc: false tocLen: 0` を確認 = 目次テキストが extract-claude に届いていない。
+- 切り分け: ブラウザ F12 Console で `[ingest diag] coverLen: ◯ tocLen: ◯` の数字 + `[PDF 抽出] pdf.js 失敗` 赤エラーの有無を確認
+- 最有力原因 = extractIngestionText が 186MB の巨大 PDF を処理しきれず空/失敗 → 抽出方式変更 (サーバー処理 / pdf.js range request / 読むページ数制限 / File 分割等)
+- 診断ログ (`[extract diag]` extract-claude.ts、`[ingest diag]` Step1MetaAndUpload.tsx) は修正後に削除
+- 詳細は §3「### 2026-06-04 末: 段階1-A 本物の体系図 実装」
+
+**(以下は段階1-A バグ解決後の続き — 段階1 全体)**
+2026-06-04 後段の grill で「葵ティーチングには教材本文の理解が必須、今それで進んでいない (体系図/評価/chat 全部推測)」が判明 → RAG 設計確定 (詳細 ARCHITECTURE「## PDF メタ自動検知 + 教材本文理解システム grill (2026-06-04)」)。段階1 全体の構成:
 - 取り込み基盤 (本文全ページ抽出 → 単元ごとページ範囲 → Supabase 保存、バックグラウンド + 完了通知)
 - 本物の体系図 (真英文法大全の実単元・ページ範囲、現状 4 ノード推測からの脱却)
 - 葵 chat 場所指定型 (単元→ページ画像を Claude vision に渡す、embedding 不要)
