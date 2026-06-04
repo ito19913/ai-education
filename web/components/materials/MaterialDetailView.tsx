@@ -15,9 +15,13 @@
  * - 評価コメントは葵生成 mock テキスト (Phase 6 で Claude Opus 出力に置換)
  * - 葵 chat 入力欄は placeholder 表示のみ (Phase 6 で本物の chat スレッド実装)
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import {
+  generateMaterialReviewViaClaude,
+  type MaterialReviewOutput,
+} from "@/lib/admin/review-claude";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -174,17 +178,49 @@ export function MaterialDetailView({
       }[scheduleInfo.signal]
     : null;
 
-  // 評価コメント mock (Phase 6 で葵先生 Claude Opus の本物出力に置換)
-  const aoiReview = {
-    coverage: `${material.name} は、${subject?.name ?? "この教科"}の${material.gradeLevel} 範囲を網羅していて、体系の骨格を掴むのに使えそう。`,
-    difficulty: "難易度は標準的。基礎の解説が丁寧で、演習問題も着実にこなせる量。",
-    fit: "今の学習段階にちょうど合っていると思う。最初の通読は焦らず、まずは骨格を掴むことを優先しよう。",
-    notes: [
-      "演習問題を解く時は、答えを見る前に必ず「自分の言葉で説明」してみよう。",
-      "わからない用語に出会ったら、その場で「どうしてこの言葉が出てきたのか」を考えよう。",
-      "1 回転目は完璧を目指さず、全体像を掴むことに集中。2 回転目から細部に入ろう。",
-    ],
-  };
+  // 評価コメント (B3 2026-06-04): NEXT_PUBLIC_USE_CLAUDE_API=true なら Claude
+  // Opus 4.7 が葵先生として生成、失敗時 / flag off は下記 mock fallback。
+  // 教材切替 (material.id 変化) ごとに再フェッチする。Phase 7 永続化時に
+  // MaterialReview を DB 保存して 1 回だけ呼ぶ設計に切替予定。
+  const mockReview = useMemo<MaterialReviewOutput>(
+    () => ({
+      coverage: `${material.name} は、${subject?.name ?? "この教科"}の${material.gradeLevel} 範囲を網羅していて、体系の骨格を掴むのに使えそう。`,
+      difficulty:
+        "難易度は標準的。基礎の解説が丁寧で、演習問題も着実にこなせる量。",
+      fit: "今の学習段階にちょうど合っていると思う。最初の通読は焦らず、まずは骨格を掴むことを優先しよう。",
+      notes: [
+        "演習問題を解く時は、答えを見る前に必ず「自分の言葉で説明」してみよう。",
+        "わからない用語に出会ったら、その場で「どうしてこの言葉が出てきたのか」を考えよう。",
+        "1 回転目は完璧を目指さず、全体像を掴むことに集中。2 回転目から細部に入ろう。",
+      ],
+    }),
+    [material.name, material.gradeLevel, subject?.name],
+  );
+  const [aoiReview, setAoiReview] = useState<MaterialReviewOutput>(mockReview);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAoiReview(mockReview);
+    const useClaude = process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true";
+    if (!useClaude) return;
+    let cancelled = false;
+    generateMaterialReviewViaClaude({
+      materialName: material.name,
+      subjectName: subject?.name ?? "教科",
+      gradeLevel: material.gradeLevel ?? "中2",
+      label: material.label,
+    })
+      .then((res) => {
+        if (!cancelled) setAoiReview(res);
+      })
+      .catch((err) => {
+        console.error("[B3] review-claude failed, mock 維持:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [material.id]);
 
   return (
     // 二層パターン: flex 子の min-height: auto 規則で overflow が効かない問題を回避。
