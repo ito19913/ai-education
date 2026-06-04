@@ -20,8 +20,9 @@ export const config = {
      * - _next/static (静的ファイル)
      * - _next/image (Image Optimization)
      * - favicon.ico
-     * - 拡張子付きの公開アセット (画像など)
+     * - 拡張子付きの公開アセット (画像・worker など)
+     *   mjs/js は pdf.js worker (public/pdf.worker.min.mjs) を認証で弾かないために除外
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mjs|js)$).*)",
   ],
 };
