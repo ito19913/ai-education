@@ -27,6 +27,7 @@ import { MOCK_HANDOFFS } from "@/lib/learn/mock-data";
 import {
   buildInitialIssueChat,
   buildNextIssueChatReply,
+  buildNextIssueChatReplyAsync,
   type IssueChatStep,
 } from "@/lib/learn/issue-chat-mock";
 
@@ -138,20 +139,39 @@ export function IssueChat({
     };
     onAppendMessages([learnerMsg]);
     setIsThinking(true);
-    // 思考演出（600ms）→ scripted 応答生成
+    // 思考演出（600ms）→ async 応答生成 (B2 C76: NEXT_PUBLIC_USE_CLAUDE_API=true
+    // なら Claude 経由、それ以外は mock fallback)
     setTimeout(() => {
-      const result = buildNextIssueChatReply({
-        state: stepRef.current,
-        issue,
-        userInput: text,
-      });
-      stepRef.current = result.nextState;
-      onAppendMessages([result.reply]);
-      setIsThinking(false);
-      if (result.shouldResolve) {
-        // AI が「クリアしておくね」と言った直後に resolve
-        onResolve();
-      }
+      void (async () => {
+        try {
+          const result = await buildNextIssueChatReplyAsync({
+            state: stepRef.current,
+            issue,
+            userInput: text,
+            // 教科名・先生名は subjects から取得 (本実装では subjects prop が必要)、
+            // 現状は IssueChat に渡ってきてないので default の "教科" / persona.displayName
+            // を Server Action 側で使う
+          });
+          stepRef.current = result.nextState;
+          onAppendMessages([result.reply]);
+          if (result.shouldResolve) {
+            // AI が「クリアしておくね」と言った直後に resolve
+            onResolve();
+          }
+        } catch (err) {
+          console.error("[B2] issue-chat async failed, fallback sync:", err);
+          const result = buildNextIssueChatReply({
+            state: stepRef.current,
+            issue,
+            userInput: text,
+          });
+          stepRef.current = result.nextState;
+          onAppendMessages([result.reply]);
+          if (result.shouldResolve) onResolve();
+        } finally {
+          setIsThinking(false);
+        }
+      })();
     }, 600);
   };
 
