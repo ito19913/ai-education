@@ -98,7 +98,7 @@ export type IngestionText = {
 };
 
 /** ページを JPEG に描画して base64 (prefix 無し) を返す。失敗時 null。 */
-async function renderPageToJpeg(
+export async function renderPageToJpeg(
   doc: PDFDocumentProxy,
   pageNum: number,
 ): Promise<string | null> {
@@ -134,6 +134,98 @@ async function renderPageToJpeg(
   } catch (err) {
     console.error(`[PDF 画像化] p.${pageNum} 描画失敗:`, err);
     return null;
+  }
+}
+
+// ============================================================================
+// 読書ビュー (段階1-C「一緒にめくって読む」) 用のページ描画ヘルパー
+// 同一 doc から「画面表示用 canvas 描画」と「vision 用 JPEG (renderPageToJpeg)」を
+// 両立できる (二重ロード不要)。
+// ============================================================================
+
+export type LoadedPdf = {
+  doc: PDFDocumentProxy;
+  numPages: number;
+  /** 使い終わったら呼ぶ (loadingTask を破棄してメモリ解放)。 */
+  destroy: () => Promise<void>;
+};
+
+/** File から PDF doc を 1 回だけロードする (読書ビューが doc を保持して任意ページを描画)。 */
+export async function loadPdfDocument(file: File): Promise<LoadedPdf> {
+  const pdfjs = await getPdfjs();
+  const data = await file.arrayBuffer();
+  const loadingTask = pdfjs.getDocument({ data });
+  const doc = await loadingTask.promise;
+  return {
+    doc,
+    numPages: doc.numPages,
+    destroy: async () => {
+      await loadingTask.destroy();
+    },
+  };
+}
+
+/**
+ * ページを画面表示用 canvas に描画する (高 DPI 対応)。
+ * canvas のピクセルバッファは targetCssWidth × devicePixelRatio で確保し、
+ * 表示サイズ (CSS) は論理 px で固定する。
+ *
+ * ★競合対策★: zoom/resize で同じ canvas に対して描画が連続発火すると、pdf.js が
+ * 同一 canvas に同時描画して結果が崩れる (上下反転など)。直前の描画タスクを cancel し、
+ * token で「最新の要求だけ」描画する (古い要求は getPage 後に破棄)。
+ */
+type CanvasRenderState = HTMLCanvasElement & {
+  __renderTask?: { cancel: () => void };
+  __renderToken?: number;
+};
+
+export async function renderPageToCanvas(
+  doc: PDFDocumentProxy,
+  pageNum: number,
+  canvas: HTMLCanvasElement,
+  targetCssWidth: number,
+): Promise<void> {
+  const c = canvas as CanvasRenderState;
+  // 直前の描画を中断 (in-flight なら cancel、await は reject される)
+  c.__renderTask?.cancel?.();
+  const token = (c.__renderToken ?? 0) + 1;
+  c.__renderToken = token;
+
+  const page = await doc.getPage(pageNum);
+  // getPage 中に新しい描画要求が来ていたら、この (古い) 要求は破棄
+  if (c.__renderToken !== token) {
+    page.cleanup();
+    return;
+  }
+
+  const base = page.getViewport({ scale: 1 });
+  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  const scale = (Math.max(targetCssWidth, 1) * dpr) / base.width;
+  const viewport = page.getViewport({ scale });
+
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  // バッファは dpr 倍 (高精細)、表示サイズは論理 px で固定 (dpr>1 でレイアウトが狂わないように)
+  canvas.style.width = `${Math.round(targetCssWidth)}px`;
+  canvas.style.height = "auto";
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    page.cleanup();
+    return;
+  }
+  // スキャン PDF の透過部分が黒く出ないよう白で塗る。
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const task = page.render({ canvas, viewport });
+  c.__renderTask = task;
+  try {
+    await task.promise;
+  } catch {
+    // cancel された (新しい描画に置き換わった) 場合は無視
+  } finally {
+    if (c.__renderToken === token) c.__renderTask = undefined;
+    page.cleanup();
   }
 }
 

@@ -79,10 +79,25 @@ export type AokiChatInput = {
   history: AokiChatMessage[];
   /** ユーザーの今回の発話 */
   userMessage: string;
+  /**
+   * 段階1-C「一緒にめくって読む」: ユーザーが今読書ビューで開いているページ画像
+   * (base64 JPEG、prefix 無し、改行連結。現在は 1 枚)。あれば葵は vision でその
+   * ページの本文を読んでその場で教える。配列でなく文字列なのは Server Action の
+   * array-nesting ガード回避 (C85 と同じ)。
+   */
+  currentPageImagesPacked?: string;
+  /** 読書ビューで今開いている物理ページ番号 (1-indexed)。文脈提示用。 */
+  currentPageNumber?: number;
 };
 
 export async function respondViaAokiChat(input: AokiChatInput): Promise<string> {
   const messages: Anthropic.MessageParam[] = [];
+
+  // 段階1-C: 読書ビューで今開いているページ画像 (改行連結を分割)
+  const pageImages = input.currentPageImagesPacked
+    ? input.currentPageImagesPacked.split("\n").filter((s) => s.length > 0)
+    : [];
+  const isReading = pageImages.length > 0;
 
   // 文脈ヘッダ (= 最初の user message として教材文脈を提示)
   const contextHeader = `## 教材文脈
@@ -90,13 +105,20 @@ export async function respondViaAokiChat(input: AokiChatInput): Promise<string> 
 - 科目: ${input.subjectName}
 - 学年: ${input.gradeLevel}
 ${input.focusNodeName ? `- 今フォーカスしているノード: ${input.focusNodeName}` : "- フォーカス: 教材全体"}
+${
+  isReading
+    ? `- 今、本人はこの教材の PDF を画面で開いて、あなたと一緒に読んでいます${input.currentPageNumber ? ` (今開いているのは ${input.currentPageNumber} ページ目)` : ""}。各メッセージには「今開いているページの画像」が添付されます。その画像の本文を読み取り、ページの内容に即して一緒に読み解いて教えてください (推測でなく、写っている本文に基づく)。`
+    : ""
+}
 
 以下、本人との対話が続きます。`;
 
   messages.push({ role: "user", content: contextHeader });
   messages.push({
     role: "assistant",
-    content: `了解しました。${input.materialName} について、${input.focusNodeName ? `特に「${input.focusNodeName}」を中心に` : "教材全体を俯瞰しつつ"} 質問に答えていきますね。`,
+    content: isReading
+      ? `了解しました。${input.materialName} を一緒に開いて、今のページを見ながら進めますね。`
+      : `了解しました。${input.materialName} について、${input.focusNodeName ? `特に「${input.focusNodeName}」を中心に` : "教材全体を俯瞰しつつ"} 質問に答えていきますね。`,
   });
 
   // 過去履歴を追加
@@ -104,8 +126,23 @@ ${input.focusNodeName ? `- 今フォーカスしているノード: ${input.focu
     messages.push({ role: m.role, content: m.text });
   }
 
-  // 今回の user message
-  messages.push({ role: "user", content: input.userMessage });
+  // 今回の user message。読書中なら現在ページ画像を先頭に付ける (画像 block → テキスト)。
+  if (isReading) {
+    const content: Anthropic.ContentBlockParam[] = [
+      ...pageImages.map(
+        (b64): Anthropic.ImageBlockParam => ({
+          type: "image",
+          source: { type: "base64", media_type: "image/jpeg", data: b64 },
+          // 同じページを連投するので prompt cache でフォローアップを安く・速く。
+          cache_control: { type: "ephemeral" },
+        }),
+      ),
+      { type: "text", text: input.userMessage },
+    ];
+    messages.push({ role: "user", content });
+  } else {
+    messages.push({ role: "user", content: input.userMessage });
+  }
 
   const res = await getClient().messages.create({
     model: "claude-opus-4-8",

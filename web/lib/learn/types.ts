@@ -535,6 +535,7 @@ export type RightPaneView =
   | "plans" // C21 Phase 5 P5-Q6: Plan Engine ダッシュボード
   | "material-new"
   | "material-detail" // C32 2026-05-25 grill 1 確定 5/11/12: 教材詳細ページ
+  | "material-read" // 段階1-C 2026-06-04: PDF を一緒にめくって読む読書ビュー (フル幅)
   | "materials" // C44 2026-05-26: 教材一覧 (ito19 さん意見、再アクセス動線 残課題⑤ 解消)
   | "subjects" // C30 2026-05-25 grill 2 S6: 科目設定パネル
   | "subject-history"
@@ -1367,6 +1368,13 @@ export type MaterialDraft = {
    * 真・英文法大全 (186MB スキャン) のように getTextContent が空を返す教材への対応。
    */
   tocImages?: string[];
+  /**
+   * アップロードした PDF の File 本体 (段階1-C、2026-06-04)。
+   * 登録完了時にセッション PDF ストア (session-pdf-store) へ移し、読書ビューが
+   * 任意ページを描画して葵に vision で見せるために使う。in-memory state なので
+   * File 参照を保持して問題ない (シリアライズ対象外)。
+   */
+  file?: File;
 };
 
 // 後方互換: 古い名前を残す（既存コードを徐々に移行する間に使う）

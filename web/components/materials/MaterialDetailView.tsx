@@ -339,6 +339,16 @@ export function MaterialDetailView({
               </span>
             </div>
           </div>
+          {/* 段階1-C: PDF を一緒にめくって読む読書ビューへ */}
+          <Button
+            onClick={() =>
+              router.push(`/tutor?view=material-read&id=${material.id}`)
+            }
+            className="shrink-0 gap-1.5"
+          >
+            <BookText className="size-4" />
+            <span>一緒に読む</span>
+          </Button>
         </CardContent>
       </Card>
 
@@ -571,13 +581,18 @@ export function MaterialDetailView({
             <ul className="flex flex-col gap-1">
               {coveredNodes.slice(0, 20).map((node) => {
                 const isSelected = selectedChatNode?.id === node.id;
+                // 段階1-C: pageRange の開始ページが取れれば「読む」ジャンプを出す
+                const startMatch = node.pageRange?.match(/p\.?\s*(\d+)/i);
+                const readPage = startMatch
+                  ? Number.parseInt(startMatch[1], 10)
+                  : null;
                 return (
-                  <li key={node.id}>
+                  <li key={node.id} className="flex items-stretch gap-1.5">
                     <button
                       type="button"
                       onClick={() => handleSelectNodeForChat(node)}
                       className={cn(
-                        "group flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                        "group flex flex-1 items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
                         isSelected
                           ? "border-primary bg-primary/5"
                           : "border-border bg-card hover:border-primary hover:bg-primary/5",
@@ -606,6 +621,22 @@ export function MaterialDetailView({
                         )}
                       />
                     </button>
+                    {readPage !== null && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          router.push(
+                            `/tutor?view=material-read&id=${material.id}&page=${readPage}`,
+                          )
+                        }
+                        className="h-auto shrink-0 gap-1 px-2"
+                        title={`「${node.name}」のページを一緒に読む`}
+                      >
+                        <BookText className="size-4" />
+                        <span className="text-xs">読む</span>
+                      </Button>
+                    )}
                   </li>
                 );
               })}

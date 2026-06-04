@@ -81,6 +81,8 @@ export function Step1MetaAndUpload({
       ...draft,
       fileName: file?.name ?? null,
       fileSize: file?.size ?? null,
+      // 段階1-C: 読書ビューで任意ページを描画するため File 本体も保持する。
+      file: file ?? undefined,
     };
     onChange(base);
     setDetectMessage(null);

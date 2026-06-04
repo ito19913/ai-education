@@ -45,7 +45,12 @@ type Props = {
    * 保存完了時のコールバック。
    * /tutor 右ペイン経由の時に親がゆい発話を追加して右ペインを閉じるために使う。
    */
-  onComplete?: (material: Material, approvedNodeCount: number) => void;
+  onComplete?: (
+    material: Material,
+    approvedNodeCount: number,
+    /** 段階1-C: アップロード PDF の File 本体 (読書ビュー用にセッション保持)。 */
+    file?: File | null,
+  ) => void;
 };
 
 // C31 2026-05-25 grill 1 確定 9: 監修ステップ撤去で 4 step → 3 step

@@ -23,6 +23,8 @@ import { BookOpenCheck, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TutorChat } from "./TutorChat";
 import { RightPaneRouter } from "./RightPaneRouter";
+import { MaterialReadPane } from "@/components/materials/MaterialReadPane";
+import { setSessionPdf } from "@/lib/admin/session-pdf-store";
 import {
   buildInitialTutorThread,
   buildNextTutorReply,
@@ -86,6 +88,7 @@ function viewFromParam(raw: string | null): RightPaneView {
     raw === "plans" ||
     raw === "material-new" ||
     raw === "material-detail" || // C32 2026-05-25 grill 1 確定 5/11/12 (C40 で許可リスト追加忘れ fix)
+    raw === "material-read" || // 段階1-C 2026-06-04: 一緒にめくって読む読書ビュー
     raw === "materials" || // C44 2026-05-26: 教材一覧 (ito19 さん意見、残課題⑤ 解消)
     raw === "subjects" || // C30 2026-05-25 grill 2 S6
     raw === "subject-history" ||
@@ -122,8 +125,18 @@ export function TutorWorkspace({
   const selectedIssueId = searchParams.get("id");
   const selectedSubjectId = searchParams.get("subjectId");
   // C32 2026-05-25 grill 1: material-detail view では id クエリを materialId として解釈
+  // 段階1-C: material-read (読書ビュー) でも同じく id を materialId として使う
   const selectedMaterialId =
-    searchParams.get("view") === "material-detail" ? searchParams.get("id") : null;
+    searchParams.get("view") === "material-detail" ||
+    searchParams.get("view") === "material-read"
+      ? searchParams.get("id")
+      : null;
+  // 段階1-C: 読書ビューの初期ページ (体系図ノードから ?page=N で飛んできた時)
+  const readInitialPage = (() => {
+    const raw = searchParams.get("page");
+    const n = raw ? Number.parseInt(raw, 10) : NaN;
+    return Number.isNaN(n) || n < 1 ? undefined : n;
+  })();
   // /tutor?ending=1: /learn の「学習を終了」から来た時、ゆいを ending モードで起動
   const endingMode = searchParams.get("ending") === "1";
 
@@ -247,13 +260,23 @@ export function TutorWorkspace({
   const navigate = useCallback(
     (
       next: RightPaneView,
-      params?: { issueId?: string; subjectId?: string; materialId?: string },
+      params?: {
+        issueId?: string;
+        subjectId?: string;
+        materialId?: string;
+        /** 段階1-C: material-read の初期ページ (体系図ノードジャンプ用) */
+        page?: number;
+      },
     ) => {
       const url = new URLSearchParams();
       if (next !== "default") url.set("view", next);
       if (next === "issue" && params?.issueId) url.set("id", params.issueId);
       if (next === "material-detail" && params?.materialId)
         url.set("id", params.materialId);
+      if (next === "material-read" && params?.materialId) {
+        url.set("id", params.materialId);
+        if (params.page && params.page > 0) url.set("page", String(params.page));
+      }
       if (next === "subject-history" && params?.subjectId)
         url.set("subjectId", params.subjectId);
       const q = url.toString();
@@ -348,8 +371,10 @@ export function TutorWorkspace({
   // 2026-06-04 (残課題② 解消): Step4Save が構築した Material を in-memory で materials に追加。
   // これで一覧 (MaterialsListPane) にも詳細にも登録した教材が出る。Phase 7 で永続化に置換。
   const handleMaterialAdded = useCallback(
-    (material: Material, approvedNodeCount: number) => {
+    (material: Material, approvedNodeCount: number, file?: File | null) => {
       setMaterials((prev) => [...prev, material]);
+      // 段階1-C: 読書ビューで任意ページを描画できるよう PDF をセッション保持。
+      if (file) setSessionPdf(material.id, file);
       const reply: TutorMessage = {
         id: `t-mat-${Date.now()}`,
         role: "tutor",
@@ -544,6 +569,12 @@ export function TutorWorkspace({
   // （subject-history 等の他 view では左ゆいは常時アクティブ）
   const tutorLocked = view === "issue";
 
+  // 段階1-C: 読書ビュー (material-read) はゆい左ペインを隠してフル幅で表示する集中モード
+  const readMaterial =
+    view === "material-read" && selectedMaterialId
+      ? (materials.find((m) => m.id === selectedMaterialId) ?? null)
+      : null;
+
   return (
     <div className="flex h-screen w-full flex-col bg-background">
       {/* スリムな上部 app bar — AI-Education ブランディング + 学習画面への移動 */}
@@ -571,6 +602,28 @@ export function TutorWorkspace({
         </Link>
       </header>
 
+      {view === "material-read" ? (
+        // 段階1-C: 読書ビューはゆい左ペインを隠してフル幅の集中モードで表示
+        readMaterial ? (
+          <MaterialReadPane
+            material={readMaterial}
+            subject={
+              subjects.find((s) => s.id === readMaterial.subjectId) ?? null
+            }
+            initialPage={readInitialPage}
+            onBack={() =>
+              navigate("material-detail", { materialId: readMaterial.id })
+            }
+          />
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
+            <span>教材が見つかりませんでした。</span>
+            <Button variant="outline" size="sm" onClick={() => navigate("materials")}>
+              教材一覧へ
+            </Button>
+          </div>
+        )
+      ) : (
       <ResizablePanelGroup
         orientation="horizontal"
         className="flex min-h-0 flex-1"
@@ -637,6 +690,7 @@ export function TutorWorkspace({
           />
         </ResizablePanel>
       </ResizablePanelGroup>
+      )}
     </div>
   );
 }

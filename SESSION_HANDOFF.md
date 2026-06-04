@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-06-04 (**Phase 6 拡大: ゆい/葵 全体 Claude 化 (A + B 完了) + C78 generic シーン追加で最大カバレッジ**): C58 PHILOSOPHY 全書き換え + grill 累計 30 問 / 47 論点 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) + C2/C3 撤回 + 教材ベース回帰 (C69) + Phase 6 教材体系図 AI 抽出 Step A (C70-C72) + C73-C77 で A/B 全 Claude 化 + **C78 で「相談」等 fallback ルートも Claude 化 (plan-start + generic-{stateName} シーン追加)** → tutor-mock の全 mock 発話がほぼ Claude 経由で言い換えされる状態。残り C 部 (F4 / F5 / 試験前 / F1 内部 3 分類) + D 部 (親 chat) は次セッション以降。**2026-06-04 後段で C80-C82 追加**: 全 AI モデルを Opus 4.8 統一 (C80) + 教材登録 PDF メタ自動検知 (C81、grill 確定) + 教材一覧 in-memory 反映で残課題② 解消 (C82) + **教材本文理解システム (葵ティーチング基盤) grill 完結 (★未実装★、段階1/2)**。**段階1-A (本物の体系図、目次ベース、mock) を C84 (WIP) → C85 で完成・バグ解決**。★真因は「pdf.js が 186MB を処理しきれない」ではなく **真・英文法大全が自炊スキャン PDF (文字レイヤー無し)** だったこと★。解 = **スキャン PDF は目次ページを画像化して葵に vision で読ませる** (デジタル PDF は従来テキスト)。デバッグで 4 つの壁を突破: ①スキャン判定+画像化 ②画像配列を Server Action に渡すと "Maximum array nesting exceeded" → 改行連結 1 文字列で回避 ③目次が長い前付けの後ろ → 先頭 32 ページ描画 + しおり(outline)優先 ④出力が max_tokens 超で JSON 切断 → 16000 + salvage パーサ。結果 = 自炊 186MB から **Part 0〜5 の本物の章立て + 実ページ番号 (p.24-37 等) を 30+ ノード**で抽出、ユーザー「完璧に取れました」確認済。診断ログ全削除済。詳細 = SESSION_HANDOFF §3「### 2026-06-04 末: 段階1-A」末尾「#### C85」。**次セッション = 段階1 続き (1-B Supabase 永続化 / 1-C 葵 vision chat) + 学習プラン grill 残り 5 論点**。**動作確認時の注意 = dev server 再起動必須、スキャン PDF 登録は 32 枚 vision で ~80-120 秒**)
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-06-04 (**Phase 6 拡大: ゆい/葵 全体 Claude 化 (A + B 完了) + C78 generic シーン追加で最大カバレッジ**): C58 PHILOSOPHY 全書き換え + grill 累計 30 問 / 47 論点 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) + C2/C3 撤回 + 教材ベース回帰 (C69) + Phase 6 教材体系図 AI 抽出 Step A (C70-C72) + C73-C77 で A/B 全 Claude 化 + **C78 で「相談」等 fallback ルートも Claude 化 (plan-start + generic-{stateName} シーン追加)** → tutor-mock の全 mock 発話がほぼ Claude 経由で言い換えされる状態。残り C 部 (F4 / F5 / 試験前 / F1 内部 3 分類) + D 部 (親 chat) は次セッション以降。**2026-06-04 後段で C80-C82 追加**: 全 AI モデルを Opus 4.8 統一 (C80) + 教材登録 PDF メタ自動検知 (C81、grill 確定) + 教材一覧 in-memory 反映で残課題② 解消 (C82) + **教材本文理解システム (葵ティーチング基盤) grill 完結 (★未実装★、段階1/2)**。**段階1-A (本物の体系図、目次ベース、mock) を C84 (WIP) → C85 で完成・バグ解決**。★真因は「pdf.js が 186MB を処理しきれない」ではなく **真・英文法大全が自炊スキャン PDF (文字レイヤー無し)** だったこと★。解 = **スキャン PDF は目次ページを画像化して葵に vision で読ませる** (デジタル PDF は従来テキスト)。デバッグで 4 つの壁を突破: ①スキャン判定+画像化 ②画像配列を Server Action に渡すと "Maximum array nesting exceeded" → 改行連結 1 文字列で回避 ③目次が長い前付けの後ろ → 先頭 32 ページ描画 + しおり(outline)優先 ④出力が max_tokens 超で JSON 切断 → 16000 + salvage パーサ。結果 = 自炊 186MB から **Part 0〜5 の本物の章立て + 実ページ番号 (p.24-37 等) を 30+ ノード**で抽出、ユーザー「完璧に取れました」確認済。**さらに段階1-C「一緒にめくって読む」読書ビュー (PDF ビューア + 見開き + ズーム + 葵が現在ページを vision で読む chat、フル幅集中モード) を実装、ユーザー「ここまで OK」確認済** (詳細 §3「#### 段階1-C」)。**次セッション = 1-B (PDF/教材の Supabase 永続化、リロードで消える割り切りの解消) or 学習プラン grill 残り 5 論点**。**動作確認時の注意 = dev server 再起動必須、スキャン PDF 登録は 32 枚 vision で ~80-120 秒、読書ビューは今セッション登録の教材のみ (in-memory)**)
 
 ---
 
@@ -783,6 +783,29 @@ C73-C78 で Claude 化した後、ito19 さんが実際に教材登録を試し�
 
 **診断ログ/デバッグcoはすべて削除済** (`[extract diag]`、`[体系図抽出]`、`[PDF 抽出] mode`、目次画像のディスクダンプ、`debug-toc/` は .gitignore 済)。残した console は実エラー (`console.error`) と salvage の `console.warn` のみ。
 
+#### 段階1-C: 一緒にめくって読む読書ビュー + 葵 vision chat (2026-06-04 末、ユーザー「ここまで OK」)
+
+段階1-A 完成後、ユーザーが 1-C (場所指定型 vision chat) を選択 → grill で「**PDF をアプリ内に表示して生徒がめくりながら葵と一緒に読む**」型に設計を寄せた。理由 = テキストを別端末/紙で開くと往復、1 画面で完結させたい (ユーザー明言) + 生徒と葵が**同じ物理ページ**を見るので「印刷↔物理ページのオフセット問題」が本質的に消える。
+
+**設計 (grill 確定)**: ①PDF はセッション中だけブラウザメモリ保持 (session-pdf-store、リロードで消える割り切り、永続化は 1-B) ②専用フル幅2ペイン読書ビュー (`view=material-read`、ゆい左ペインを隠す集中モード) ③入口 = 教材詳細「一緒に読む」ボタン + 体系図ノードの「読む」ジャンプ ④めくりは生徒主導 (葵は言葉で促すが画面は勝手にめくらない) ⑤葵は**今表示中ページ**を vision で読む ⑥画像は配列でなく改行連結文字列で渡す (C85 と同じ array-nesting 回避) + image block に cache_control。
+
+**実装ファイル**:
+- 新規 `lib/admin/session-pdf-store.ts` (Map<materialId, File>)、`components/materials/MaterialReadPane.tsx` (読書ビュー本体)
+- `lib/admin/pdf-extract-text.ts`: `loadPdfDocument` / `renderPageToCanvas` (画面表示用) / `renderPageToJpeg` (vision 用、export) 追加
+- `lib/admin/aoki-chat-claude.ts`: `currentPageImagesPacked` + `currentPageNumber` で vision 対応
+- File 配線: `types.ts` (MaterialDraft.file) → Step1 → Step4Save → MaterialEditWizard → TutorWorkspace.handleMaterialAdded で setSessionPdf
+- routing: `types.ts` RightPaneView に `material-read`、TutorWorkspace の viewFromParam / navigate(page param) / view===material-read でフル幅描画
+- `MaterialDetailView.tsx`: 「一緒に読む」ボタン + ノード「読む」ジャンプ
+
+**UI 反復でユーザー指摘 → 修正した点 (重要、同種実装の教訓)**:
+1. 見開き (2ページ) 追加 (ユーザー要望、default ON、葵には2ページ両方渡す) + 見開き⇄単ページトグル
+2. 「余白が読みづらい」→ ページ周り `p-0`・見開き隙間 `gap-0` + バー類スリム化
+3. 「ページが小さいまま余白だらけ」真因 = `max-h-full` は縮小のみで拡大しない + 高 DPI で canvas 表示サイズが狂う → **ページサイズを明示計算 (fit = 幅/高さの小さい方 × zoom)** + `canvas.style.width` を論理 px で固定。**Zoom 機能追加** (−/100%/+、% クリックでフィット)。ResizeObserver で初期/リサイズ再フィット。
+4. 「チャットが枠からはみ出す」→ 読書ビューのルートを `h-full` (画面全体=ヘッダーぶん溢れる) → **`flex-1 min-h-0`** に
+5. 「100% で上下逆さ、150% で直る」真因 = **同一 canvas への描画競合** (ロード時に縦横比実測・ResizeObserver・初期描画が連続発火) → `renderPageToCanvas` で**直前タスクを cancel + token で最新要求だけ描画**
+
+**残課題 / 将来**: ①リロードで PDF が消える (= 1-B Supabase 永続化で解消) ②印刷↔物理ページの精密オフセット (現状ノード「読む」は印刷番号≒物理の近傍ジャンプ、手めくりで調整) ③横長画面で高さフィット時の左右余白 (zoom で拡大可) ④見開きの左右ページ並び順 (現状は若番=左、横書き本前提)。tsc/eslint クリア。
+
 ---
 
 ## §4. 現状確認方法 (dev server で動かす)
@@ -1006,10 +1029,15 @@ C61 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段�
 
 **第 2 段階以降に持ち越し** (Phase 5 解体プラン確定後にまとめて実装): 親 chat UI / 24h 異議窓口バナー / F1 内部 3 分類 / F3 carry-over 3 日連続検知 / B1-B2 1 ヶ月更新化 / B3 二系統 / カリキュラム DB / E1-E9 試験前モード 等。
 
-【次セッションで進める論点 — 段階1-A は C85 で完成。次は段階1 の続き】
+【次セッションで進める論点 — 段階1-A (C85) + 段階1-C (読書ビュー) 完成。次は 1-B or プラン grill】
 
-**✅ C85 で段階1-A 完成**: 真・英文法大全 (自炊スキャン 186MB) から目次を vision で読み、Part 0〜5 の本物の章立て + 実ページ番号を 30+ ノードで抽出。ユーザー「完璧に取れました」確認済。詳細は §3「### 2026-06-04 末: 段階1-A」末尾「#### C85」。
-- 残った最適化候補 (急がない): スキャン PDF 登録が 32 枚 vision で ~80-120 秒と重い → 低解像度で先に目次ページを特定する 2 パス化、しおり付き PDF 推奨 等。
+**✅ C85 段階1-A 完成**: 真・英文法大全 (自炊スキャン 186MB) から目次を vision で読み、Part 0〜5 + 実ページ番号を 30+ ノードで抽出。ユーザー「完璧」確認済。
+**✅ 段階1-C 読書ビュー完成**: PDF をめくりながら葵と一緒に読む (見開き/ズーム/フル幅/葵が現在ページを vision)。ユーザー「ここまで OK」確認済。詳細は §3「#### 段階1-C」。
+
+**次セッションの主な選択肢**:
+- **1-B Supabase 永続化** (推奨候補): 現状 PDF/教材は in-memory でリロードで消える。Supabase Storage に PDF 保存 + DB に Material/extractedNodes 永続化。読書ビューがセッションを跨いで使える。大規模 (Storage/DB スキーマ/未決多し) なので実装前に Plan/grill 推奨。
+- **学習プラン grill 残り 5 論点** (PlanType 5 種 / カリキュラム DB 運用 / 系統可視性 / 時間予算 / 統合管制)。コードでなく設計議論。
+- 1-C 残課題 (急がない): 精密ページオフセット / 横長余白の zoom 運用 / 見開き並び順。
 
 **(段階1-A 完成後の続き — 段階1 全体)**
 2026-06-04 後段の grill で「葵ティーチングには教材本文の理解が必須、今それで進んでいない (体系図/評価/chat 全部推測)」が判明 → RAG 設計確定 (詳細 ARCHITECTURE「## PDF メタ自動検知 + 教材本文理解システム grill (2026-06-04)」)。段階1 全体の構成:

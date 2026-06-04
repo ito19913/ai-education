@@ -16,7 +16,12 @@ type Props = {
    * - /admin/materials/new から呼ばれた時は未指定 → 既存 UI（教材一覧/学習画面リンク）を出す
    * - /tutor 右ペインから呼ばれた時は指定 → ゆいに完了発話 + 右ペインを閉じる動作を親が行う
    */
-  onComplete?: (material: Material, approvedNodeCount: number) => void;
+  onComplete?: (
+    material: Material,
+    approvedNodeCount: number,
+    /** 段階1-C: アップロード PDF の File 本体 (読書ビュー用にセッション保持)。 */
+    file?: File | null,
+  ) => void;
 };
 
 export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
@@ -40,9 +45,8 @@ export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
       // MaterialDetailView はこれがあれば共有 MOCK_TREE より優先表示する。
       extractedNodes: extracted,
     };
-    console.log("[save material]", newMaterial, extracted);
     setSaved(true);
-    onComplete?.(newMaterial, extracted.length);
+    onComplete?.(newMaterial, extracted.length, draft.file ?? null);
   };
 
   if (saved) {
