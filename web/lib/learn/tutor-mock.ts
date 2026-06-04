@@ -44,7 +44,10 @@ import {
   MOCK_TREE,
 } from "./mock-data";
 import { searchTutorThreads } from "./tutor-thread-storage";
-import { tutorClaudeRespondToPlanRequest } from "./tutor-claude";
+import {
+  tutorClaudeRespondToPlanRequest,
+  tutorClaudeRespondToScene,
+} from "./tutor-claude";
 import {
   detectTeachingRequest,
   labelForTeachingCategory,
@@ -3074,10 +3077,17 @@ function detectSearchIntent(input: string): string | null {
   return query;
 }
 
-// Phase 6 smoke test: NEXT_PUBLIC_USE_CLAUDE_API=true のときに「計画立てよう」入口の
+// Phase 6 smoke test (C56): NEXT_PUBLIC_USE_CLAUDE_API=true のときに「計画立てよう」入口の
 // 1 発話だけ Claude Opus 4.7 で生成する async wrapper。matchesPlanRequest 以外は
 // 既存の同期 buildNextTutorReply に委譲、Claude 呼び出し失敗時も mock に fallback する。
 // 既存同期関数を破壊しない並走方式 — caller (TutorWorkspace) だけが await に切替わる。
+//
+// C73 (2026-06-04): 拡張。「計画立てよう」入口以外のシーンも post-process で Claude 化:
+// 1. 同期版 buildNextTutorReply で reply 構造 (card / quickReplies / topic / state) を組み立て
+// 2. inferSceneFromResult で state 遷移からシーン識別子を推定
+// 3. シーン識別子があれば buildSceneContext で context 構築 → tutorClaudeRespondToScene で
+//    text のみ Claude で書き換え (= card / quickReplies は維持、reply.text のみ置換)
+// 4. Claude 失敗時は text を mock のまま維持 = 動線止めない
 export async function buildNextTutorReplyAsync(args: {
   state: TutorStep;
   userInput: string;
@@ -3094,38 +3104,236 @@ export async function buildNextTutorReplyAsync(args: {
     lower.includes("新しい計画立") ||
     lower.includes("plan");
 
-  if (!matchesPlanRequest) return buildNextTutorReply(args);
+  // C56 既存ルート: 「計画立てよう」入口の特殊処理 (subject-picker カード付与 + 専用 prompt)
+  if (matchesPlanRequest) {
+    try {
+      const claudeText = await tutorClaudeRespondToPlanRequest(args.userInput);
+      const now = new Date().toISOString();
+      const reply: TutorMessage = {
+        id: makeId(),
+        role: "tutor",
+        text: claudeText,
+        card: {
+          kind: "subject-picker",
+          options: MOCK_SUBJECTS.map((s) => ({
+            subjectId: s.id,
+            label: s.name,
+          })),
+        },
+        createdAt: now,
+      };
+      reply.topic = deriveTutorTopic(
+        "plan-await-subject",
+        reply.rightPaneAction,
+      );
+      return {
+        nextState: {
+          ...args.state,
+          state: "plan-await-subject",
+          proposedPlanType: "regular-study",
+        },
+        reply,
+      };
+    } catch (err) {
+      console.error(
+        "[Phase 6 smoke test] Claude call failed, fallback to mock:",
+        err,
+      );
+      return buildNextTutorReply(args);
+    }
+  }
+
+  // C73 新ルート: 同期版で reply を作って、シーン推定 + Claude post-process で text 上書き
+  const result = buildNextTutorReply(args);
+  const scene = inferSceneFromResult(result, args);
+  if (!scene) return result;
 
   try {
-    const claudeText = await tutorClaudeRespondToPlanRequest(args.userInput);
-    const now = new Date().toISOString();
-    const reply: TutorMessage = {
-      id: makeId(),
-      role: "tutor",
-      text: claudeText,
-      card: {
-        kind: "subject-picker",
-        options: MOCK_SUBJECTS.map((s) => ({
-          subjectId: s.id,
-          label: s.name,
-        })),
-      },
-      createdAt: now,
-    };
-    reply.topic = deriveTutorTopic("plan-await-subject", reply.rightPaneAction);
-    return {
-      nextState: {
-        ...args.state,
-        state: "plan-await-subject",
-        proposedPlanType: "regular-study",
-      },
-      reply,
-    };
+    const sceneContext = buildSceneContext(scene, result, args);
+    const aiText = await tutorClaudeRespondToScene({
+      scene,
+      sceneContext,
+      userInput: args.userInput,
+      fallbackText: result.reply.text ?? "",
+    });
+    if (aiText && aiText.trim().length > 0) {
+      result.reply.text = aiText.trim();
+    }
   } catch (err) {
-    console.error(
-      "[Phase 6 smoke test] Claude call failed, fallback to mock:",
-      err,
-    );
-    return buildNextTutorReply(args);
+    console.error(`[C73] Claude scene "${scene}" failed, mock text 維持:`, err);
   }
+  return result;
+}
+
+/**
+ * C73 (2026-06-04): state 遷移からシーン識別子を推定。
+ *
+ * シーン識別子は Claude のプロンプトで `## 現在の場面: シーン識別子: xxx` として
+ * 使われ、Claude が場面を理解する手がかりになる。
+ * 該当シーンがない state 遷移は null を返して mock のままにする。
+ */
+function inferSceneFromResult(
+  result: { reply: TutorMessage; nextState: TutorStep },
+  args: { state: TutorStep; userInput: string },
+): string | null {
+  const prevState = args.state.state;
+  const nextState = result.nextState.state;
+
+  // --- 計画立案フロー (A1) ---
+  if (prevState === "plan-await-subject" && nextState === "plan-await-material")
+    return "plan-after-subject";
+  if (
+    prevState === "plan-await-material" &&
+    nextState === "plan-await-duration"
+  )
+    return "plan-after-material";
+  if (
+    prevState === "plan-await-duration" &&
+    nextState === "plan-await-weak-nodes"
+  )
+    return "plan-after-duration";
+  if (
+    prevState === "plan-await-weak-nodes" &&
+    nextState === "plan-await-confirm"
+  )
+    return "plan-after-weak-nodes";
+  if (prevState === "plan-await-confirm" && nextState === "plan-done")
+    return "plan-confirm";
+
+  // Replan accept (= proposedReplanDraft が消えた)
+  if (args.state.proposedReplanDraft && !result.nextState.proposedReplanDraft)
+    return "replan-accept";
+
+  // --- 帰宅儀式 (A2 第 1 部 + 第 2 部) ---
+  if (nextState === "evening-await-period-count" && prevState !== nextState)
+    return "evening-start";
+  if (nextState === "evening-await-period-subject") return "evening-period-ask-subject";
+  if (nextState === "evening-await-period-content") return "evening-period-ask-content";
+  if (nextState === "evening-await-extra-events") return "evening-period-done";
+  if (
+    prevState === "evening-await-extra-events" &&
+    nextState === "evening-school-done"
+  )
+    return "evening-school-summary";
+  if (nextState === "evening-show-schedule") return "evening-show-schedule";
+  if (nextState === "evening-await-task-text") return "evening-await-task-text";
+  if (nextState === "evening-await-more-tasks")
+    return "evening-await-more-tasks";
+  if (nextState === "evening-finalize") return "evening-finalize";
+
+  // --- ending mode (A2 学習終了振り返り) ---
+  if (nextState === "ending-vent") return "ending-vent";
+  if (nextState === "ending-confirm") return "ending-confirm";
+  if (nextState === "ending-done") return "ending-done";
+
+  // --- 朝振り返り (D5 廃止方向だが flag true 時は使われる、5 セクション) ---
+  if (nextState === "reflection-school") return "reflection-school";
+  if (nextState === "reflection-mood") return "reflection-mood";
+  if (nextState === "reflection-questions") return "reflection-questions";
+  if (nextState === "excavation") return "reflection-excavation";
+  if (
+    prevState !== "reflection-plan" &&
+    nextState === "reflection-plan"
+  )
+    return "reflection-plan";
+
+  return null;
+}
+
+/**
+ * C73 (2026-06-04): シーン固有の context を構築。
+ *
+ * Claude に「具体的な情報 (科目名・教材名・期間・件数 等) を本文に織り込む」よう
+ * 指示するので、可能な限り展開された値 (= ID ではなく名前) を入れる。
+ */
+function buildSceneContext(
+  scene: string,
+  result: { reply: TutorMessage; nextState: TutorStep },
+  args: { state: TutorStep; userInput: string },
+): Record<string, unknown> {
+  const ns = result.nextState;
+  const ctx: Record<string, unknown> = {
+    quickReplies: result.reply.quickReplies ?? [],
+  };
+
+  switch (scene) {
+    case "plan-after-subject": {
+      const subject = MOCK_SUBJECTS.find((s) => s.id === ns.proposedSubjectId);
+      ctx.subjectName = subject?.name ?? null;
+      ctx.planType = ns.proposedPlanType;
+      break;
+    }
+    case "plan-after-material": {
+      const subject = MOCK_SUBJECTS.find((s) => s.id === ns.proposedSubjectId);
+      const material = MOCK_MATERIALS.find(
+        (m) => m.id === ns.proposedMaterialId,
+      );
+      ctx.subjectName = subject?.name ?? null;
+      ctx.materialName = material?.name ?? null;
+      break;
+    }
+    case "plan-after-duration": {
+      ctx.monthsPerRotation = ns.proposedMonthsPerRotation;
+      ctx.rotations = ns.proposedRotations;
+      ctx.planType = ns.proposedPlanType;
+      break;
+    }
+    case "plan-after-weak-nodes": {
+      ctx.weakNodeCount = ns.proposedWeakNodeIds?.length ?? 0;
+      break;
+    }
+    case "plan-confirm": {
+      const planId = ns.confirmedLearningPlanId;
+      const plan = planId
+        ? MOCK_LEARNING_PLANS.find((p) => p.id === planId)
+        : null;
+      ctx.planTitle = plan?.title ?? null;
+      ctx.planStartDate = plan?.startDate ?? null;
+      ctx.planEndDate = plan?.endDate ?? null;
+      ctx.targetRotations = plan?.targetRotations ?? null;
+      break;
+    }
+    case "replan-accept": {
+      const draft = args.state.proposedReplanDraft;
+      ctx.replanKind = draft?.replanKind ?? null;
+      ctx.triggeredBy = draft?.triggeredBy ?? null;
+      ctx.reason = draft?.reason ?? null;
+      break;
+    }
+    case "evening-period-ask-subject": {
+      const draft = ns.schoolReportDraft;
+      ctx.periodCount = draft?.periodCount;
+      ctx.currentPeriodIndex = draft?.currentPeriodIndex;
+      ctx.currentPeriodNumber = (draft?.currentPeriodIndex ?? 0) + 1;
+      break;
+    }
+    case "evening-period-ask-content": {
+      const draft = ns.schoolReportDraft;
+      const idx = draft?.currentPeriodIndex ?? 0;
+      ctx.periodNumber = idx + 1;
+      ctx.subjectName = draft?.periods?.[idx]?.subject;
+      break;
+    }
+    case "evening-school-summary": {
+      const draft = ns.schoolReportDraft;
+      ctx.periodCount = draft?.periodCount;
+      ctx.subjects =
+        draft?.periods?.map((p) => p?.subject).filter(Boolean) ?? [];
+      break;
+    }
+    case "evening-show-schedule": {
+      ctx.scheduledTaskCount = MOCK_SCHEDULE_TODAY.length;
+      break;
+    }
+    case "ending-vent":
+    case "ending-confirm": {
+      ctx.userMessage = args.userInput;
+      ctx.previousSummaryCount = args.state.endingVentItems?.length ?? 0;
+      break;
+    }
+    default:
+      break;
+  }
+
+  return ctx;
 }
