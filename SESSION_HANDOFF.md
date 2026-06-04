@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-06-04 (**Phase 6 拡大: ゆい/葵 全体 Claude 化 (A + B 完了)**): C58 PHILOSOPHY 全書き換え + grill 累計 30 問 / 47 論点 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) + C2/C3 撤回 + 教材ベース回帰 (C69) + Phase 6 教材体系図 AI 抽出 Step A (C70-C72) → **C73-C76 で A (ゆい全発話 シーン汎用化) + B1 (葵 chat) + B2 (課題 chat) + B3 (葵評価コメント) を全部 Claude Opus 4.7 化**。残り C 部 (F4 / F5 / 試験前 / F1 内部 3 分類) + D 部 (親 chat) + B4 (PDF Step C) は次セッション以降。次は **学習プラン再設計 grill 残り 5 論点 + 新 G1-G5** (推奨スタート = PlanType 5 種扱い))
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-06-04 (**Phase 6 拡大: ゆい/葵 全体 Claude 化 (A + B 完了) + C78 generic シーン追加で最大カバレッジ**): C58 PHILOSOPHY 全書き換え + grill 累計 30 問 / 47 論点 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) + C2/C3 撤回 + 教材ベース回帰 (C69) + Phase 6 教材体系図 AI 抽出 Step A (C70-C72) + C73-C77 で A/B 全 Claude 化 + **C78 で「相談」等 fallback ルートも Claude 化 (plan-start + generic-{stateName} シーン追加)** → tutor-mock の全 mock 発話がほぼ Claude 経由で言い換えされる状態。残り C 部 (F4 / F5 / 試験前 / F1 内部 3 分類) + D 部 (親 chat) + B4 (PDF Step C) は次セッション以降。次は **学習プラン再設計 grill 残り 5 論点 + 新 G1-G5** (推奨スタート = PlanType 5 種扱い)。**動作確認時の注意 = dev server 再起動必須、Claude 応答 5-15 秒/呼**)
 
 ---
 
@@ -680,7 +680,9 @@ C72 push 後、ito19 さん「Claude が入らないとイメージがつかな�
 | **C74** | `d4c2df4` | feat: 葵先生 教材評価コメント Claude 化 (B3) — lib/admin/review-claude.ts + MaterialDetailView の aoiReview を useEffect Claude ロードに改修 |
 | **C75** | `405385e` | feat: 葵 chat 本実装 (B1) — lib/admin/aoki-chat-claude.ts + MaterialDetailView の placeholder/disabled を本実装 (履歴 + 送信 + 教材切替で初期化) |
 | **C76** | `6f4b48a` | feat: 課題 chat (IssueChat) を Claude 化 (B2) — lib/learn/issue-chat-claude.ts + buildNextIssueChatReplyAsync (post-process) + IssueChat.tsx async 化 |
-| **C77** | (本 commit) | docs: Phase 6 拡大 ゆい/葵 Claude 化 SSoT 同期 |
+| **C77** | `d73ec12` | docs: Phase 6 拡大 ゆい/葵 Claude 化 SSoT 同期 |
+| **C78** | `21b1e15` | fix: 「一般的な相談」等の fallback ルートも Claude 化 + generic シーン追加 — inferSceneFromResult に `plan-start` (= subject-picker 新規表示シーン) + `generic-{stateName}` (= 明示シーン非該当の全 mock 発話) を追加、tutor-mock 全 mock 発話がほぼカバー |
+| **C79** | (本 commit) | docs: 次セッション繰り越し準備 |
 
 **Claude 化マップ (現状到達点)**:
 
@@ -827,7 +829,7 @@ AI-Education プロジェクトの作業を継続します。
 4. ARCHITECTURE.md「## Phase 6: Claude API 接続」セクションも確認 (smoke test 残置、拡大 grill は方針転換で保留)
 5. memory MEMORY.md と project_ai_education.md を確認
 
-【今日の状態 (77 commit、プロジェクト前提の大転換 + 失敗扱い grill 完結 + 中学生主体性 grill 完結 + 第 1 段階 mock 反映完了 + カリキュラム DB 仮実装 + C2/C3 撤回 + 教材ベース体系図回帰 + Phase 6 教材体系図 AI 抽出 Step A + Phase 6 拡大 ゆい/葵 全体 Claude 化)】
+【今日の状態 (79 commit、プロジェクト前提の大転換 + 失敗扱い grill 完結 + 中学生主体性 grill 完結 + 第 1 段階 mock 反映完了 + カリキュラム DB 仮実装 + C2/C3 撤回 + 教材ベース体系図回帰 + Phase 6 教材体系図 AI 抽出 Step A + Phase 6 拡大 ゆい/葵 全体 Claude 化 + C78 generic シーン追加で全 mock 発話 Claude 化最大カバレッジ)】
 
 **C58 PHILOSOPHY 全書き換え** `8c5b1f0`:
 - 旧 PHILOSOPHY (AI 提案ベース、ito19 さん未納得、暗記からの脱却・体系図・なぜを問う) を全廃止
