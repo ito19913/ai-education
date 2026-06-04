@@ -183,7 +183,7 @@ export function MaterialDetailView({
     : null;
 
   // 評価コメント (B3 2026-06-04): NEXT_PUBLIC_USE_CLAUDE_API=true なら Claude
-  // Opus 4.7 が葵先生として生成、失敗時 / flag off は下記 mock fallback。
+  // Opus 4.8 が葵先生として生成、失敗時 / flag off は下記 mock fallback。
   // 教材切替 (material.id 変化) ごとに再フェッチする。Phase 7 永続化時に
   // MaterialReview を DB 保存して 1 回だけ呼ぶ設計に切替予定。
   const mockReview = useMemo<MaterialReviewOutput>(

@@ -4,7 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Phase 6 smoke test (C56): 「計画立てよう」入口の 1 発話だけを Claude Opus 4.7 で生成。
+// Phase 6 smoke test (C56): 「計画立てよう」入口の 1 発話だけを Claude Opus 4.8 で生成。
 // C73 (2026-06-04): シーン汎用 tutorClaudeRespondToScene を追加。mock 発話を fallback として
 // Claude に渡し、新 PHILOSOPHY (コーチング・ファースト型) 整合に言い換えてもらうパターン。
 // NEXT_PUBLIC_USE_CLAUDE_API=true のときに tutor-mock の async wrapper からのみ呼ばれる。
@@ -62,7 +62,7 @@ export async function tutorClaudeRespondToPlanRequest(
   userInput: string,
 ): Promise<string> {
   const res = await getClient().messages.create({
-    model: "claude-opus-4-7",
+    model: "claude-opus-4-8",
     max_tokens: 512,
     system: [
       {
@@ -134,7 +134,7 @@ ${
 ゆいの応答:`;
 
   const res = await getClient().messages.create({
-    model: "claude-opus-4-7",
+    model: "claude-opus-4-8",
     max_tokens: 700,
     system: [
       {

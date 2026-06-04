@@ -1009,7 +1009,7 @@ ito19 さん 2026-05-26 セッション末で「プランは AI が立てる前�
 
 ### 着手範囲 (smoke test)
 
-**最小単位**: ゆいの「計画立てよう」入口の **1 発話だけ** Claude Opus 4.7 で生成。他の発話 (帰宅儀式 / レポート / 課題受付 / カード選択後 / 葵 chat 等) は引き続き mock。
+**最小単位**: ゆいの「計画立てよう」入口の **1 発話だけ** Claude Opus 4.8 で生成。他の発話 (帰宅儀式 / レポート / 課題受付 / カード選択後 / 葵 chat 等) は引き続き mock。
 
 ### 設計確定 8 論点 (2026-05-26 grill)
 
@@ -1018,7 +1018,7 @@ ito19 さん 2026-05-26 セッション末で「プランは AI が立てる前�
 | 1 | 起点 = Claude API 接続 (Phase 6 着手)、プラン grill 9 候補は AI 化後に議論 |
 | 2 | smoke test 先行 (Phase 6 全体着手ではなく、最小単位で「動くこと」確認) |
 | 3 | 代入点 = 「計画立てよう」入口のゆい応答 1 発話 (context 不要、最小単位) |
-| 4 | モデル = Claude Opus 4.7 (`claude-opus-4-7`、本番想定通り、cost は smoke test なら 1 円未満) |
+| 4 | モデル = Claude Opus 4.8 (`claude-opus-4-8`、本番想定通り、cost は smoke test なら 1 円未満) |
 | 5 | 呼び出し場所 = Server Action (Next.js 16 標準、`'use server'`、API key は server-only) |
 | 6 | mock 切替 = `NEXT_PUBLIC_USE_CLAUDE_API=true` + 「計画立てよう」keyword のみ Claude、それ以外 / 失敗時も mock fallback |
 | 7 | system prompt = TUTOR-ROLE.md + PHILOSOPHY.md 全文そのまま (prompt caching ephemeral)、SSoT 整合 |
@@ -1028,7 +1028,7 @@ ito19 さん 2026-05-26 セッション末で「プランは AI が立てる前�
 
 | ファイル | 役割 |
 |---|---|
-| `web/lib/learn/tutor-claude.ts` (新規) | Server Action `tutorClaudeRespondToPlanRequest(userInput): Promise<string>`、TUTOR-ROLE + PHILOSOPHY を fs.readFile で system prompt 化、Anthropic SDK で Opus 4.7 呼び出し、prompt caching (ephemeral) 有効化 |
+| `web/lib/learn/tutor-claude.ts` (新規) | Server Action `tutorClaudeRespondToPlanRequest(userInput): Promise<string>`、TUTOR-ROLE + PHILOSOPHY を fs.readFile で system prompt 化、Anthropic SDK で Opus 4.8 呼び出し、prompt caching (ephemeral) 有効化 |
 | `web/lib/learn/tutor-mock.ts` | 末尾に `buildNextTutorReplyAsync(args): Promise` 追加、`NEXT_PUBLIC_USE_CLAUDE_API=true` + plan keyword 一致時のみ Claude 経由、それ以外 / 失敗時は同期 `buildNextTutorReply` に fallback |
 | `web/components/tutor/TutorChat.tsx` | `generateReply` prop 型を `Promise<TutorMessage>` 返却に変更、`appendThenReply` の setTimeout コールバックを async + try/finally で `setIsThinking(false)` 保証 |
 | `web/components/tutor/TutorWorkspace.tsx` | `buildNextTutorReplyAsync` import 追加、`generateReply` を async/await 化 (他 `onPick*` ハンドラは同期のまま — カード選択経由は keyword 解析を経ないため Claude 化対象外) |
@@ -1425,13 +1425,13 @@ C66 の `/curriculum` 画面 (マトリックス + 5 色凡例 + Footer) は **�
 
 ### Phase 6 教材体系図 AI 抽出 (C70-C72、2026-05-28)
 
-C69 で C2/C3 撤回 + 教材ベース体系図回帰確定 → ito19 さん「教材を実際取り込み、体系図を作るまで AI に処理させたらどういう風になるか見てみたい」要望 → **既存 MaterialEditWizard / Step2Extraction (固定 12 ノード mock) を実際の Claude Opus 4.7 で置換する Step A 実装** を着手。
+C69 で C2/C3 撤回 + 教材ベース体系図回帰確定 → ito19 さん「教材を実際取り込み、体系図を作るまで AI に処理させたらどういう風になるか見てみたい」要望 → **既存 MaterialEditWizard / Step2Extraction (固定 12 ノード mock) を実際の Claude Opus 4.8 で置換する Step A 実装** を着手。
 
 #### 実装内容
 
 | # | SHA | 内容 |
 |---|---|---|
-| **C70** | `8064b06` | feat: 教材体系図 AI 抽出 Server Action `extract-claude.ts` 新設 — 葵 (あおい) 先生 persona の system prompt (PHILOSOPHY.md 全文埋め込み + テキスト忠実規律 + 監修なし規律) + 教材メタを Claude Opus 4.7 に渡して JSON 体系図抽出 + `Omit<AiExtractedNode, "matchedNodeId">[]` 返却 |
+| **C70** | `8064b06` | feat: 教材体系図 AI 抽出 Server Action `extract-claude.ts` 新設 — 葵 (あおい) 先生 persona の system prompt (PHILOSOPHY.md 全文埋め込み + テキスト忠実規律 + 監修なし規律) + 教材メタを Claude Opus 4.8 に渡して JSON 体系図抽出 + `Omit<AiExtractedNode, "matchedNodeId">[]` 返却 |
 | **C71** | `acbf9ec` | feat: MaterialEditWizard で Claude API flag 分岐 + async 化 — mock-extraction.ts の照合ロジックを `matchToExistingNodes` として export 切り出し / MaterialEditWizard.handleExtractionDone を async + `NEXT_PUBLIC_USE_CLAUDE_API` flag 分岐 + try/catch で mock fallback / Step2Extraction に `isExtracting` + `extractionError` prop 追加 + ボタン 3 状態ローディング (「葵が抽出中…」「保存に進む」「解析中…」) |
 | **C72** | (本 commit) | docs: Phase 6 教材体系図 AI 抽出 SSoT 同期 (本セクション追記 + SESSION_HANDOFF + memory) |
 
@@ -1452,7 +1452,7 @@ C69 で C2/C3 撤回 + 教材ベース体系図回帰確定 → ito19 さん「�
 #### Phase 6 smoke test との関係
 
 - C56 smoke test (= 「計画立てよう」ゆい入口 1 発話) と同じパターンを踏襲:
-  - 同じ env (`AI_EDU_ANTHROPIC_API_KEY`)、同じモデル (`claude-opus-4-7`)
+  - 同じ env (`AI_EDU_ANTHROPIC_API_KEY`)、同じモデル (`claude-opus-4-8`)
   - 同じ feature flag (`NEXT_PUBLIC_USE_CLAUDE_API`)
   - 失敗時 mock fallback で動線止めない規律
 - C56 = ゆい (担任) の発話 1 つ、C70-C72 = 葵 (教科の先生) の構造化出力
@@ -1481,7 +1481,7 @@ C69 で C2/C3 撤回 + 教材ベース体系図回帰確定 → ito19 さん「�
 
 ### Phase 6 拡大: ゆい / 葵 全体 Claude 化 (C73-C76、2026-06-04)
 
-C72 push 後、ito19 さん「Claude が入らないとイメージがつかない、入れられるところは全部入れて」要望 → **A (ゆい全発話) + B1 (葵 chat) + B2 (課題 chat) + B3 (葵評価コメント)** を Claude Opus 4.7 で実装。
+C72 push 後、ito19 さん「Claude が入らないとイメージがつかない、入れられるところは全部入れて」要望 → **A (ゆい全発話) + B1 (葵 chat) + B2 (課題 chat) + B3 (葵評価コメント)** を Claude Opus 4.8 で実装。
 
 #### 実装内容
 
@@ -1525,7 +1525,7 @@ C62 で固定 mock 文として追加した内容が、Claude 経由で動的に
 
 - `web/.env.local` で `AI_EDU_ANTHROPIC_API_KEY` + `NEXT_PUBLIC_USE_CLAUDE_API=true` 設定
 - dev server 再起動必須 (Next.js env hot reload しない)
-- 各 Claude 呼び出しは 5-15 秒待ち (Opus 4.7 max_tokens 600-1500)
+- 各 Claude 呼び出しは 5-15 秒待ち (Opus 4.8 max_tokens 600-1500)
 - 失敗時はそのシーンのみ mock 維持 = 動線止まらない
 
 #### 残し (= 次セッション以降の Claude 化候補)
@@ -1542,7 +1542,7 @@ C62 で固定 mock 文として追加した内容が、Claude 経由で動的に
 
 #### Phase 5 解体プランへの影響
 
-- A 部 Claude 化により、ゆいの発話品質が全フローで Claude Opus 4.7 になる = mock → 実 AI への移行完了 (構造は維持)
+- A 部 Claude 化により、ゆいの発話品質が全フローで Claude Opus 4.8 になる = mock → 実 AI への移行完了 (構造は維持)
 - B 部 Claude 化により、葵 (教科の先生) との対話・評価コメント・体系図抽出すべて実 Claude に
 - 次は C 部 (F4/F5/試験前/F1) と D 部 (親 chat) = 設計確定済の **新規機能実装** に進むフェーズ
 
@@ -1831,7 +1831,7 @@ TutorHandoff {
 | **Phase 3.5** | 学習開始の儀式 + 経過時間計測 + 離席検知 + 終了儀式（下記 Phase 3.5 スコープ参照） | 中盤の追加機能で部分実装済 (auto-pause / ending dialogue / 3 状態タイマー)、残りは next |
 | **Phase 4** | **中学生向け設計軌道修正 (2026-05-25 grill)**: LearningPlan + 帰宅儀式 (2 部構成) + SchoolDailyReport + 週次/月次レポート (4 セクション) + 達成バッジ + 親共有 (本人同意制)。**既存 Phase 4 (宿題タスク) と旧 Phase 5 (授業の新しい学び) は本 Phase に統合** | ✓ 完了 (C7-C13、2026-05-25) |
 | **Phase 5** | **学習戦略エンジン (2026-05-25 grill)**: 4 軸分離 (Plan Type / Mode / Resource / Node) + GeneratedTask × ScheduleItem 並走 + WeakNodes 半自動 + Replan Engine (3 トリガー) + NodeReviewSuggestion 即時 accept + Plan Engine ダッシュボード + 今日のタスクルート整理 | ✓ 一旦完了 (C14 試作 + C15-C24、2026-05-25)。**2026-05-27: 学習プラン再設計 grill により骨格を解体・再構築方向** (本書「## 学習プラン再設計 grill (2026-05-27)」セクション参照: 長期計画→1 ヶ月更新、学校/塾の二系統、教材ノード生成廃止 → 小〜高カリキュラム事前 DB 等) |
-| **Phase 6** | Claude API 接続、scripted mock を本物の対話に置換、コンテキスト圧縮（rolling summary / prompt cache）、ゆいによるサマリー読み込み、**葵先生による教材読み込み (体系図 + 評価コメント、本書「## 教材アップロード設計 (2026-05-25 grill)」参照)**、教材詳細ページ + 教材ごと独立 chat、WeakNodes 自動判定の AI 化、`MaterialEditWizard` の 3 step 化 (監修ステップ撤去) | **smoke test 着手済 (2026-05-26 C56、本書「## Phase 6: Claude API 接続」参照)**: 「計画立てよう」入口 1 発話のみ Opus 4.7 化、Server Action + feature flag + mock fallback、TUTOR-ROLE + PHILOSOPHY 全文 system prompt、`AI_EDU_ANTHROPIC_API_KEY` で親 harness env 衝突回避。**2026-05-27: Phase 6 拡大 A-G grill は着手前にプロジェクト前提から見直し方向に転換** (本書「## 学習プラン再設計 grill (2026-05-27)」セクション参照、PHILOSOPHY 全書き換え C58 = コーチング・ファースト型へ) |
+| **Phase 6** | Claude API 接続、scripted mock を本物の対話に置換、コンテキスト圧縮（rolling summary / prompt cache）、ゆいによるサマリー読み込み、**葵先生による教材読み込み (体系図 + 評価コメント、本書「## 教材アップロード設計 (2026-05-25 grill)」参照)**、教材詳細ページ + 教材ごと独立 chat、WeakNodes 自動判定の AI 化、`MaterialEditWizard` の 3 step 化 (監修ステップ撤去) | **smoke test 着手済 (2026-05-26 C56、本書「## Phase 6: Claude API 接続」参照)**: 「計画立てよう」入口 1 発話のみ Opus 4.8 化、Server Action + feature flag + mock fallback、TUTOR-ROLE + PHILOSOPHY 全文 system prompt、`AI_EDU_ANTHROPIC_API_KEY` で親 harness env 衝突回避。**2026-05-27: Phase 6 拡大 A-G grill は着手前にプロジェクト前提から見直し方向に転換** (本書「## 学習プラン再設計 grill (2026-05-27)」セクション参照、PHILOSOPHY 全書き換え C58 = コーチング・ファースト型へ) |
 | **Phase 7** | Supabase スキーマ + mock → 永続化 (LearningPlan / SchoolDailyReport / ScheduleItem 拡張 / GeneratedTask / バッジ等含む) | 未着手 |
 | **Phase 8** | Web Speech API（STT）+ OpenAI TTS で音声対話 | 未着手 |
 

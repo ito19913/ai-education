@@ -3078,7 +3078,7 @@ function detectSearchIntent(input: string): string | null {
 }
 
 // Phase 6 smoke test (C56): NEXT_PUBLIC_USE_CLAUDE_API=true のときに「計画立てよう」入口の
-// 1 発話だけ Claude Opus 4.7 で生成する async wrapper。matchesPlanRequest 以外は
+// 1 発話だけ Claude Opus 4.8 で生成する async wrapper。matchesPlanRequest 以外は
 // 既存の同期 buildNextTutorReply に委譲、Claude 呼び出し失敗時も mock に fallback する。
 // 既存同期関数を破壊しない並走方式 — caller (TutorWorkspace) だけが await に切替わる。
 //

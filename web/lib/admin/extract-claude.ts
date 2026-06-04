@@ -8,7 +8,7 @@
  * = 既存 Phase 5 / Phase 6F 設計が本流復活、本ファイルがその第一歩。
  *
  * Step A 版 (本ファイル): 教材メタ (name / subject / grade / label) のみで
- *   Claude Opus 4.7 が一般的体系図を推測。PDF 自体は読まない。
+ *   Claude Opus 4.8 が一般的体系図を推測。PDF 自体は読まない。
  * Step C 版 (将来): PDF を base64 で Claude native PDF support に渡す。
  *
  * 葵先生 persona = ティーチング担当、テキスト忠実
@@ -16,7 +16,7 @@
  *  2026-05-25 grill 1 確定 10)
  *
  * 環境変数: AI_EDU_ANTHROPIC_API_KEY (Phase 6 smoke test と共通)
- * モデル: claude-opus-4-7 (Phase 6 smoke test と統一)
+ * モデル: claude-opus-4-8 (Phase 6 smoke test と統一)
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -88,7 +88,7 @@ export type ExtractMaterialInput = {
 };
 
 /**
- * 教材メタを Claude Opus 4.7 に渡して体系図 JSON を抽出する Server Action。
+ * 教材メタを Claude Opus 4.8 に渡して体系図 JSON を抽出する Server Action。
  *
  * 戻り値は `Omit<AiExtractedNode, "matchedNodeId">` の配列。
  * matchedNodeId (= 既存体系図ノードへの照合 ID) は呼び出し側で
@@ -120,7 +120,7 @@ export async function extractKnowledgeNodesViaClaude(
 体系図 JSON:`;
 
   const res = await getClient().messages.create({
-    model: "claude-opus-4-7",
+    model: "claude-opus-4-8",
     max_tokens: 4000,
     system: [
       {

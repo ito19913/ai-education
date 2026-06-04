@@ -5,7 +5,7 @@
  *
  * 2026-05-25 grill 1 確定 12: 教材ごとに葵 chat 独立スレッド。
  * 本ファイルは Server Action として、教材 + ノード文脈 + chat 履歴 +
- * ユーザー発話を Claude Opus 4.7 に渡して葵応答を生成する。
+ * ユーザー発話を Claude Opus 4.8 に渡して葵応答を生成する。
  *
  * 永続化なし (本セッション内のみ in-memory)、Phase 7 で Supabase に保存予定。
  */
@@ -108,7 +108,7 @@ ${input.focusNodeName ? `- 今フォーカスしているノード: ${input.focu
   messages.push({ role: "user", content: input.userMessage });
 
   const res = await getClient().messages.create({
-    model: "claude-opus-4-7",
+    model: "claude-opus-4-8",
     max_tokens: 1000,
     system: [
       {

@@ -348,7 +348,7 @@ C55 で「次セッション = プラン (計画立案) grill = 一番の肝」�
 | 1 | 起点 = Phase 6 着手 (smoke test 先行)、プラン grill 9 候補は AI 化後に議論 |
 | 2 | smoke test = 最小単位で「動くこと」確認、Phase 6 全体着手はしない |
 | 3 | 代入点 = 「計画立てよう」入口のゆい応答 1 発話 (context 不要、最小単位) |
-| 4 | モデル = Claude Opus 4.7 (`claude-opus-4-7`、本番想定通り) |
+| 4 | モデル = Claude Opus 4.8 (`claude-opus-4-8`、本番想定通り) |
 | 5 | 呼び出し場所 = Server Action (Next.js 16 標準、`'use server'`、API key は server-only) |
 | 6 | mock 切替 = `NEXT_PUBLIC_USE_CLAUDE_API=true` + 「計画立てよう」keyword のみ Claude、失敗時 mock fallback |
 | 7 | system prompt = TUTOR-ROLE.md + PHILOSOPHY.md 全文そのまま (prompt caching ephemeral)、SSoT 整合 |
@@ -358,7 +358,7 @@ C55 で「次セッション = プラン (計画立案) grill = 一番の肝」�
 
 | # | SHA | 内容 |
 |---|---|---|
-| C56 | `859bff5` | feat: Phase 6 smoke test — Claude Opus 4.7 で「計画立てよう」入口 1 発話の AI 化 |
+| C56 | `859bff5` | feat: Phase 6 smoke test — Claude Opus 4.8 で「計画立てよう」入口 1 発話の AI 化 |
 
 **変更ファイル (6 件 + 1 新規)**:
 - `web/lib/learn/tutor-claude.ts` (new) — Server Action `tutorClaudeRespondToPlanRequest`
@@ -629,11 +629,11 @@ C68 push 後、ito19 さんから **方針転換**: 「公的カリキュラム 
 
 ### 2026-05-28 後段後段: Phase 6 教材体系図 AI 抽出 Step A (C70-C72)
 
-C69 push 後、ito19 さん「教材を実際取り込み、体系図を作るまで AI に処理させたらどういう風になるか見てみたい」要望 → 既存 MaterialEditWizard (固定 12 ノード mock) を実際の Claude Opus 4.7 で置換する **Step A 実装** を着手。
+C69 push 後、ito19 さん「教材を実際取り込み、体系図を作るまで AI に処理させたらどういう風になるか見てみたい」要望 → 既存 MaterialEditWizard (固定 12 ノード mock) を実際の Claude Opus 4.8 で置換する **Step A 実装** を着手。
 
 | # | SHA | 内容 |
 |---|---|---|
-| **C70** | `8064b06` | feat: 教材体系図 AI 抽出 Server Action `extract-claude.ts` 新設 (葵 persona system prompt + 教材メタ → Claude Opus 4.7 → JSON 体系図抽出) |
+| **C70** | `8064b06` | feat: 教材体系図 AI 抽出 Server Action `extract-claude.ts` 新設 (葵 persona system prompt + 教材メタ → Claude Opus 4.8 → JSON 体系図抽出) |
 | **C71** | `acbf9ec` | feat: MaterialEditWizard で Claude API flag 分岐 + async 化 (mock-extraction の照合ロジック切り出し + handleExtractionDone async + Step2Extraction にローディング UI 追加) |
 | **C72** | (本 commit) | docs: Phase 6 教材体系図 AI 抽出 SSoT 同期 |
 
@@ -672,7 +672,7 @@ C69 push 後、ito19 さん「教材を実際取り込み、体系図を作る�
 
 ### 2026-06-04: Phase 6 拡大 ゆい/葵 全体 Claude 化 (C73-C76)
 
-C72 push 後、ito19 さん「Claude が入らないとイメージがつかない、入れられるところは全部入れて」要望 → A (ゆい全発話) + B1 (葵 chat) + B2 (課題 chat) + B3 (葵評価コメント) を一気に Claude Opus 4.7 化。
+C72 push 後、ito19 さん「Claude が入らないとイメージがつかない、入れられるところは全部入れて」要望 → A (ゆい全発話) + B1 (葵 chat) + B2 (課題 chat) + B3 (葵評価コメント) を一気に Claude Opus 4.8 化。
 
 | # | SHA | 内容 |
 |---|---|---|
@@ -862,7 +862,7 @@ AI-Education プロジェクトの作業を継続します。
 **Phase 7 (永続化) 着手の前に Phase 5 解体・再構築が必要**。
 
 **Phase 6 smoke test (C56) の扱い**:
-- 「計画立てよう」入口 1 発話の Opus 4.7 化 (Server Action + feature flag + mock fallback) はそのまま残置
+- 「計画立てよう」入口 1 発話の Opus 4.8 化 (Server Action + feature flag + mock fallback) はそのまま残置
 - system prompt 内 PHILOSOPHY.md は C58 で全書き換えされた新版が反映される (動作確認推奨)
 - 元の Phase 6 拡大 A-G grill (ARCHITECTURE「## Phase 6: Claude API 接続」末尾) は着手前に方針転換で保留
 
@@ -981,7 +981,7 @@ C61 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段�
 
 各 commit ごとに tsc --noEmit + eslint クリアを確認、conventional commit
 (feat: / fix: / docs: / refactor:) + 「なぜ / 何を / どう動くか」を本文に書く。
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> を末尾に。
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> を末尾に。
 
 ito19 さんは grill-me モード前提 (memory feedback_grill_me.md 参照)、
 SSoT 規律重視、AI 駆動開発の非エンジニア。フランクな砕けた文体で。
@@ -999,7 +999,7 @@ SSoT 規律重視、AI 駆動開発の非エンジニア。フランクな砕け
 | **commit 粒度** | 細粒度 (1 commit = 1 まとまり)、conventional commit (`feat:` / `fix:` / `docs:`) |
 | **commit メッセージ** | 「何を」+「なぜ」+「どう動くか」+ ARCHITECTURE.md 連動 を必ず書く。日本語 OK |
 | **branch 戦略** | main 直 push (1 人開発、feature ブランチ不使用) |
-| **Co-Authored-By** | `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` を末尾に |
+| **Co-Authored-By** | `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` を末尾に |
 | **コミット前** | `tsc --noEmit` + `eslint <changed-files>` でクリアを確認 |
 | **非エンジニア配慮** | ボタン名 / フロー / 挙動を chat で説明する。技術用語は最小限 |
 | **メモリ重視** | 過去の決定を覚えてる前提 (memory MEMORY.md 参照)、ARCHITECTURE.md に記録された決定は尊重 |

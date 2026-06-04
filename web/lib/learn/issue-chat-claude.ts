@@ -3,7 +3,7 @@
 /**
  * 課題 chat AI 応答 (B2、C76 2026-06-04)
  *
- * IssueChat (= 科目の先生との 1 件の課題を巡る対話) を Claude Opus 4.7 化。
+ * IssueChat (= 科目の先生との 1 件の課題を巡る対話) を Claude Opus 4.8 化。
  * 既存 buildNextIssueChatReply の reply 構造 (quickReplies / resolve signal) は
  * 維持しつつ、text 部分のみ Claude で書き換える post-process パターン。
  * 失敗時は mock text 維持で動線止めない。
@@ -89,7 +89,7 @@ mock 応答と同じ方向性 (= 次のアクション誘導 / quickReplies の�
 整合の口調・文言で。応答テキストのみ。`;
 
   const res = await getClient().messages.create({
-    model: "claude-opus-4-7",
+    model: "claude-opus-4-8",
     max_tokens: 600,
     system: [
       {

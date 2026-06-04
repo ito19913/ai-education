@@ -6,7 +6,7 @@
  * 2026-05-25 grill 1 確定 11: 葵の教材出力 = 体系図 (テキスト忠実) +
  * 評価コメント (葵の見解、coverage / difficulty / fit / notes) の 2 レイヤ。
  *
- * 本ファイルは「評価コメント」レイヤを Claude Opus 4.7 で生成する Server Action。
+ * 本ファイルは「評価コメント」レイヤを Claude Opus 4.8 で生成する Server Action。
  * 体系図抽出 (C70 extract-claude.ts) と対になる実装。
  *
  * 注意: MaterialDetailView から useEffect 経由で呼ばれるため、教材切替ごとに
@@ -110,7 +110,7 @@ export async function generateMaterialReviewViaClaude(
 出力は **JSON のみ** (説明文・前置き・コードブロック禁止):`;
 
   const res = await getClient().messages.create({
-    model: "claude-opus-4-7",
+    model: "claude-opus-4-8",
     max_tokens: 1500,
     system: [
       {

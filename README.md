@@ -74,7 +74,7 @@
 |---|---|
 | フレームワーク | Next.js 16 + React 19 + TypeScript strict |
 | UI | shadcn/ui (base-nova / @base-ui/react) + Tailwind v4 |
-| LLM | **Claude Opus 4.7**（Anthropic SDK） |
+| LLM | **Claude Opus 4.8**（Anthropic SDK） |
 | 音声入力 (STT) | ブラウザ標準 Web Speech API（無料） |
 | 音声出力 (TTS) | OpenAI TTS（gpt-4o-mini-tts） |
 | DB / Auth / Storage | Supabase（PostgreSQL + Auth + Storage、RLS で家族のみアクセス） |
