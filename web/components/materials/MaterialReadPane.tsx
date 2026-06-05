@@ -602,6 +602,7 @@ export function MaterialReadPane({
       <NoteGateDialog
         open={gateOpen}
         onOpenChange={setGateOpen}
+        mode="create"
         materialId={material.id}
         materialName={material.name}
         subjectId={material.subjectId}

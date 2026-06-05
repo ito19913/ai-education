@@ -16,11 +16,14 @@ export type MindMapNodeData = {
   isCurrent: boolean;
   isOnPath: boolean;
   depth: number;
+  /** まとめノート N9②: 理解ステータス色分け (渡された時のみ)。 */
+  status?: "understood" | "open";
 };
 
 export function buildMindMapLayout(
   knowledgeNodes: KnowledgeNode[],
   currentNodeId: string,
+  statusById?: Record<string, "understood" | "open">,
 ): { nodes: Node<MindMapNodeData>[]; edges: Edge[] } {
   // 現在ノードから親を辿り、ハイライト対象の祖先パスを構築
   const byId = new Map(knowledgeNodes.map((n) => [n.id, n]));
@@ -75,6 +78,7 @@ export function buildMindMapLayout(
         isCurrent: n.id === currentNodeId,
         isOnPath: pathSet.has(n.id),
         depth: depthOf(n.id),
+        status: statusById?.[n.id],
       },
     };
   });

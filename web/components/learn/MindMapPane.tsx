@@ -40,10 +40,19 @@ type Props = {
   viewTitle: string;
   /** 表示中のノード数（ヘッダー表示用） */
   visibleNodeCount: number;
+  /** まとめノート N9②: ノードごとの理解ステータス (渡した時のみ色分け、opt-in) */
+  statusById?: Record<string, "understood" | "open">;
 };
 
 function MindMapNode({ data }: NodeProps<Node<MindMapNodeData>>) {
-  const { label, isCurrent, isOnPath, depth } = data;
+  const { label, isCurrent, isOnPath, depth, status } = data;
+  // まとめノート N9②: status が渡された時は理解済み=緑/open=黄 で色分け (最優先)。
+  const statusClass =
+    status === "understood"
+      ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+      : status === "open"
+        ? "border-amber-400 bg-amber-50 text-amber-900"
+        : null;
   return (
     <>
       <Handle
@@ -56,13 +65,15 @@ function MindMapNode({ data }: NodeProps<Node<MindMapNodeData>>) {
         className={cn(
           "rounded-lg border-2 px-4 py-2.5 text-sm shadow-sm transition-colors",
           "min-w-[160px] max-w-[220px] cursor-pointer",
-          isCurrent
-            ? "border-primary bg-primary text-primary-foreground"
-            : isOnPath
-              ? "border-primary bg-primary/10 text-primary"
-              : depth === 0
-                ? "border-foreground/40 bg-card font-medium text-foreground"
-                : "border-border bg-card text-card-foreground hover:border-foreground/40",
+          statusClass
+            ? statusClass
+            : isCurrent
+              ? "border-primary bg-primary text-primary-foreground"
+              : isOnPath
+                ? "border-primary bg-primary/10 text-primary"
+                : depth === 0
+                  ? "border-foreground/40 bg-card font-medium text-foreground"
+                  : "border-border bg-card text-card-foreground hover:border-foreground/40",
         )}
       >
         <div className="flex items-center gap-1.5">
@@ -86,12 +97,13 @@ function MindMapInner({
   nodes,
   currentNodeId,
   onSelectNode,
-}: Pick<Props, "nodes" | "currentNodeId" | "onSelectNode">) {
+  statusById,
+}: Pick<Props, "nodes" | "currentNodeId" | "onSelectNode" | "statusById">) {
   const { fitView } = useReactFlow();
 
   const { nodes: rfNodes, edges: rfEdges } = useMemo(
-    () => buildMindMapLayout(nodes, currentNodeId),
-    [nodes, currentNodeId],
+    () => buildMindMapLayout(nodes, currentNodeId, statusById),
+    [nodes, currentNodeId, statusById],
   );
 
   // 初期表示で全体に fit（path の周辺にズームしすぎないよう余白広め）
@@ -127,6 +139,7 @@ export function MindMapPane({
   onSelectNode,
   viewTitle,
   visibleNodeCount,
+  statusById,
 }: Props) {
   return (
     <div className="flex h-full w-full flex-col border-r border-border bg-background">
@@ -143,6 +156,7 @@ export function MindMapPane({
             nodes={nodes}
             currentNodeId={currentNodeId}
             onSelectNode={onSelectNode}
+            statusById={statusById}
           />
         </ReactFlowProvider>
       </div>

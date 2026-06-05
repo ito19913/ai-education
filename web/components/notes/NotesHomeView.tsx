@@ -1,14 +1,11 @@
 "use client";
 
 /**
- * NotesHomeView — まとめノートのホーム (N9① MVP、2026-06-05)
+ * NotesHomeView — まとめノートのホーム (N9①+N9②、2026-06-05)
  *
- * grill N2/N7: 子が見る地図は「ノート体系図③ 1 枚」。これがホーム。
- * リスト⇄マップ切替 (MaterialDetailView パターン流用)。
- * - マップ = MindMapPane を再利用 (NoteEntry → KnowledgeNode 形に変換)
- * - リスト = 概念名 + 理解ステータス + AI 要約 + 出典リンク + 自分メモ + 削除
- *
- * MVP は英語のみ (科目セレクタは後回し)。未理解(open) + 振り返りは N9②。
+ * grill N2/N7: 子が見る地図は「ノート体系図③ 1 枚」がホーム。リスト⇄マップ切替。
+ * N9②: 理解済み(緑) / 未理解 open(黄) を色分け。open は「もう一回説明してみる」で
+ * 能動ゲート再実行 (review モード) → 通過で理解済みに昇格。
  */
 
 import { useMemo, useState } from "react";
@@ -23,19 +20,24 @@ import {
   PencilLine,
   Trash2,
   CheckCircle2,
+  CircleDashed,
+  RefreshCw,
 } from "lucide-react";
 import { MindMapPane } from "@/components/learn/MindMapPane";
 import { MarkdownText } from "@/components/chat/MarkdownText";
+import { NoteGateDialog } from "@/components/notes/NoteGateDialog";
 import { parsePageRange } from "@/lib/notes/concept-for-page";
 import type { KnowledgeNode, Material, NoteEntry } from "@/lib/learn/types";
+
+type NotePatch = { userNote?: string; status?: "understood" | "open" };
 
 type Props = {
   entries: NoteEntry[];
   materials: Material[];
   /** 出典「読む」→ 読書ビューの該当ページへ */
   onOpenSource: (materialId: string, page: number) => void;
-  /** 自分メモの保存 */
-  onUpdateEntry: (id: string, patch: { userNote?: string }) => void;
+  /** 自分メモ / ステータス更新 */
+  onUpdateEntry: (id: string, patch: NotePatch) => void;
   /** エントリ削除 (論理削除) */
   onDeleteEntry: (id: string) => void;
 };
@@ -48,8 +50,23 @@ export function NotesHomeView({
   onDeleteEntry,
 }: Props) {
   const [mode, setMode] = useState<"list" | "map">("list");
+  // N9②: 振り返り (open→理解済み 昇格) の review ダイアログ対象
+  const [reviewEntry, setReviewEntry] = useState<NoteEntry | null>(null);
 
-  // NoteEntry → MindMapPane 用の KnowledgeNode 形 (MVP は flat、parentRef は未使用)
+  const understoodCount = entries.filter((e) => e.status === "understood").length;
+  const openCount = entries.filter((e) => e.status === "open").length;
+
+  // open を上に並べる (振り返りを促す)
+  const sortedEntries = useMemo(
+    () =>
+      [...entries].sort((a, b) => {
+        if (a.status === b.status) return 0;
+        return a.status === "open" ? -1 : 1;
+      }),
+    [entries],
+  );
+
+  // NoteEntry → MindMapPane 用 (flat) + status 色分け
   const mapNodes = useMemo<KnowledgeNode[]>(
     () =>
       entries.map((e) => ({
@@ -60,6 +77,10 @@ export function NotesHomeView({
       })),
     [entries],
   );
+  const statusById = useMemo<Record<string, "understood" | "open">>(
+    () => Object.fromEntries(entries.map((e) => [e.id, e.status])),
+    [entries],
+  );
 
   return (
     <div className="flex h-full w-full flex-col bg-canvas">
@@ -68,7 +89,7 @@ export function NotesHomeView({
         <NotebookPen className="size-5 text-primary" />
         <span className="text-sm font-semibold">まとめノート</span>
         <span className="text-xs text-muted-foreground">
-          （{entries.length} 件）自分で理解して刻んだ 1 冊
+          理解済み {understoodCount}・振り返り {openCount}
         </span>
         <div className="ml-auto flex items-center gap-1 rounded-md border border-border p-0.5">
           <button
@@ -119,11 +140,12 @@ export function NotesHomeView({
               onSelectNode={() => {}}
               viewTitle="まとめノートの体系図"
               visibleNodeCount={mapNodes.length}
+              statusById={statusById}
             />
           </div>
         ) : (
           <ul className="flex flex-col gap-3">
-            {entries.map((e) => (
+            {sortedEntries.map((e) => (
               <NoteEntryCard
                 key={e.id}
                 entry={e}
@@ -133,11 +155,26 @@ export function NotesHomeView({
                 onOpenSource={onOpenSource}
                 onUpdateEntry={onUpdateEntry}
                 onDeleteEntry={onDeleteEntry}
+                onStartReview={() => setReviewEntry(e)}
               />
             ))}
           </ul>
         )}
       </div>
+
+      {/* N9②: 振り返り (open→理解済み) の能動ゲート再実行 */}
+      <NoteGateDialog
+        open={reviewEntry !== null}
+        onOpenChange={(o) => {
+          if (!o) setReviewEntry(null);
+        }}
+        mode="review"
+        existingEntry={reviewEntry ?? undefined}
+        onUpgraded={(id) => {
+          onUpdateEntry(id, { status: "understood" });
+          setReviewEntry(null);
+        }}
+      />
     </div>
   );
 }
@@ -148,29 +185,42 @@ function NoteEntryCard({
   onOpenSource,
   onUpdateEntry,
   onDeleteEntry,
+  onStartReview,
 }: {
   entry: NoteEntry;
   materialName: string | null;
   onOpenSource: (materialId: string, page: number) => void;
-  onUpdateEntry: (id: string, patch: { userNote?: string }) => void;
+  onUpdateEntry: (id: string, patch: NotePatch) => void;
   onDeleteEntry: (id: string) => void;
+  onStartReview: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [memo, setMemo] = useState(entry.userNote ?? "");
 
   const startPage = parsePageRange(entry.sourcePageRange)?.start ?? null;
+  const isOpen = entry.status === "open";
 
   return (
-    <Card>
+    <Card className={isOpen ? "border-amber-300" : undefined}>
       <CardContent className="flex flex-col gap-2 py-3">
         <div className="flex items-start gap-2">
-          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+          {isOpen ? (
+            <CircleDashed className="mt-0.5 size-4 shrink-0 text-amber-500" />
+          ) : (
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+          )}
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <span className="font-medium">{entry.conceptName}</span>
-              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                理解済み
-              </span>
+              {isOpen ? (
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                  振り返りたい
+                </span>
+              ) : (
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                  理解済み
+                </span>
+              )}
             </div>
             <div className="mt-1 text-sm text-card-foreground">
               <MarkdownText text={entry.aiSummary} />
@@ -187,7 +237,7 @@ function NoteEntryCard({
           </button>
         </div>
 
-        {/* 出典 + 自分メモ */}
+        {/* 出典 + 振り返り */}
         <div className="flex flex-wrap items-center gap-2 pl-6 text-xs text-muted-foreground">
           {materialName && (
             <span className="inline-flex items-center gap-1">
@@ -205,6 +255,16 @@ function NoteEntryCard({
             >
               <BookOpen className="size-3" />
               出典を読む
+            </Button>
+          )}
+          {isOpen && (
+            <Button
+              size="sm"
+              className="h-6 gap-1 px-2 text-xs"
+              onClick={onStartReview}
+            >
+              <RefreshCw className="size-3" />
+              もう一回説明してみる
             </Button>
           )}
         </div>

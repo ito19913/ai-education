@@ -433,10 +433,14 @@ export function TutorWorkspace({
   const handleNoteAdded = useCallback(
     (entry: NoteEntry) => {
       setNoteEntries((prev) => [...prev, entry]);
+      const text =
+        entry.status === "open"
+          ? `「${entry.conceptName}」を「振り返りたい」としてノートに残したよ📌\nあとでまた一緒に見て、自分の言葉で説明できたら理解済みにしよう。メニューの「ノート」から振り返れるよ。`
+          : `ノートに 1 つ刻んだね ✍️「${entry.conceptName}」\n自分の言葉で説明できたから、これは身についてる証拠だよ。メニューの「ノート」でいつでも見返せるよ。`;
       const reply: TutorMessage = {
         id: `t-note-${Date.now()}`,
         role: "tutor",
-        text: `ノートに 1 つ刻んだね ✍️「${entry.conceptName}」\n自分の言葉で説明できたから、これは身についてる証拠だよ。メニューの「ノート」でいつでも見返せるよ。`,
+        text,
         createdAt: new Date().toISOString(),
       };
       setTutorMessages((prev) => [...prev, reply]);
@@ -445,7 +449,7 @@ export function TutorWorkspace({
   );
 
   const handleNoteUpdated = useCallback(
-    (id: string, patch: { userNote?: string }) => {
+    (id: string, patch: { userNote?: string; status?: "understood" | "open" }) => {
       setNoteEntries((prev) =>
         prev.map((e) => (e.id === id ? { ...e, ...patch } : e)),
       );
@@ -466,6 +470,29 @@ export function TutorWorkspace({
       );
     }
   }, []);
+
+  // ----- まとめノート N9② Q3: 定期振り返り = ハブで open を 1 件だけ小出し -----
+  // open エントリがあれば、セッション 1 回だけゆいが「もう一回見てみる?」と提案する
+  // (壁にしない・1 件だけ、N2)。「ノートを見る」quickReply で open-notes へ。
+  const openNudgeRef = useRef(false);
+  useEffect(() => {
+    if (openNudgeRef.current) return;
+    const firstOpen = noteEntries.find((e) => e.status === "open");
+    if (!firstOpen) return;
+    openNudgeRef.current = true;
+    // open があれば 1 回だけ提案を append (定期振り返りトリガー、N9② Q3)。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTutorMessages((prev) => [
+      ...prev,
+      {
+        id: `t-note-nudge-${Date.now()}`,
+        role: "tutor",
+        text: `そういえば、前に「まだ」だった「${firstOpen.conceptName}」があるよ。\n気が向いたら、もう一回説明してみる? できそうなら理解済みにできるよ。`,
+        quickReplies: ["ノートを見る"],
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+  }, [noteEntries]);
 
   // ----- 教材追加完了時: materials state に push + ゆい発話 + 新教材の詳細へ遷移 -----
   // C32 2026-05-25 grill 1 確定 13: アップ完了動線 = ゆいから「葵が読んだよ、見る?」

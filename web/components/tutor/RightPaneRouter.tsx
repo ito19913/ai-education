@@ -96,7 +96,10 @@ type Props = {
   /** まとめノート N9①: ノートエントリ一覧 (NotesHomeView 用) */
   noteEntries: NoteEntry[];
   /** ノート自分メモ / ステータス更新 */
-  onNoteUpdated: (id: string, patch: { userNote?: string }) => void;
+  onNoteUpdated: (
+    id: string,
+    patch: { userNote?: string; status?: "understood" | "open" },
+  ) => void;
   /** ノートエントリ削除 (論理削除) */
   onNoteDeleted: (id: string) => void;
   /** ノートの出典「読む」→ 読書ビューの該当ページへ */
