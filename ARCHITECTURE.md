@@ -1631,7 +1631,9 @@ C73-C78 で「入れられる所は全部 Claude 化」した後、ito19 さん�
 - `web/components/materials/MaterialReadPane.tsx`: PDF ロードに Storage フォールバック (session-pdf-store→無ければ `pdfPath` から DL→L1 キャッシュ) + 「PDF を読み込み中…」表示
 - 温存: `session-pdf-store.ts` (L1 キャッシュ) / `MOCK_MATERIALS` (mock フォールバック) / `Step4Save.tsx` (温存。real モードでは親 `handleMaterialAdded` が DB 採番 id で再構築)
 
-**運用前提 (手動)**: Supabase を Pro へアップグレード + マイグレーション適用 (バケット作成・file size limit 256MB 含む) + `.env.local` に Supabase URL/ANON_KEY。娘さんアカウントでログイン。**未設定なら自動的に従来の mock モード**で動く (デモ 3 件、リロードで消える)。
+**運用前提 (手動)**: マイグレーション適用 (バケット作成・file size limit 256MB 含む) + `.env.local` に Supabase URL/ANON_KEY + ログイン。**未設定なら自動的に従来の mock モード**で動く (デモ 3 件、リロードで消える)。**Supabase Pro 化は 186MB の自炊スキャン本を入れる時のみ必要** (無料は 1 ファイル 50MB 上限)。
+
+**E2E 確認済 (2026-06-05)**: 本番 DB (project ref rorpvpuoquobprudyrif) に SQL Editor でマイグレーション適用 → 無料プラン + 小 PDF で 登録→裏アップロード完了通知→**リロード後も一覧残存 + 読書ビューが Storage から復元してめくれる**を実機確認済。
 
 **残課題 (将来)**: 親アカウントが娘さんの教材を登録する時の owner 指定 UX / アップロード中リロード時の「PDF 準備中」表示 / TUS 失敗時の再試行 UI / 葵 chat 履歴・科目の永続化 (段階2 以降)。
 

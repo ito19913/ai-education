@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-06-05 (**段階1-B 教材・PDF Supabase 永続化を実装 ★real モード E2E はユーザー手動セットアップ待ち★**: 教材 + 体系図ノード (JSONB) + 元 PDF (Storage) を永続化しリロードで読書ビューが成立。grill 7 点確定 → `materials` テーブル + RLS + バケット `material-pdfs` migration / materials-repo / pdf-storage (TUS 再開可能) / TutorWorkspace 行即作成+裏アップロード / MaterialReadPane Storage フォールバック。Supabase 未設定なら自動 mock モードで既存動線不変。tsc/lint/build クリア。動かすには Pro 化 + migration 適用 + env が必要 [§3 次論点ブロック参照]。詳細 ARCHITECTURE「### 段階1-B 教材・PDF 永続化」。← 以下は前回まで: **Phase 6 拡大: ゆい/葵 全体 Claude 化 (A + B 完了) + C78 generic シーン追加で最大カバレッジ**): C58 PHILOSOPHY 全書き換え + grill 累計 30 問 / 47 論点 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) + C2/C3 撤回 + 教材ベース回帰 (C69) + Phase 6 教材体系図 AI 抽出 Step A (C70-C72) + C73-C77 で A/B 全 Claude 化 + **C78 で「相談」等 fallback ルートも Claude 化 (plan-start + generic-{stateName} シーン追加)** → tutor-mock の全 mock 発話がほぼ Claude 経由で言い換えされる状態。残り C 部 (F4 / F5 / 試験前 / F1 内部 3 分類) + D 部 (親 chat) は次セッション以降。**2026-06-04 後段で C80-C82 追加**: 全 AI モデルを Opus 4.8 統一 (C80) + 教材登録 PDF メタ自動検知 (C81、grill 確定) + 教材一覧 in-memory 反映で残課題② 解消 (C82) + **教材本文理解システム (葵ティーチング基盤) grill 完結 (★未実装★、段階1/2)**。**段階1-A (本物の体系図、目次ベース、mock) を C84 (WIP) → C85 で完成・バグ解決**。★真因は「pdf.js が 186MB を処理しきれない」ではなく **真・英文法大全が自炊スキャン PDF (文字レイヤー無し)** だったこと★。解 = **スキャン PDF は目次ページを画像化して葵に vision で読ませる** (デジタル PDF は従来テキスト)。デバッグで 4 つの壁を突破: ①スキャン判定+画像化 ②画像配列を Server Action に渡すと "Maximum array nesting exceeded" → 改行連結 1 文字列で回避 ③目次が長い前付けの後ろ → 先頭 32 ページ描画 + しおり(outline)優先 ④出力が max_tokens 超で JSON 切断 → 16000 + salvage パーサ。結果 = 自炊 186MB から **Part 0〜5 の本物の章立て + 実ページ番号 (p.24-37 等) を 30+ ノード**で抽出、ユーザー「完璧に取れました」確認済。**さらに段階1-C「一緒にめくって読む」読書ビュー (PDF ビューア + 見開き + ズーム + 葵が現在ページを vision で読む chat、フル幅集中モード) を実装、ユーザー「ここまで OK」確認済** (詳細 §3「#### 段階1-C」)。**次セッション = 1-B (PDF/教材の Supabase 永続化、リロードで消える割り切りの解消) or 学習プラン grill 残り 5 論点**。**動作確認時の注意 = dev server 再起動必須、スキャン PDF 登録は 32 枚 vision で ~80-120 秒、読書ビューは今セッション登録の教材のみ (in-memory)**)
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: 2026-06-05 (**段階1-B 教材・PDF Supabase 永続化を実装 + ✅ E2E 確認済 (無料プラン + 小 PDF)**: 教材 + 体系図ノード (JSONB) + 元 PDF (Storage) を永続化しリロードで読書ビューが成立。grill 7 点確定 → `materials` テーブル + RLS + バケット `material-pdfs` migration / materials-repo / pdf-storage (TUS 再開可能) / TutorWorkspace 行即作成+裏アップロード / MaterialReadPane Storage フォールバック。Supabase 未設定なら自動 mock モードで既存動線不変。tsc/lint/build クリア。動かすには Pro 化 + migration 適用 + env が必要 [§3 次論点ブロック参照]。詳細 ARCHITECTURE「### 段階1-B 教材・PDF 永続化」。← 以下は前回まで: **Phase 6 拡大: ゆい/葵 全体 Claude 化 (A + B 完了) + C78 generic シーン追加で最大カバレッジ**): C58 PHILOSOPHY 全書き換え + grill 累計 30 問 / 47 論点 (C59-C61) + 第 1 段階 mock 反映 (C62-C65) + カリキュラム DB 仮実装 (C66-C68) + C2/C3 撤回 + 教材ベース回帰 (C69) + Phase 6 教材体系図 AI 抽出 Step A (C70-C72) + C73-C77 で A/B 全 Claude 化 + **C78 で「相談」等 fallback ルートも Claude 化 (plan-start + generic-{stateName} シーン追加)** → tutor-mock の全 mock 発話がほぼ Claude 経由で言い換えされる状態。残り C 部 (F4 / F5 / 試験前 / F1 内部 3 分類) + D 部 (親 chat) は次セッション以降。**2026-06-04 後段で C80-C82 追加**: 全 AI モデルを Opus 4.8 統一 (C80) + 教材登録 PDF メタ自動検知 (C81、grill 確定) + 教材一覧 in-memory 反映で残課題② 解消 (C82) + **教材本文理解システム (葵ティーチング基盤) grill 完結 (★未実装★、段階1/2)**。**段階1-A (本物の体系図、目次ベース、mock) を C84 (WIP) → C85 で完成・バグ解決**。★真因は「pdf.js が 186MB を処理しきれない」ではなく **真・英文法大全が自炊スキャン PDF (文字レイヤー無し)** だったこと★。解 = **スキャン PDF は目次ページを画像化して葵に vision で読ませる** (デジタル PDF は従来テキスト)。デバッグで 4 つの壁を突破: ①スキャン判定+画像化 ②画像配列を Server Action に渡すと "Maximum array nesting exceeded" → 改行連結 1 文字列で回避 ③目次が長い前付けの後ろ → 先頭 32 ページ描画 + しおり(outline)優先 ④出力が max_tokens 超で JSON 切断 → 16000 + salvage パーサ。結果 = 自炊 186MB から **Part 0〜5 の本物の章立て + 実ページ番号 (p.24-37 等) を 30+ ノード**で抽出、ユーザー「完璧に取れました」確認済。**さらに段階1-C「一緒にめくって読む」読書ビュー (PDF ビューア + 見開き + ズーム + 葵が現在ページを vision で読む chat、フル幅集中モード) を実装、ユーザー「ここまで OK」確認済** (詳細 §3「#### 段階1-C」)。**次セッション = 1-B (PDF/教材の Supabase 永続化、リロードで消える割り切りの解消) or 学習プラン grill 残り 5 論点**。**動作確認時の注意 = dev server 再起動必須、スキャン PDF 登録は 32 枚 vision で ~80-120 秒、読書ビューは今セッション登録の教材のみ (in-memory)**)
 
 ---
 
@@ -1033,17 +1033,16 @@ C61 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段�
 
 **✅ C85 段階1-A 完成**: 真・英文法大全 (自炊スキャン 186MB) から目次を vision で読み、Part 0〜5 + 実ページ番号を 30+ ノードで抽出。ユーザー「完璧」確認済。
 **✅ 段階1-C 読書ビュー完成**: PDF をめくりながら葵と一緒に読む (見開き/ズーム/フル幅/葵が現在ページを vision)。ユーザー「ここまで OK」確認済。詳細は §3「#### 段階1-C」。
-**✅ 段階1-B 永続化 実装済 (2026-06-05、★E2E 未確認★)**: 教材 + 体系図ノード + 元 PDF を Supabase に永続化 (リロード/別セッションで読書ビュー成立)。grill 7 点確定 + 実装 + tsc/lint/build クリア。詳細は ARCHITECTURE「### 段階1-B 教材・PDF 永続化」。**ただし real モードの E2E はユーザー側の手動セットアップ待ち** (下記)。
+**✅ 段階1-B 永続化 実装 + E2E 確認済 (2026-06-05)**: 教材 + 体系図ノード + 元 PDF を Supabase に永続化 (リロード/別セッションで読書ビュー成立)。grill 7 点確定 + 実装 + tsc/lint/build クリア。**本番 DB (project ref rorpvpuoquobprudyrif) にマイグレーション適用済 + 無料プラン + 小 PDF で E2E 実機確認済** = 登録→裏アップロード完了通知→リロード後も一覧に残存→読書ビューが Storage から復元してめくれる、を確認。詳細は ARCHITECTURE「### 段階1-B 教材・PDF 永続化」。
 
-**⚠️ 1-B を本番で動かすのに必要な手動セットアップ (ユーザー作業)**:
-1. **Supabase を Pro へアップグレード** (月 $25、無料は 1 ファイル 50MB 上限で 186MB が入らない)
-2. **マイグレーション適用**: `supabase/migrations/20260605000000_init_materials.sql` を本番 DB に適用 (`materials` テーブル + RLS + バケット `material-pdfs` 作成 + file_size_limit 256MB)
-3. **`.env.local`** に `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` 設定 → dev server 再起動 → 娘さんアカウントでログイン
-4. E2E: 教材登録 (186MB) → 行即表示 + 裏アップロード完了通知 → 読書ビュー即開ける → **ブラウザリロード → 教材残ってる + 読書ビューが Storage から復元** → 削除で `deleted_at` + Storage オブジェクト消える、を確認
-※ 未設定なら自動的に従来 mock モード (デモ 3 件、リロードで消える) で動くので、セットアップ前でも既存動線は壊れない。
+**セットアップ状況 (2026-06-05 時点)**:
+- ✅ マイグレーション適用済 (SQL Editor で実行、`materials` テーブル + RLS + バケット `material-pdfs` 作成済)
+- ✅ `.env.local` に SUPABASE URL/ANON_KEY 設定済 → real モードで動作中
+- ⏳ **Supabase Pro 化は未 (= 現状 無料プラン)**。無料は 1 ファイル 50MB 上限。**186MB の自炊スキャン本を入れる時に Pro 化 ($25/月) が必要**。それまでは ~50MB 未満の PDF なら永続化フルに動く
+※ Supabase 未設定環境では自動的に mock モード (デモ 3 件、リロードで消える) にフォールバック。
 
 **次セッションの主な選択肢**:
-- **1-B の E2E 確認 + 仕上げ** (上記セットアップ後、real モードを実機確認)。残課題: 親アカウント owner 指定 UX / アップロード中リロード時の「PDF 準備中」表示 / TUS 失敗時の再試行 UI
+- **1-B の仕上げ** (任意): Pro 化して 186MB 本で実機確認 / 残課題 = 親アカウント owner 指定 UX / アップロード中リロード時の「PDF 準備中」表示 / TUS 失敗時の再試行 UI
 - **学習プラン grill 残り 5 論点** (PlanType 5 種 / カリキュラム DB 運用 / 系統可視性 / 時間予算 / 統合管制)。コードでなく設計議論。
 - **段階2** (横断検索 embedding + 評価コメント本文化)。
 - 1-C 残課題 (急がない): 精密ページオフセット / 横長余白の zoom 運用 / 見開き並び順。
