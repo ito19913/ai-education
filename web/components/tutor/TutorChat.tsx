@@ -487,6 +487,18 @@ function TutorHubMenu({
         教材
       </button>
 
+      {/* 「ノート」ボタン (まとめノート N9① 2026-06-05): プロダクト最終ゴール = まとめノートのホーム。
+          子が理解して刻んだ 1 冊 (体系図③ + リスト)。北極星なので強調表示。 */}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onSend("ノート見せて")}
+        className="rounded-md border border-primary bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/15 disabled:opacity-50"
+        title="まとめノート: 自分で理解して刻んだ 1 冊。体系図③ + リスト。"
+      >
+        ノート
+      </button>
+
       {/* 「カリキュラム」ボタン (C67 2026-05-28): /curriculum へのリンク。
           英語の中1〜高3 体系図全体俯瞰 (C66 仮実装)。
           AI つまずき認定 (黄) / 戻り誘導候補 (赤) が見える地図 */}

@@ -41,7 +41,15 @@ import {
   respondViaAokiChat,
   type AokiChatMessage,
 } from "@/lib/admin/aoki-chat-claude";
-import type { Material, Subject } from "@/lib/learn/types";
+import { NoteGateDialog } from "@/components/notes/NoteGateDialog";
+import { findConceptForPage } from "@/lib/notes/concept-for-page";
+import { NotebookPen } from "lucide-react";
+import type {
+  AiExtractedNode,
+  Material,
+  NoteEntry,
+  Subject,
+} from "@/lib/learn/types";
 
 type Props = {
   material: Material;
@@ -49,6 +57,8 @@ type Props = {
   /** 体系図ノードから開いた時の初期ページ (印刷ページ番号≒物理ページの近傍、v1) */
   initialPage?: number;
   onBack: () => void;
+  /** まとめノート N9①: 能動ゲート通過でエントリを刻んだ時に親へ通知 */
+  onNoteAdded?: (entry: NoteEntry) => void;
 };
 
 /** "p.24-37" / "p.24-" などから開始ページ番号を取り出す。取れなければ null。 */
@@ -63,6 +73,7 @@ export function MaterialReadPane({
   subject,
   initialPage,
   onBack,
+  onNoteAdded,
 }: Props) {
   const [loaded, setLoaded] = useState<LoadedPdf | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -231,6 +242,32 @@ export function MaterialReadPane({
     (n: number) => setPage(Math.min(Math.max(1, n), numPages || n)),
     [numPages],
   );
+
+  // ----- まとめノート N9①: 能動ゲート起動 -----
+  const [gateOpen, setGateOpen] = useState(false);
+  const [gatePacked, setGatePacked] = useState("");
+  const [gateConcept, setGateConcept] = useState<AiExtractedNode | null>(null);
+  const [preparingGate, setPreparingGate] = useState(false);
+
+  const openNoteGate = useCallback(async () => {
+    if (!loaded || preparingGate) return;
+    setPreparingGate(true);
+    try {
+      // 今表示中のページを JPEG 化 (葵 chat と同じ手順)
+      const imgs: string[] = [];
+      for (const pn of pagesToShow) {
+        const b64 = await renderPageToJpeg(loaded.doc, pn);
+        if (b64) imgs.push(b64);
+      }
+      setGatePacked(imgs.join("\n"));
+      setGateConcept(findConceptForPage(page, material.extractedNodes));
+      setGateOpen(true);
+    } catch (err) {
+      console.error("[読書] ノートゲート準備失敗:", err);
+    } finally {
+      setPreparingGate(false);
+    }
+  }, [loaded, preparingGate, pagesToShow, page, material.extractedNodes]);
 
   const handleSend = async () => {
     const userMessage = draft.trim();
@@ -476,6 +513,25 @@ export function MaterialReadPane({
 
         {/* 葵 chat */}
         <div className="flex min-h-0 flex-col lg:w-[34%] lg:min-w-[360px] lg:max-w-[560px] lg:shrink-0">
+          {/* まとめノート N9①: 今のページをノートに刻む能動ゲート起動 */}
+          <div className="flex shrink-0 items-center gap-2 border-b border-border bg-primary/5 px-3 py-1.5">
+            <Button
+              size="sm"
+              onClick={() => void openNoteGate()}
+              disabled={!loaded || preparingGate}
+              className="gap-1.5"
+            >
+              {preparingGate ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <NotebookPen className="size-4" />
+              )}
+              <span>ここをノートにまとめる</span>
+            </Button>
+            <span className="text-[11px] text-muted-foreground">
+              理解できたら 1 件刻む
+            </span>
+          </div>
           <div
             ref={chatScrollRef}
             className="min-h-0 flex-1 overflow-y-auto p-3"
@@ -541,6 +597,23 @@ export function MaterialReadPane({
           </div>
         </div>
       </div>
+
+      {/* まとめノート N9①: 能動ゲートダイアログ */}
+      <NoteGateDialog
+        open={gateOpen}
+        onOpenChange={setGateOpen}
+        materialId={material.id}
+        materialName={material.name}
+        subjectId={material.subjectId}
+        subjectName={subject?.name ?? "教科"}
+        gradeLevel={material.gradeLevel ?? "中2"}
+        pageNumber={page}
+        pageImagesPacked={gatePacked}
+        currentConcept={gateConcept}
+        onCommitted={(entry) => {
+          onNoteAdded?.(entry);
+        }}
+      />
     </div>
   );
 }

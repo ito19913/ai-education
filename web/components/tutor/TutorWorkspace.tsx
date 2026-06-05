@@ -38,6 +38,11 @@ import {
   removeMaterialPdf,
 } from "@/lib/materials/pdf-storage";
 import {
+  fetchNoteEntries,
+  updateNoteEntry,
+  softDeleteNoteEntry,
+} from "@/lib/notes/notes-repo";
+import {
   buildInitialTutorThread,
   buildNextTutorReply,
   buildNextTutorReplyAsync,
@@ -63,6 +68,7 @@ import type {
   LearningSession,
   LessonReview,
   Material,
+  NoteEntry,
   RightPaneView,
   ScheduleItem,
   Subject,
@@ -104,7 +110,8 @@ function viewFromParam(raw: string | null): RightPaneView {
     raw === "materials" || // C44 2026-05-26: 教材一覧 (ito19 さん意見、残課題⑤ 解消)
     raw === "subjects" || // C30 2026-05-25 grill 2 S6
     raw === "subject-history" ||
-    raw === "tutor-archive"
+    raw === "tutor-archive" ||
+    raw === "notes" // まとめノート N9① 2026-06-05
   ) {
     return raw;
   }
@@ -143,6 +150,21 @@ export function TutorWorkspace({
         if (!cancelled) setMaterials(rows);
       })
       .catch((err) => console.error("[教材] 一覧取得失敗:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // まとめノート N9①: ノートエントリ。real は DB fetch、mock は in-memory。
+  const [noteEntries, setNoteEntries] = useState<NoteEntry[]>([]);
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+    fetchNoteEntries()
+      .then((rows) => {
+        if (!cancelled) setNoteEntries(rows);
+      })
+      .catch((err) => console.error("[ノート] 一覧取得失敗:", err));
     return () => {
       cancelled = true;
     };
@@ -358,6 +380,9 @@ export function TutorWorkspace({
         case "open-tutor-archive":
           navigate("tutor-archive");
           break;
+        case "open-notes":
+          navigate("notes");
+          break;
         case "close":
           navigate("default");
           break;
@@ -403,6 +428,44 @@ export function TutorWorkspace({
     },
     [materials, navigate],
   );
+
+  // ----- まとめノート N9①: 能動ゲート通過でエントリが刻まれた時 -----
+  const handleNoteAdded = useCallback(
+    (entry: NoteEntry) => {
+      setNoteEntries((prev) => [...prev, entry]);
+      const reply: TutorMessage = {
+        id: `t-note-${Date.now()}`,
+        role: "tutor",
+        text: `ノートに 1 つ刻んだね ✍️「${entry.conceptName}」\n自分の言葉で説明できたから、これは身についてる証拠だよ。メニューの「ノート」でいつでも見返せるよ。`,
+        createdAt: new Date().toISOString(),
+      };
+      setTutorMessages((prev) => [...prev, reply]);
+    },
+    [],
+  );
+
+  const handleNoteUpdated = useCallback(
+    (id: string, patch: { userNote?: string }) => {
+      setNoteEntries((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+      );
+      if (isSupabaseConfigured()) {
+        void updateNoteEntry(id, patch).catch((err) =>
+          console.error("[ノート] 更新失敗:", err),
+        );
+      }
+    },
+    [],
+  );
+
+  const handleNoteDeleted = useCallback((id: string) => {
+    setNoteEntries((prev) => prev.filter((e) => e.id !== id));
+    if (isSupabaseConfigured()) {
+      void softDeleteNoteEntry(id).catch((err) =>
+        console.error("[ノート] 削除失敗:", err),
+      );
+    }
+  }, []);
 
   // ----- 教材追加完了時: materials state に push + ゆい発話 + 新教材の詳細へ遷移 -----
   // C32 2026-05-25 grill 1 確定 13: アップ完了動線 = ゆいから「葵が読んだよ、見る?」
@@ -721,6 +784,7 @@ export function TutorWorkspace({
             onBack={() =>
               navigate("material-detail", { materialId: readMaterial.id })
             }
+            onNoteAdded={handleNoteAdded}
           />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
@@ -794,6 +858,12 @@ export function TutorWorkspace({
             onMaterialDeleted={handleMaterialDeleted}
             onSubjectAdded={handleSubjectAdded}
             materials={materials}
+            noteEntries={noteEntries}
+            onNoteUpdated={handleNoteUpdated}
+            onNoteDeleted={handleNoteDeleted}
+            onOpenNoteSource={(materialId, page) =>
+              navigate("material-read", { materialId, page })
+            }
           />
         </ResizablePanel>
       </ResizablePanelGroup>

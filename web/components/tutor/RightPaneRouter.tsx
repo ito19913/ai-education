@@ -21,6 +21,7 @@ import type {
   KnowledgeNode,
   LearningSession,
   LessonReview,
+  NoteEntry,
   RightPaneView,
   ScheduleItem,
   Subject,
@@ -41,6 +42,7 @@ import { TutorArchiveView } from "@/components/tutor/TutorArchiveView";
 import { ReflectionListView } from "@/components/reflections/ReflectionListView";
 import { WeeklyMonthlyReportView } from "@/components/reports/WeeklyMonthlyReportView";
 import { PlanEngineDashboard } from "@/components/plans/PlanEngineDashboard";
+import { NotesHomeView } from "@/components/notes/NotesHomeView";
 // MOCK_MATERIALS は TutorWorkspace 経由で props として渡される (C46: 編集・削除のため state 管理)
 import type { Material } from "@/lib/learn/types";
 
@@ -91,6 +93,14 @@ type Props = {
    * 全教材リスト (state ベース、C46 F)。MaterialsListPane / MaterialDetailView で参照
    */
   materials: Material[];
+  /** まとめノート N9①: ノートエントリ一覧 (NotesHomeView 用) */
+  noteEntries: NoteEntry[];
+  /** ノート自分メモ / ステータス更新 */
+  onNoteUpdated: (id: string, patch: { userNote?: string }) => void;
+  /** ノートエントリ削除 (論理削除) */
+  onNoteDeleted: (id: string) => void;
+  /** ノートの出典「読む」→ 読書ビューの該当ページへ */
+  onOpenNoteSource: (materialId: string, page: number) => void;
 };
 
 export function RightPaneRouter({
@@ -119,6 +129,10 @@ export function RightPaneRouter({
   onMaterialDeleted,
   onSubjectAdded,
   materials,
+  noteEntries,
+  onNoteUpdated,
+  onNoteDeleted,
+  onOpenNoteSource,
 }: Props) {
   if (view === "default") {
     return <DefaultPane />;
@@ -286,6 +300,18 @@ export function RightPaneRouter({
         nodes={nodes}
         chatMessages={chatMessages}
         issues={issues}
+      />
+    );
+  }
+
+  if (view === "notes") {
+    return (
+      <NotesHomeView
+        entries={noteEntries}
+        materials={materials}
+        onOpenSource={onOpenNoteSource}
+        onUpdateEntry={onNoteUpdated}
+        onDeleteEntry={onNoteDeleted}
       />
     );
   }

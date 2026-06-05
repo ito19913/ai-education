@@ -1515,6 +1515,28 @@ function buildNextTutorReplyInner(args: {
   }
 
   // C44 2026-05-26 (ito19 さん意見、残課題⑤ 解消):
+  // 「ノート」「まとめノート」 → まとめノートのホーム (N9①、体系図③ + リスト)
+  // 注意: 「教材」分岐より前に置く (「ノート」単独 word を確実に拾う)
+  if (
+    lower.includes("まとめノート") ||
+    lower === "ノート" ||
+    lower === "ノート見せて" ||
+    lower === "ノートどこ" ||
+    lower.includes("ノート見たい") ||
+    lower.includes("ノートを見")
+  ) {
+    return {
+      nextState: state,
+      reply: {
+        id: makeId(),
+        role: "tutor",
+        text: "OK、これまでのまとめノートを右で見せるね。\n自分で理解して刻んだ 1 冊だよ。体系図でも見られるよ。",
+        rightPaneAction: { kind: "open-notes" },
+        createdAt: now,
+      },
+    };
+  }
+
   // 「教材一覧」「教材を見る」「教材」 → 教材一覧ペイン (一覧 → 詳細 → 葵 chat 動線)
   // 注意: この分岐は下の「教材追加」分岐より前に置く (先勝ち、「教材」単独 word は一覧扱い)
   if (

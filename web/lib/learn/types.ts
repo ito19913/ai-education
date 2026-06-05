@@ -489,6 +489,7 @@ export type TutorRightPaneAction =
   | { kind: "open-subjects" } // C30 2026-05-25 grill 2 S6: 科目設定パネル
   | { kind: "open-subject-history"; subjectId: string }
   | { kind: "open-tutor-archive" }
+  | { kind: "open-notes" } // まとめノート N9① 2026-06-05: ノートホーム (体系図③ + リスト)
   | { kind: "close" };
 
 /** 担任 chat の 1 メッセージ */
@@ -539,7 +540,8 @@ export type RightPaneView =
   | "materials" // C44 2026-05-26: 教材一覧 (ito19 さん意見、再アクセス動線 残課題⑤ 解消)
   | "subjects" // C30 2026-05-25 grill 2 S6: 科目設定パネル
   | "subject-history"
-  | "tutor-archive";
+  | "tutor-archive"
+  | "notes"; // まとめノート N9① 2026-06-05: ノートホーム (体系図③ + リスト)
 
 /** 担任 chat スレッド全体 */
 export type TutorThread = {
@@ -589,6 +591,35 @@ export type Material = {
   pdfPath?: string;
   /** 元 PDF のバイトサイズ (段階1-B)。 */
   pdfSize?: number;
+};
+
+/**
+ * まとめノートの 1 エントリ (N9① 縦切り MVP、2026-06-05、grill N1-N9)。
+ *
+ * 子が AI 対話 (能動ゲート N3) で理解してから刻む「概念単位 (N1)」のまとめ。
+ * 1 エントリ = 概念 + AI 要約 (正しい内容) + 出典 (教材+ページ N5) + 自分メモ (N7)
+ * + 理解ステータス (N8)。科目はまたがない (N4)。Supabase note_entries に永続化。
+ */
+export type NoteEntry = {
+  id: string;
+  /** 科目 (N4: またがない、MVP は英語) */
+  subjectId: string;
+  /** 論点名 (N1: 概念単位) */
+  conceptName: string;
+  /** AI が作る正しい要約 (N3: 本体、子の言葉ベースにしない) */
+  aiSummary: string;
+  /** 理解ステータス (N8)。MVP は 'understood' のみ。'open' = 未理解(=Issue) は N9② */
+  status: "understood" | "open";
+  /** 出典の教材 ID (N5) */
+  sourceMaterialId?: string;
+  /** 出典のページ範囲 (N5、"p.42-45") */
+  sourcePageRange?: string;
+  /** ノート体系図③の親 (概念階層、未指定 = root) */
+  parentRef?: string;
+  /** 子の自分メモ (N7: 本体は守り、子はメモで所有) */
+  userNote?: string;
+  /** 論理削除日時 (ISO)。値あり = 非表示 */
+  deletedAt?: string;
 };
 
 /** 科目（英語、数学など） */
