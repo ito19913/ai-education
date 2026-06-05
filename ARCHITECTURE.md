@@ -1674,7 +1674,20 @@ C73-C78 で「入れられる所は全部 Claude 化」した後、ito19 さん�
 
 **未決 (実装時 or 別 grill)**: 論点認定のタイミング (問題集登録時バッチ vs 解いた時その場、コスト次第) / ノート分割・結合 UI / ミニ確認の出題方式 / ノートエントリの Supabase スキーマ詳細 / 段階2 embedding モデル選定。
 
-**次の実装 = N9 ①「ノート中核 縦切り MVP」を Plan 化**: 1 教材を葵と読む → 能動ゲート → ノートエントリ 1 件生成・永続化 → ノート体系図③に表示 → 出典リンク。必要 = ノートのデータモデル + Supabase 永続化 (1-B の延長) / 論点認定 (最小) / 能動ゲート UI / ノート体系図③ 最小描画。
+### N9① 中核 縦切り MVP 実装 (2026-06-05、✅ 実装 + E2E 確認済)
+
+「1 教材を葵と読む → 能動ゲート → 理解済みエントリ生成・永続化 → ノート体系図③表示 → 出典リンクで戻る」の最小ループを実装。**本番 DB で E2E 確認済** (英語教材 p.7 を葵が vision で読み、正しい要約 → 子の説明で能動ゲート通過 → 「理解済み」で刻む → ノートホームに表示 → リロード後も残存)。
+
+**実装ファイル**:
+- `supabase/migrations/20260605100000_init_note_entries.sql` (新規): `note_entries` テーブル + RLS (materials と同型)。本番 DB 適用済み
+- `web/lib/notes/notes-repo.ts` (CRUD)、`note-gate-claude.ts` (`summarizeConceptForNote` = ページ vision → 論点名+正しい要約 / `judgeExplanation` = 能動ゲート判定、Opus 4.8)、`concept-for-page.ts` (`findConceptForPage` = 現在ページ→概念、論点認定の最小実装)
+- `web/components/notes/NoteGateDialog.tsx` (能動ゲート: AI 要約提示 → 子の説明 → 判定 → 通過で刻む)、`NotesHomeView.tsx` (ノートホーム: `MindMapPane` 再利用の体系図③ + リスト + 出典リンク + 自分メモ + 削除)
+- `MaterialReadPane.tsx` (「ここをノートにまとめる」ボタン + ゲート起動)、`TutorWorkspace`/`RightPaneRouter`/`TutorChat`/`tutor-mock` (RightPaneView "notes" + 主動線「ノート」+ keyword)
+- `types.ts`: `NoteEntry` 型
+
+**N1-N9 準拠**: 概念単位(N1) / AI 要約 + 能動ゲート(N3) / ノート体系図③ホーム + 自分メモ所有(N2,N7) / 出典=教材+ページ(N5) / 理解済みステータス(N8、MVP は understood のみ)。Supabase 未設定なら in-memory mock。
+
+**N9② 以降に送り**: 未理解(open)ステータス + 定期振り返り / Issue 統合の完全版 / 戻り提案(N6) / 問題集リンク / 段階2 横断検索 / ノート分割・結合 / 体系図の状態色分け。
 
 ---
 
