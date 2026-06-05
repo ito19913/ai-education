@@ -36,6 +36,7 @@ import {
   judgeExplanation,
 } from "@/lib/notes/note-gate-claude";
 import { insertNoteEntry, getCurrentUserId } from "@/lib/notes/notes-repo";
+import type { AokiChatMessage } from "@/lib/admin/aoki-chat-claude";
 import type { AiExtractedNode, NoteEntry } from "@/lib/learn/types";
 
 type Props = {
@@ -55,6 +56,8 @@ type Props = {
   pageImagesPacked?: string;
   /** findConceptForPage の結果 (概念ヒント + 出典ページ範囲) */
   currentConcept?: AiExtractedNode | null;
+  /** ここまでの葵 chat 対話 (要約に反映、grill Q2) */
+  dialogue?: AokiChatMessage[];
   /** create: 通過してノートに刻めたエントリを親に渡す */
   onCommitted?: (entry: NoteEntry) => void;
 
@@ -67,6 +70,7 @@ type Props = {
 
 type Stage =
   | "summarizing"
+  | "review" // create: 要約確認 + メモ + 説明する/openで残す の分岐
   | "explain"
   | "judging"
   | "judged-pass"
@@ -90,6 +94,7 @@ export function NoteGateDialog(props: Props) {
     pageNumber,
     pageImagesPacked,
     currentConcept,
+    dialogue,
     onCommitted,
     existingEntry,
     onUpgraded,
@@ -98,6 +103,7 @@ export function NoteGateDialog(props: Props) {
   const [stage, setStage] = useState<Stage>("summarizing");
   const [conceptName, setConceptName] = useState("");
   const [summary, setSummary] = useState("");
+  const [memo, setMemo] = useState("");
   const [explanation, setExplanation] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -112,11 +118,12 @@ export function NoteGateDialog(props: Props) {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExplanation("");
+    setMemo("");
     setFeedback(null);
     setErrorMsg(null);
 
     if (mode === "review" && existingEntry) {
-      // review: 要約は既存。すぐ説明へ。
+      // review: 要約は既存。すぐ説明へ (昇格のみ、メモ取り込みは create 限定)。
       setConceptName(existingEntry.conceptName);
       setSummary(existingEntry.aiSummary);
       setStage("explain");
@@ -136,7 +143,7 @@ export function NoteGateDialog(props: Props) {
             currentConcept?.description ??
               "（AI 要約は Claude 有効時に生成されます。今は仮の要約です）",
           );
-          setStage("explain");
+          setStage("review");
           return;
         }
         const out = await summarizeConceptForNote({
@@ -146,11 +153,12 @@ export function NoteGateDialog(props: Props) {
           currentConceptName: currentConcept?.name ?? null,
           pageImagesPacked,
           pageNumber,
+          dialogue: dialogue?.map((m) => ({ role: m.role, text: m.text })),
         });
         if (cancelled) return;
         setConceptName(out.conceptName);
         setSummary(out.summary);
-        setStage("explain");
+        setStage("review");
       } catch (err) {
         console.error("[ノート] 要約生成失敗:", err);
         if (cancelled) return;
@@ -159,7 +167,7 @@ export function NoteGateDialog(props: Props) {
           currentConcept?.description ??
             "（要約をうまく作れませんでした。ページを見ながら自分で要点を説明してみよう）",
         );
-        setStage("explain");
+        setStage("review");
       }
     })();
 
@@ -176,6 +184,7 @@ export function NoteGateDialog(props: Props) {
     pageNumber,
     pageImagesPacked,
     currentConcept,
+    dialogue,
   ]);
 
   // ----- 最終確定 (本人の決定で understood / open) -----
@@ -194,6 +203,7 @@ export function NoteGateDialog(props: Props) {
       }
 
       // create: 新規エントリを刻む (real は DB、mock は in-memory)
+      const trimmedMemo = memo.trim() || undefined;
       try {
         if (isSupabaseConfigured()) {
           const ownerId = await getCurrentUserId();
@@ -205,6 +215,7 @@ export function NoteGateDialog(props: Props) {
               status,
               sourceMaterialId: materialId,
               sourcePageRange,
+              userNote: trimmedMemo,
             },
             ownerId,
           );
@@ -224,6 +235,7 @@ export function NoteGateDialog(props: Props) {
         status,
         sourceMaterialId: materialId,
         sourcePageRange,
+        userNote: trimmedMemo,
       });
       setOutcome(status);
       setStage("done");
@@ -236,6 +248,7 @@ export function NoteGateDialog(props: Props) {
       subjectId,
       conceptName,
       summary,
+      memo,
       materialId,
       sourcePageRange,
       onCommitted,
@@ -317,6 +330,44 @@ export function NoteGateDialog(props: Props) {
             <Button className="mt-2" onClick={() => onOpenChange(false)}>
               閉じる
             </Button>
+          </div>
+        ) : stage === "review" ? (
+          /* create: 要約確認 + メモ取り込み + 説明する/openで残す の分岐 */
+          <div className="flex flex-col gap-4">
+            <div className="rounded-md border border-border bg-muted/40 p-3">
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Sparkles className="size-3.5" />
+                葵先生がこう整理したよ — 「{conceptName}」
+              </div>
+              <div className="text-sm">
+                <MarkdownText text={summary} />
+              </div>
+            </div>
+
+            {/* メモ取り込み (Q2: 葵が「メモしたいことある?」と聞く → 自分メモ欄へ) */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium">
+                ここで覚えておきたい・自分用にメモしたいことある?（任意）
+              </label>
+              <Textarea
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder="例: 不定詞と動名詞の使い分けが自分は混乱しがち、など"
+                className="min-h-[60px] resize-none"
+              />
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => void finalize("open")}
+              >
+                今は説明せず、振り返りに残す
+              </Button>
+              <Button onClick={() => setStage("explain")}>
+                説明して理解済みにする
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-4">

@@ -43,7 +43,7 @@ import {
 } from "@/lib/admin/aoki-chat-claude";
 import { NoteGateDialog } from "@/components/notes/NoteGateDialog";
 import { findConceptForPage } from "@/lib/notes/concept-for-page";
-import { NotebookPen } from "lucide-react";
+import { NotebookPen, Play } from "lucide-react";
 import type {
   AiExtractedNode,
   Material,
@@ -248,6 +248,44 @@ export function MaterialReadPane({
   const [gatePacked, setGatePacked] = useState("");
   const [gateConcept, setGateConcept] = useState<AiExtractedNode | null>(null);
   const [preparingGate, setPreparingGate] = useState(false);
+  // フロー再設計: 学習セッション開始 (葵が今のページを自分から説明する)
+  const [starting, setStarting] = useState(false);
+
+  const handleStartLearning = useCallback(async () => {
+    if (!loaded || starting || sending) return;
+    setStarting(true);
+    try {
+      const imgs: string[] = [];
+      for (const pn of pagesToShow) {
+        const b64 = await renderPageToJpeg(loaded.doc, pn);
+        if (b64) imgs.push(b64);
+      }
+      const aiText = await respondViaAokiChat({
+        materialName: material.name,
+        subjectName: subject?.name ?? "教科",
+        gradeLevel: material.gradeLevel ?? "中2",
+        focusNodeName: null,
+        history,
+        userMessage:
+          "（学習を開始）今開いているページの要点を、中学生にわかるように2〜4文で説明して。最後に「分からないところがあれば聞いてね」と一言添えて。",
+        currentPageImagesPacked: imgs.length > 0 ? imgs.join("\n") : undefined,
+        currentPageNumber: page,
+      });
+      // 葵の説明だけを積む (キックオフ発話は可視 history に出さない = 自分から説明したように見せる)
+      setHistory((prev) => [...prev, { role: "assistant", text: aiText }]);
+    } catch (err) {
+      console.error("[読書] 学習開始失敗:", err);
+      setHistory((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: "ごめん、今うまく読み取れなかった…ページをめくり直すか、もう一度試してくれる?",
+        },
+      ]);
+    } finally {
+      setStarting(false);
+    }
+  }, [loaded, starting, sending, pagesToShow, material, subject, page, history]);
 
   const openNoteGate = useCallback(async () => {
     if (!loaded || preparingGate) return;
@@ -513,24 +551,37 @@ export function MaterialReadPane({
 
         {/* 葵 chat */}
         <div className="flex min-h-0 flex-col lg:w-[34%] lg:min-w-[360px] lg:max-w-[560px] lg:shrink-0">
-          {/* まとめノート N9①: 今のページをノートに刻む能動ゲート起動 */}
-          <div className="flex shrink-0 items-center gap-2 border-b border-border bg-primary/5 px-3 py-1.5">
+          {/* フロー再設計: 学習を開始する (葵が説明) + ノートにまとめる (いつでも) */}
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-primary/5 px-3 py-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleStartLearning()}
+              disabled={!loaded || starting || sending}
+              className="gap-1.5"
+              title="葵先生が今のページを説明してくれるよ。分からない所を聞いて深めよう。"
+            >
+              {starting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Play className="size-4" />
+              )}
+              <span>学習を開始する</span>
+            </Button>
             <Button
               size="sm"
               onClick={() => void openNoteGate()}
               disabled={!loaded || preparingGate}
               className="gap-1.5"
+              title="今のページと葵との対話から、自分のノートに刻むよ。"
             >
               {preparingGate ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <NotebookPen className="size-4" />
               )}
-              <span>ここをノートにまとめる</span>
+              <span>ノートにまとめる</span>
             </Button>
-            <span className="text-[11px] text-muted-foreground">
-              理解できたら 1 件刻む
-            </span>
           </div>
           <div
             ref={chatScrollRef}
@@ -611,6 +662,7 @@ export function MaterialReadPane({
         pageNumber={page}
         pageImagesPacked={gatePacked}
         currentConcept={gateConcept}
+        dialogue={history}
         onCommitted={(entry) => {
           onNoteAdded?.(entry);
         }}

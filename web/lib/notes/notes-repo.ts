@@ -70,6 +70,8 @@ export type NewNoteEntryInput = {
   sourceMaterialId?: string;
   sourcePageRange?: string;
   parentRef?: string;
+  /** まとめ時に取り込んだ子のメモ (N7、grill Q2) */
+  userNote?: string;
 };
 
 /** ノートエントリを作成 (id は DB 採番)。生成行を返す。 */
@@ -89,6 +91,7 @@ export async function insertNoteEntry(
       source_material_id: input.sourceMaterialId ?? null,
       source_page_range: input.sourcePageRange ?? null,
       parent_ref: input.parentRef ?? null,
+      user_note: input.userNote ?? null,
     })
     .select("*")
     .single();

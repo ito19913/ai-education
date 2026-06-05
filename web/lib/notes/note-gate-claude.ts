@@ -61,6 +61,11 @@ export type SummarizeInput = {
   pageImagesPacked?: string;
   /** 物理ページ番号 (文脈提示用) */
   pageNumber?: number;
+  /**
+   * ここまでの本人と葵の対話 (古い順)。あれば、本人が引っかかった点・質問・
+   * そこで明確になったことを要約に反映する (= オリジナルノート、grill Q2)。
+   */
+  dialogue?: { role: "user" | "assistant"; text: string }[];
 };
 
 export type SummarizeOutput = {
@@ -85,6 +90,8 @@ export async function summarizeConceptForNote(
 - 添付されたページ画像の**本文に忠実**に。推測で内容を盛らない。
 - 出力は「子が覚えるべき正しい内容」。平易だが正確に。子の言葉ではなく、整った要約。
 - 1 ページに複数論点があれば、**最も中心的な 1 つ**に絞る。
+- **本人との対話がある場合は、本人が引っかかった点・質問・そこで腑に落ちた説明を要約に
+  反映する**（＝本人の理解の足跡が入った、その子だけの要約にする）。対話が無ければページ本文のみ。
 - 要約は 120〜300 字程度。markdown 可 (強調・箇条書き)。
 
 ## 出力フォーマット (JSON のみ、前置き無し)
@@ -93,11 +100,18 @@ export async function summarizeConceptForNote(
 ## プロジェクトの憲法 (PHILOSOPHY.md)
 ${getPhilosophy()}`;
 
+  const dialogueText =
+    input.dialogue && input.dialogue.length > 0
+      ? `\n\n## ここまでの本人と葵の対話 (要約に反映する)\n${input.dialogue
+          .map((m) => `${m.role === "user" ? "本人" : "葵"}: ${m.text}`)
+          .join("\n")}`
+      : "";
+
   const contextText = `教材: ${input.materialName} / 科目: ${input.subjectName} / 学年: ${input.gradeLevel}${
     input.pageNumber ? ` / ページ: ${input.pageNumber}` : ""
-  }${input.currentConceptName ? `\n論点名のヒント (体系図から): ${input.currentConceptName}` : ""}
+  }${input.currentConceptName ? `\n論点名のヒント (体系図から): ${input.currentConceptName}` : ""}${dialogueText}
 
-今添付されているページの中心的な論点を 1 つ選び、まとめノート用の正しい要約を JSON で返してください。`;
+今添付されているページの中心的な論点を 1 つ選び${input.dialogue && input.dialogue.length > 0 ? "（上の対話で本人が触れた点を踏まえて）" : ""}、まとめノート用の正しい要約を JSON で返してください。`;
 
   const content: Anthropic.ContentBlockParam[] = [
     ...images.map(
