@@ -1606,6 +1606,35 @@ C73-C78 で「入れられる所は全部 Claude 化」した後、ito19 さん�
 - 単元ごとのページ範囲を AI がどう正確に特定するか
 - バックグラウンド処理の実装方式 (Supabase Edge Function 等)
 
+### 段階1-B 教材・PDF 永続化 (2026-06-05、実装済み)
+
+段階1-A (本物の体系図) + 段階1-C (読書ビュー) は in-memory だったため、リロードで教材・体系図・PDF が消えていた。1-B でこの最小チェーン (教材 + 体系図ノード + 元 PDF) を Supabase に永続化し、**リロード／別セッションでも読書ビューが成立**するようにした。
+
+**grill 確定 (2026-06-05、7 点)**:
+| # | 確定 |
+|---|---|
+| 1 | スコープ = 教材 + 体系図ノード + 元 PDF のみ (葵 chat 履歴・科目は今回外す) |
+| 2 | 持ち主 = `materials.owner_id` (娘さん)。本人は自分の分・admin は全部。既存 `profiles` RLS パターン踏襲 |
+| 3 | PDF = Supabase **Pro 化**。186MB はブラウザから Storage へ**直接 (TUS 再開可能) アップロード** (Server Action 経由は不可) |
+| 4 | テーブル = `materials` 1 つ。体系図ノードは **JSONB 列**、PDF は Storage (`pdf_path`/`pdf_size`) |
+| 5 | 保存 = **行は即作成** (一覧/体系図は即表示)、**PDF は裏でアップロード + 完了通知**。`session-pdf-store` は L1 キャッシュとして温存 |
+| 6 | 読込 = 本番は DB 取得 (最初は空)、`MOCK_MATERIALS` は mock モード専用フォールバックへ。読書ビューは メモリ→無ければ Storage DL→キャッシュ |
+| 7 | 削除 = 行は論理削除 (`deleted_at`) で残し、PDF 実体は Storage から削除 (コスト優先) |
+
+**実装ファイル**:
+- `supabase/migrations/20260605000000_init_materials.sql` (新規): `materials` テーブル + RLS (`profiles` の `current_user_role()`/`touch_updated_at()` 再利用) + private バケット `material-pdfs` (file_size_limit 256MB) + Storage RLS (先頭フォルダ=owner_id で本人/admin)
+- `web/lib/materials/materials-repo.ts` (新規): `fetchMaterials` / `insertMaterial` / `updateMaterialPdfPath` / `softDeleteMaterial` / `updateMaterialMeta` / `getCurrentUserId`、DB 行⇔Material 変換。browser client + RLS
+- `web/lib/materials/pdf-storage.ts` (新規): `uploadMaterialPdf` (tus-js-client、chunk 6MB 固定、`${ownerId}/${materialId}.pdf`) / `downloadMaterialPdf` / `removeMaterialPdf`
+- `web/lib/materials/is-supabase-configured.ts` (新規): real/mock 判定 (`NEXT_PUBLIC_SUPABASE_URL` の有無、空文字注入も mock 扱い)
+- `web/lib/learn/types.ts`: `Material` に `pdfPath?` / `pdfSize?` 追加
+- `web/components/tutor/TutorWorkspace.tsx`: materials 初期化を real=DB fetch / mock=MOCK_MATERIALS、`handleMaterialAdded` (行即作成→裏アップロード→完了通知、失敗時 in-memory フォールバック)、`handleMaterialDeleted` (論理削除 + Storage 削除)
+- `web/components/materials/MaterialReadPane.tsx`: PDF ロードに Storage フォールバック (session-pdf-store→無ければ `pdfPath` から DL→L1 キャッシュ) + 「PDF を読み込み中…」表示
+- 温存: `session-pdf-store.ts` (L1 キャッシュ) / `MOCK_MATERIALS` (mock フォールバック) / `Step4Save.tsx` (温存。real モードでは親 `handleMaterialAdded` が DB 採番 id で再構築)
+
+**運用前提 (手動)**: Supabase を Pro へアップグレード + マイグレーション適用 (バケット作成・file size limit 256MB 含む) + `.env.local` に Supabase URL/ANON_KEY。娘さんアカウントでログイン。**未設定なら自動的に従来の mock モード**で動く (デモ 3 件、リロードで消える)。
+
+**残課題 (将来)**: 親アカウントが娘さんの教材を登録する時の owner 指定 UX / アップロード中リロード時の「PDF 準備中」表示 / TUS 失敗時の再試行 UI / 葵 chat 履歴・科目の永続化 (段階2 以降)。
+
 ---
 
 ## ゆい→葵への申し送り（TutorHandoff）

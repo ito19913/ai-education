@@ -578,9 +578,17 @@ export type Material = {
   /**
    * 教材本文 (目次) から葵 AI が抽出した教材固有の体系図 (段階1-A、2026-06-04)。
    * 設定時はこちらを体系図として表示 (共有 MOCK_TREE / coveredNodeIds より優先)。
-   * 現状 in-memory、Phase 7 (段階1-B) で Supabase 永続化予定。
+   * 段階1-B (2026-06-05) で Supabase の materials.extracted_nodes (JSONB) に永続化。
    */
   extractedNodes?: AiExtractedNode[];
+  /**
+   * 元 PDF の Supabase Storage 上のパス (段階1-B、2026-06-05)。
+   * `${owner_id}/${material_id}.pdf`。アップロード完了で埋まる (それまで undefined)。
+   * 読書ビューは session-pdf-store (L1) に無ければこのパスから Storage DL する。
+   */
+  pdfPath?: string;
+  /** 元 PDF のバイトサイズ (段階1-B)。 */
+  pdfSize?: number;
 };
 
 /** 科目（英語、数学など） */

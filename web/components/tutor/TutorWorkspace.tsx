@@ -25,6 +25,18 @@ import { TutorChat } from "./TutorChat";
 import { RightPaneRouter } from "./RightPaneRouter";
 import { MaterialReadPane } from "@/components/materials/MaterialReadPane";
 import { setSessionPdf } from "@/lib/admin/session-pdf-store";
+import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
+import {
+  fetchMaterials,
+  insertMaterial,
+  updateMaterialPdfPath,
+  softDeleteMaterial,
+  getCurrentUserId,
+} from "@/lib/materials/materials-repo";
+import {
+  uploadMaterialPdf,
+  removeMaterialPdf,
+} from "@/lib/materials/pdf-storage";
 import {
   buildInitialTutorThread,
   buildNextTutorReply,
@@ -114,11 +126,27 @@ export function TutorWorkspace({
   // C30 2026-05-25 grill 2 S7: 科目追加対応で subjects を useState 化
   // SubjectSettingsPanel から動的 push される
   const [subjects, setSubjects] = useState<Subject[]>(initialSubjects);
-  // C46 2026-05-26 F (ito19 さん意見): 教材編集・削除のため materials を state 管理
-  // 現状は in-memory mutation (Phase 7 で Supabase 化、関連 LearningPlan / SI / GT
-  // との整合も Phase 7 grill)。RightPaneRouter 経由で MaterialsListPane / MaterialDetailView に
-  // 最新 state を流す
-  const [materials, setMaterials] = useState<Material[]>(MOCK_MATERIALS);
+  // C46 2026-05-26 F (ito19 さん意見): 教材編集・削除のため materials を state 管理。
+  // 段階1-B (2026-06-05): real モード (Supabase 設定済) は起動時 DB fetch で復元、
+  // mock モードは MOCK_MATERIALS をフォールバック表示 (リロードで消える割り切り)。
+  // RightPaneRouter 経由で MaterialsListPane / MaterialDetailView に最新 state を流す。
+  const [materials, setMaterials] = useState<Material[]>(
+    isSupabaseConfigured() ? [] : MOCK_MATERIALS,
+  );
+
+  // 段階1-B: real モードでは起動時に DB から教材一覧を取得して復元する。
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+    fetchMaterials()
+      .then((rows) => {
+        if (!cancelled) setMaterials(rows);
+      })
+      .catch((err) => console.error("[教材] 一覧取得失敗:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = viewFromParam(searchParams.get("view"));
@@ -353,10 +381,21 @@ export function TutorWorkspace({
     (id: string) => {
       const deleted = materials.find((m) => m.id === id);
       setMaterials((prev) => prev.filter((m) => m.id !== id));
+      // 段階1-B real モード: 行は論理削除で残し、PDF 実体は Storage から消す (コスト優先)。
+      if (isSupabaseConfigured()) {
+        void softDeleteMaterial(id).catch((err) =>
+          console.error("[教材] 論理削除失敗:", err),
+        );
+        if (deleted?.pdfPath) {
+          void removeMaterialPdf(deleted.pdfPath).catch((err) =>
+            console.error("[教材] PDF 実体削除失敗:", err),
+          );
+        }
+      }
       const reply: TutorMessage = {
         id: `t-mat-del-${Date.now()}`,
         role: "tutor",
-        text: `「${deleted?.name ?? id}」を削除したよ。\n（現状は mock のため関連する学習計画やスケジュールには影響しません。Phase 7 永続化で整合化予定。）`,
+        text: `「${deleted?.name ?? id}」を削除したよ。\n（関連する学習計画やスケジュールへの整合は今後対応予定。）`,
         createdAt: new Date().toISOString(),
       };
       setTutorMessages((prev) => [...prev, reply]);
@@ -372,17 +411,85 @@ export function TutorWorkspace({
   // これで一覧 (MaterialsListPane) にも詳細にも登録した教材が出る。Phase 7 で永続化に置換。
   const handleMaterialAdded = useCallback(
     (material: Material, approvedNodeCount: number, file?: File | null) => {
-      setMaterials((prev) => [...prev, material]);
-      // 段階1-C: 読書ビューで任意ページを描画できるよう PDF をセッション保持。
-      if (file) setSessionPdf(material.id, file);
-      const reply: TutorMessage = {
-        id: `t-mat-${Date.now()}`,
-        role: "tutor",
-        text: `「${material.name}」、葵先生が読んだよ！\n体系図 (${approvedNodeCount} ノード) と評価コメントをまとめてくれたから、右で見せるね。`,
-        createdAt: new Date().toISOString(),
+      // 一覧/詳細/体系図への反映 + ゆいの「葵が読んだよ」発話 + 詳細へ遷移 (共通)。
+      const announceAndShow = (m: Material) => {
+        setMaterials((prev) => [...prev, m]);
+        // 段階1-C/1-B: 読書ビューが任意ページを即描画できるよう PDF を L1 キャッシュ。
+        if (file) setSessionPdf(m.id, file);
+        const reply: TutorMessage = {
+          id: `t-mat-${Date.now()}`,
+          role: "tutor",
+          text: `「${m.name}」、葵先生が読んだよ！\n体系図 (${approvedNodeCount} ノード) と評価コメントをまとめてくれたから、右で見せるね。`,
+          createdAt: new Date().toISOString(),
+        };
+        setTutorMessages((prev) => [...prev, reply]);
+        navigate("material-detail", { materialId: m.id });
       };
-      setTutorMessages((prev) => [...prev, reply]);
-      navigate("material-detail", { materialId: material.id });
+
+      // mock モード: 従来通り in-memory push のみ (リロードで消える)。
+      if (!isSupabaseConfigured()) {
+        announceAndShow(material);
+        return;
+      }
+
+      // 段階1-B real モード: 行は即作成 (一覧/体系図は即表示)、PDF は裏でアップロード。
+      void (async () => {
+        try {
+          const ownerId = await getCurrentUserId();
+          const saved = await insertMaterial(
+            {
+              subjectId: material.subjectId,
+              name: material.name,
+              label: material.label,
+              gradeLevel: material.gradeLevel,
+              coveredNodeIds: material.coveredNodeIds,
+              extractedNodes: material.extractedNodes,
+            },
+            ownerId,
+          );
+          announceAndShow(saved);
+
+          // PDF を裏でアップロード (await しない)。完了で pdf_path を記録 + 完了通知。
+          if (file) {
+            uploadMaterialPdf(ownerId, saved.id, file)
+              .then(async ({ path, size }) => {
+                await updateMaterialPdfPath(saved.id, path, size);
+                setMaterials((prev) =>
+                  prev.map((m) =>
+                    m.id === saved.id
+                      ? { ...m, pdfPath: path, pdfSize: size }
+                      : m,
+                  ),
+                );
+                setTutorMessages((prev) => [
+                  ...prev,
+                  {
+                    id: `t-mat-up-${Date.now()}`,
+                    role: "tutor",
+                    text: `「${saved.name}」の PDF も保存できたよ📚\nこれで次に開いた時も、リロードしても一緒に読めるよ。`,
+                    createdAt: new Date().toISOString(),
+                  },
+                ]);
+              })
+              .catch((err) => {
+                console.error("[教材] PDF アップロード失敗:", err);
+                setTutorMessages((prev) => [
+                  ...prev,
+                  {
+                    id: `t-mat-uperr-${Date.now()}`,
+                    role: "tutor",
+                    text: `ごめん、「${saved.name}」の PDF 保存が途中で止まっちゃった💦\n教材は登録できてるよ。今のセッション中は読めるけど、リロード後にもう一度開けない時は登録し直してね。`,
+                    createdAt: new Date().toISOString(),
+                  },
+                ]);
+              });
+          }
+        } catch (err) {
+          console.error("[教材] 保存失敗、in-memory にフォールバック:", err);
+          // DB 保存に失敗してもUXを止めない: in-memory で見せる (リロードで消える)。
+          announceAndShow(material);
+        }
+      })();
     },
     [navigate],
   );

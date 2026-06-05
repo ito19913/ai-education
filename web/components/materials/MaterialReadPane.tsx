@@ -35,7 +35,8 @@ import {
   renderPageToJpeg,
   type LoadedPdf,
 } from "@/lib/admin/pdf-extract-text";
-import { getSessionPdf } from "@/lib/admin/session-pdf-store";
+import { getSessionPdf, setSessionPdf } from "@/lib/admin/session-pdf-store";
+import { downloadMaterialPdf } from "@/lib/materials/pdf-storage";
 import {
   respondViaAokiChat,
   type AokiChatMessage,
@@ -68,6 +69,8 @@ export function MaterialReadPane({
   const [page, setPage] = useState(initialPage && initialPage > 0 ? initialPage : 1);
   const [pageInput, setPageInput] = useState(String(page));
   const [loadError, setLoadError] = useState<"no-file" | "load-fail" | null>(null);
+  // 段階1-B: session-pdf-store に無く Storage から DL 中 (リロード後の復元)。
+  const [downloading, setDownloading] = useState(false);
   // 見開き (2ページ表示) ⇄ 単ページ。default = 見開き (ユーザー要望)。
   const [spread, setSpread] = useState(true);
   // ズーム倍率。1 = エリアにフィット、>1 で拡大 (スクロール)。
@@ -106,48 +109,73 @@ export function MaterialReadPane({
     [material.extractedNodes],
   );
 
-  // ----- PDF ロード (File はセッションストアから取得) -----
+  // ----- PDF ロード -----
+  // 段階1-B: まず L1 キャッシュ (session-pdf-store) を見る。無ければ Storage の
+  // pdfPath から DL してキャッシュ → ロード (リロード後の復元)。どちらも無ければ no-file。
   useEffect(() => {
     let cancelled = false;
     let local: LoadedPdf | null = null;
-    const file = getSessionPdf(material.id);
-    if (!file) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLoadError("no-file");
-      return;
-    }
+
+    const loadFromFile = (file: File) => {
+      loadPdfDocument(file)
+        .then((l) => {
+          if (cancelled) {
+            void l.destroy();
+            return;
+          }
+          local = l;
+          setLoaded(l);
+          setNumPages(l.numPages);
+          setPage((p) => Math.min(Math.max(p, 1), l.numPages));
+          // 1 ページ目の縦横比を実測 (フィット計算用)
+          l.doc
+            .getPage(1)
+            .then((p1) => {
+              const vp = p1.getViewport({ scale: 1 });
+              if (!cancelled && vp.width > 0 && vp.height > 0) {
+                setPageAspect(vp.width / vp.height);
+              }
+              p1.cleanup();
+            })
+            .catch(() => {});
+        })
+        .catch((err) => {
+          console.error("[読書] PDF ロード失敗:", err);
+          if (!cancelled) setLoadError("load-fail");
+        });
+    };
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadError(null);
-    loadPdfDocument(file)
-      .then((l) => {
-        if (cancelled) {
-          void l.destroy();
-          return;
-        }
-        local = l;
-        setLoaded(l);
-        setNumPages(l.numPages);
-        setPage((p) => Math.min(Math.max(p, 1), l.numPages));
-        // 1 ページ目の縦横比を実測 (フィット計算用)
-        l.doc
-          .getPage(1)
-          .then((p1) => {
-            const vp = p1.getViewport({ scale: 1 });
-            if (!cancelled && vp.width > 0 && vp.height > 0) {
-              setPageAspect(vp.width / vp.height);
-            }
-            p1.cleanup();
-          })
-          .catch(() => {});
-      })
-      .catch((err) => {
-        console.error("[読書] PDF ロード失敗:", err);
-        if (!cancelled) setLoadError("load-fail");
-      });
+    const cached = getSessionPdf(material.id);
+    if (cached) {
+      loadFromFile(cached);
+    } else if (material.pdfPath) {
+      // Storage から復元 (リロード後)。
+      setDownloading(true);
+      downloadMaterialPdf(material.pdfPath)
+        .then((file) => {
+          if (cancelled) return;
+          setSessionPdf(material.id, file); // 次回・他ページのため L1 にキャッシュ
+          setDownloading(false);
+          loadFromFile(file);
+        })
+        .catch((err) => {
+          console.error("[読書] Storage からの PDF 取得失敗:", err);
+          if (!cancelled) {
+            setDownloading(false);
+            setLoadError("load-fail");
+          }
+        });
+    } else {
+      setLoadError("no-file");
+    }
+
     return () => {
       cancelled = true;
       if (local) void local.destroy();
     };
-  }, [material.id]);
+  }, [material.id, material.pdfPath]);
 
   // ----- 表示中ページ (1 or 2 枚) を各 canvas に描画 (エリアにフィット × zoom) -----
   useEffect(() => {
@@ -246,6 +274,20 @@ export function MaterialReadPane({
       setSending(false);
     }
   };
+
+  // ----- 段階1-B: Storage から PDF を復元中 -----
+  if (downloading && !loaded) {
+    return (
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-4 bg-canvas p-8 text-center">
+        <Loader2 className="size-8 animate-spin text-primary" />
+        <div className="text-sm text-muted-foreground">
+          PDF を読み込み中…
+          <br />
+          （保存した教材をクラウドから復元しています）
+        </div>
+      </div>
+    );
+  }
 
   // ----- PDF が無い / ロード失敗時 -----
   if (loadError) {
