@@ -14,7 +14,9 @@
  * 本ファイル = デジタル PDF (文字レイヤーあり) 経路 = vision 不要・激安・速い (M4 デジタル段)。
  * スキャン PDF (文字レイヤー無し) の低解像度 vision 区切りは後段 (C-8、別 Server Action 予定)。
  *
- * 環境変数: AI_EDU_ANTHROPIC_API_KEY / モデル: claude-opus-4-8 (プロジェクト統一)。
+ * 環境変数: AI_EDU_ANTHROPIC_API_KEY。
+ * モデル: claude-haiku-4-5 (区切り=構造抽出タスクは Haiku で十分。Opus より大幅に速く・安い。
+ *   読書ビューを開いた時のオンデマンド生成の待ち時間短縮のため、ここだけ下位階層を使う)。
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -110,7 +112,7 @@ ${body}
 まとまり JSON:`;
 
   const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+    model: "claude-haiku-4-5",
     max_tokens: 16000,
     system: [
       { type: "text", text: system, cache_control: { type: "ephemeral" } },
