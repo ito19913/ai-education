@@ -96,6 +96,13 @@ function isFrontMatterName(name: string): boolean {
  */
 const sessionSegmentCache = new Map<string, ConceptSegment[]>();
 
+/**
+ * オンデマンド区切りを「一度試した」教材 ID (成否問わず)。
+ * スキャン本など区切りが 0 件で終わる教材を、再レンダのたびに延々と再生成し続ける
+ * 無限ループを防ぐ (= 1 教材 1 回だけ試す)。成功時は sessionSegmentCache に入る。
+ */
+const attemptedSegmentation = new Set<string>();
+
 /** 範囲 [start,end] のページを最大 max 枚に均等サンプリングして返す。 */
 function sampleRangePages(pages: number[], max: number): number[] {
   if (pages.length <= max) return pages;
@@ -287,11 +294,14 @@ export function MaterialReadPane({
       return;
     }
     if (localSegments || segmenting) return;
+    // 一度試した教材は再試行しない (スキャン本=0件 でも無限ループしない)。
+    if (attemptedSegmentation.has(material.id)) return;
 
     const file = getSessionPdf(material.id);
     if (!file) return;
 
     let cancelled = false;
+    attemptedSegmentation.add(material.id);
     setSegmenting(true);
     (async () => {
       try {
@@ -334,7 +344,7 @@ export function MaterialReadPane({
     material.conceptSegments,
     material.name,
     material.gradeLevel,
-    subject,
+    subject?.name,
     localSegments,
     segmenting,
   ]);
