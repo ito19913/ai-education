@@ -18,7 +18,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import {
   ChevronLeft,
   ChevronRight,
@@ -43,6 +42,8 @@ import {
 } from "@/lib/admin/aoki-chat-claude";
 import { NoteGateDialog } from "@/components/notes/NoteGateDialog";
 import { findConceptForPage } from "@/lib/notes/concept-for-page";
+import { SubjectTeacherAvatar } from "@/components/ui/subject-teacher-avatar";
+import { MarkdownText } from "@/components/chat/MarkdownText";
 import { NotebookPen, Play } from "lucide-react";
 import type {
   AiExtractedNode,
@@ -388,6 +389,11 @@ export function MaterialReadPane({
     );
   }
 
+  // 葵 chat を華やかに: 科目の先生アバター + 名前
+  const teacherSubjectId = subject?.id ?? "subj-english";
+  const teacherName = subject?.teacher?.displayName ?? "葵先生";
+  const teacherAvatarLetter = subject?.teacher?.avatarLetter;
+
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col bg-canvas">
       {/* 上部バー */}
@@ -550,7 +556,22 @@ export function MaterialReadPane({
         </div>
 
         {/* 葵 chat */}
-        <div className="flex min-h-0 flex-col lg:w-[34%] lg:min-w-[360px] lg:max-w-[560px] lg:shrink-0">
+        <div className="flex min-h-0 flex-col bg-gradient-to-b from-sky-50/60 to-background lg:w-[34%] lg:min-w-[360px] lg:max-w-[560px] lg:shrink-0">
+          {/* 先生ヘッダー */}
+          <div className="flex shrink-0 items-center gap-2 border-b border-border bg-background/80 px-3 py-2 backdrop-blur">
+            <SubjectTeacherAvatar
+              subjectId={teacherSubjectId}
+              size={30}
+              fallbackLetter={teacherAvatarLetter}
+              className="ring-2 ring-sky-100"
+            />
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold">{teacherName}</span>
+              <span className="text-[10px] text-muted-foreground">
+                一緒に読みながら教えるよ
+              </span>
+            </div>
+          </div>
           {/* フロー再設計: 学習を開始する (葵が説明) + ノートにまとめる (いつでも) */}
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-primary/5 px-3 py-1.5">
             <Button
@@ -588,30 +609,60 @@ export function MaterialReadPane({
             className="min-h-0 flex-1 overflow-y-auto p-3"
           >
             {history.length === 0 ? (
-              <p className="px-2 py-6 text-center text-sm text-muted-foreground">
-                今開いているページについて、葵先生に何でも聞いてみよう。
-                <br />
-                「このページ何を説明してる?」「ここが分からない」など。
-              </p>
+              <div className="flex flex-col items-center gap-3 px-3 py-8 text-center">
+                <SubjectTeacherAvatar
+                  subjectId={teacherSubjectId}
+                  size={56}
+                  fallbackLetter={teacherAvatarLetter}
+                  className="shadow-sm ring-2 ring-sky-100"
+                />
+                <div className="max-w-[260px] rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3 text-sm text-card-foreground shadow-sm">
+                  こんにちは、{teacherName}だよ📖
+                  <br />
+                  <span className="font-medium text-primary">
+                    ▶ 学習を開始する
+                  </span>{" "}
+                  を押すと、今のページを説明するね。
+                  <br />
+                  分からない所は何でも聞いてね。
+                </div>
+              </div>
             ) : (
-              <ul className="flex flex-col gap-2">
-                {history.map((m, i) => (
-                  <li
-                    key={i}
-                    className={cn(
-                      "whitespace-pre-wrap rounded-md px-3 py-2 text-sm",
-                      m.role === "user"
-                        ? "ml-6 bg-primary/10 text-foreground"
-                        : "mr-6 bg-muted text-foreground",
-                    )}
-                  >
-                    {m.text}
-                  </li>
-                ))}
+              <ul className="flex flex-col gap-3">
+                {history.map((m, i) =>
+                  m.role === "user" ? (
+                    <li key={i} className="flex justify-end">
+                      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm">
+                        {m.text}
+                      </div>
+                    </li>
+                  ) : (
+                    <li key={i} className="flex items-end gap-2">
+                      <SubjectTeacherAvatar
+                        subjectId={teacherSubjectId}
+                        size={28}
+                        fallbackLetter={teacherAvatarLetter}
+                        className="shrink-0 shadow-sm ring-2 ring-white"
+                      />
+                      <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-2 text-sm text-card-foreground shadow-sm">
+                        <MarkdownText text={m.text} />
+                      </div>
+                    </li>
+                  ),
+                )}
                 {sending && (
-                  <li className="mr-6 flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" />
-                    <span>葵先生が今のページを読んでいます…</span>
+                  <li className="flex items-end gap-2">
+                    <SubjectTeacherAvatar
+                      subjectId={teacherSubjectId}
+                      size={28}
+                      fallbackLetter={teacherAvatarLetter}
+                      className="shrink-0 shadow-sm ring-2 ring-white"
+                    />
+                    <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-3 shadow-sm">
+                      <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.3s]" />
+                      <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.15s]" />
+                      <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" />
+                    </div>
                   </li>
                 )}
               </ul>
