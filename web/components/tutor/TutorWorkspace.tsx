@@ -30,9 +30,12 @@ import {
   fetchMaterials,
   insertMaterial,
   updateMaterialPdfPath,
+  updateMaterialSegments,
   softDeleteMaterial,
   getCurrentUserId,
 } from "@/lib/materials/materials-repo";
+import { extractFullPageTexts } from "@/lib/admin/pdf-extract-text";
+import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
 import {
   uploadMaterialPdf,
   removeMaterialPdf,
@@ -501,6 +504,52 @@ export function TutorWorkspace({
   // これで一覧 (MaterialsListPane) にも詳細にも登録した教材が出る。Phase 7 で永続化に置換。
   const handleMaterialAdded = useCallback(
     (material: Material, approvedNodeCount: number, file?: File | null) => {
+      // まとまり (一単元=1概念) 区切り (M1-M10、2026-06-06)。
+      // 登録後バックグラウンドで全書を読み、デジタル PDF は本文テキストで概念単位に区切る。
+      // 結果は materials state に反映 (+ real モードは DB 保存) + ゆいが「区切れたよ」と通知。
+      // スキャン PDF (文字レイヤー無し) は今は区切らない (将来 C-8 の低解像度 vision 経路)。
+      const runSegmentation = (m: Material, persist: boolean) => {
+        if (!file) return;
+        const subjectName =
+          subjects.find((s) => s.id === m.subjectId)?.name ?? "教科";
+        void (async () => {
+          try {
+            const { hasTextLayer, packedText } = await extractFullPageTexts(file);
+            if (!hasTextLayer || packedText.length === 0) return;
+            const segments = await segmentConceptsFromText({
+              materialName: m.name,
+              subjectName,
+              gradeLevel: m.gradeLevel ?? "中2",
+              packedText,
+            });
+            if (segments.length === 0) return;
+            setMaterials((prev) =>
+              prev.map((x) =>
+                x.id === m.id ? { ...x, conceptSegments: segments } : x,
+              ),
+            );
+            if (persist) {
+              try {
+                await updateMaterialSegments(m.id, segments);
+              } catch (err) {
+                console.error("[まとまり] セグメント保存失敗:", err);
+              }
+            }
+            setTutorMessages((prev) => [
+              ...prev,
+              {
+                id: `t-mat-seg-${Date.now()}`,
+                role: "tutor",
+                text: `「${m.name}」を ${segments.length} 個のまとまり (一単元) に区切ったよ✂️\n「一緒に読む」を開くと、葵先生が「今日はここからここまで」と単元ごとに案内してくれるよ。`,
+                createdAt: new Date().toISOString(),
+              },
+            ]);
+          } catch (err) {
+            console.error("[まとまり] 区切り失敗 (動線は止めない):", err);
+          }
+        })();
+      };
+
       // 一覧/詳細/体系図への反映 + ゆいの「葵が読んだよ」発話 + 詳細へ遷移 (共通)。
       const announceAndShow = (m: Material) => {
         setMaterials((prev) => [...prev, m]);
@@ -519,6 +568,7 @@ export function TutorWorkspace({
       // mock モード: 従来通り in-memory push のみ (リロードで消える)。
       if (!isSupabaseConfigured()) {
         announceAndShow(material);
+        runSegmentation(material, false);
         return;
       }
 
@@ -538,6 +588,8 @@ export function TutorWorkspace({
             ownerId,
           );
           announceAndShow(saved);
+          // まとまり区切りを裏で実行 (DB 保存あり)。PDF アップロードと並走してよい。
+          runSegmentation(saved, true);
 
           // PDF を裏でアップロード (await しない)。完了で pdf_path を記録 + 完了通知。
           if (file) {
@@ -578,10 +630,11 @@ export function TutorWorkspace({
           console.error("[教材] 保存失敗、in-memory にフォールバック:", err);
           // DB 保存に失敗してもUXを止めない: in-memory で見せる (リロードで消える)。
           announceAndShow(material);
+          runSegmentation(material, false);
         }
       })();
     },
-    [navigate],
+    [navigate, subjects],
   );
 
   // ----- C30 2026-05-25 grill 2: 科目追加完了時の処理 -----
@@ -812,6 +865,13 @@ export function TutorWorkspace({
               navigate("material-detail", { materialId: readMaterial.id })
             }
             onNoteAdded={handleNoteAdded}
+            notedSegmentIds={
+              new Set(
+                noteEntries
+                  .filter((e) => e.sourceSegmentId)
+                  .map((e) => e.sourceSegmentId as string),
+              )
+            }
           />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">

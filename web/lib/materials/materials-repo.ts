@@ -15,6 +15,7 @@
 import { createClient } from "@/lib/supabase/client";
 import type {
   AiExtractedNode,
+  ConceptSegment,
   Material,
   MaterialLabel,
 } from "@/lib/learn/types";
@@ -29,6 +30,7 @@ type MaterialRow = {
   grade_level: string | null;
   covered_node_ids: string[] | null;
   extracted_nodes: AiExtractedNode[] | null;
+  concept_segments: ConceptSegment[] | null;
   pdf_path: string | null;
   pdf_size: number | null;
   deleted_at: string | null;
@@ -44,6 +46,10 @@ function rowToMaterial(row: MaterialRow): Material {
     gradeLevel: row.grade_level ?? undefined,
     coveredNodeIds: row.covered_node_ids ?? [],
     extractedNodes: row.extracted_nodes ?? undefined,
+    conceptSegments:
+      row.concept_segments && row.concept_segments.length > 0
+        ? row.concept_segments
+        : undefined,
     pdfPath: row.pdf_path ?? undefined,
     pdfSize: row.pdf_size ?? undefined,
     deletedAt: row.deleted_at ?? undefined,
@@ -118,6 +124,19 @@ export async function updateMaterialPdfPath(
   const { error } = await supabase
     .from("materials")
     .update({ pdf_path: pdfPath, pdf_size: pdfSize })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** まとまり区切り (ConceptSegment[]) を保存 (登録時バックグラウンド生成の完了時、M4)。 */
+export async function updateMaterialSegments(
+  id: string,
+  segments: ConceptSegment[],
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("materials")
+    .update({ concept_segments: segments })
     .eq("id", id);
   if (error) throw error;
 }

@@ -37,7 +37,11 @@ import {
 } from "@/lib/notes/note-gate-claude";
 import { insertNoteEntry, getCurrentUserId } from "@/lib/notes/notes-repo";
 import type { AokiChatMessage } from "@/lib/admin/aoki-chat-claude";
-import type { AiExtractedNode, NoteEntry } from "@/lib/learn/types";
+import type {
+  AiExtractedNode,
+  ConceptSegment,
+  NoteEntry,
+} from "@/lib/learn/types";
 
 type Props = {
   open: boolean;
@@ -54,8 +58,10 @@ type Props = {
   pageNumber?: number;
   /** 親が描画した現在ページ画像 (base64 JPEG、改行連結) */
   pageImagesPacked?: string;
-  /** findConceptForPage の結果 (概念ヒント + 出典ページ範囲) */
+  /** findConceptForPage の結果 (概念ヒント + 出典ページ範囲、まとまりが無い時のレガシー) */
   currentConcept?: AiExtractedNode | null;
+  /** まとまり (一単元=1概念) 区切り (M1)。あれば概念名ヒント + sourceSegmentId に使う。 */
+  segment?: ConceptSegment | null;
   /** ここまでの葵 chat 対話 (要約に反映、grill Q2) */
   dialogue?: AokiChatMessage[];
   /** create: 通過してノートに刻めたエントリを親に渡す */
@@ -94,6 +100,7 @@ export function NoteGateDialog(props: Props) {
     pageNumber,
     pageImagesPacked,
     currentConcept,
+    segment,
     dialogue,
     onCommitted,
     existingEntry,
@@ -109,8 +116,13 @@ export function NoteGateDialog(props: Props) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome>("understood");
 
+  // 出典の表示用ページ範囲。まとまりがあれば印刷ページヒント (人間表示用、M3) を優先。
   const sourcePageRange =
-    currentConcept?.pageRange ?? (pageNumber ? `p.${pageNumber}` : undefined);
+    segment?.printPageHint ??
+    currentConcept?.pageRange ??
+    (pageNumber ? `p.${pageNumber}` : undefined);
+  // 概念名のヒント (まとまり優先)。
+  const conceptHint = segment?.conceptName ?? currentConcept?.name ?? null;
 
   // ----- 開いた時の初期化 -----
   useEffect(() => {
@@ -132,13 +144,13 @@ export function NoteGateDialog(props: Props) {
 
     // create: ページを vision で読んで要約を作る。
     setStage("summarizing");
-    setConceptName(currentConcept?.name ?? "");
+    setConceptName(conceptHint ?? "");
     setSummary("");
     (async () => {
       try {
         if (!useClaude) {
           if (cancelled) return;
-          setConceptName(currentConcept?.name ?? "この論点");
+          setConceptName(conceptHint ?? "この論点");
           setSummary(
             currentConcept?.description ??
               "（AI 要約は Claude 有効時に生成されます。今は仮の要約です）",
@@ -150,7 +162,7 @@ export function NoteGateDialog(props: Props) {
           materialName: materialName ?? "教材",
           subjectName: subjectName ?? "教科",
           gradeLevel: gradeLevel ?? "中2",
-          currentConceptName: currentConcept?.name ?? null,
+          currentConceptName: conceptHint,
           pageImagesPacked,
           pageNumber,
           dialogue: dialogue?.map((m) => ({ role: m.role, text: m.text })),
@@ -162,7 +174,7 @@ export function NoteGateDialog(props: Props) {
       } catch (err) {
         console.error("[ノート] 要約生成失敗:", err);
         if (cancelled) return;
-        setConceptName(currentConcept?.name ?? "この論点");
+        setConceptName(conceptHint ?? "この論点");
         setSummary(
           currentConcept?.description ??
             "（要約をうまく作れませんでした。ページを見ながら自分で要点を説明してみよう）",
@@ -184,6 +196,7 @@ export function NoteGateDialog(props: Props) {
     pageNumber,
     pageImagesPacked,
     currentConcept,
+    conceptHint,
     dialogue,
   ]);
 
@@ -215,6 +228,7 @@ export function NoteGateDialog(props: Props) {
               status,
               sourceMaterialId: materialId,
               sourcePageRange,
+              sourceSegmentId: segment?.id,
               userNote: trimmedMemo,
             },
             ownerId,
@@ -235,6 +249,7 @@ export function NoteGateDialog(props: Props) {
         status,
         sourceMaterialId: materialId,
         sourcePageRange,
+        sourceSegmentId: segment?.id,
         userNote: trimmedMemo,
       });
       setOutcome(status);
@@ -251,6 +266,7 @@ export function NoteGateDialog(props: Props) {
       memo,
       materialId,
       sourcePageRange,
+      segment,
       onCommitted,
     ],
   );

@@ -229,6 +229,71 @@ export async function renderPageToCanvas(
   }
 }
 
+// 全書区切り (まとまり M4) 用: 本文テキスト抽出の上限文字数。
+const FULL_TEXT_MAX_CHARS = 160000;
+// 文字レイヤーがあると判定する 1 ページあたり平均文字数の下限 (これ未満ならスキャン扱い)。
+const DIGITAL_TEXT_MIN_TOTAL = 200;
+
+export type FullPageTexts = {
+  /** 文字レイヤーがあった (= デジタル PDF、テキスト区切りが使える) */
+  hasTextLayer: boolean;
+  /**
+   * 本文全ページのテキストを `【pdf:N】 ...` の改行連結で 1 文字列にしたもの。
+   * N は PDF 紙番号 (1-indexed)。segment-claude がこの N で区切りを返す (M3)。
+   */
+  packedText: string;
+  /** 総ページ数 */
+  numPages: number;
+};
+
+/**
+ * PDF File から本文全ページのテキストを抽出する (デジタル PDF の全書区切り用、M4)。
+ * 各ページを `【pdf:N】 本文` でタグ付けして連結。文字レイヤーが無い (スキャン) 場合は
+ * hasTextLayer:false を返す (呼び出し側は区切りをスキップ、将来 C-8 の vision 経路へ)。
+ */
+export async function extractFullPageTexts(file: File): Promise<FullPageTexts> {
+  const EMPTY: FullPageTexts = {
+    hasTextLayer: false,
+    packedText: "",
+    numPages: 0,
+  };
+  if (typeof window === "undefined") return EMPTY;
+
+  const pdfjs = await getPdfjs();
+  const data = await file.arrayBuffer();
+  const loadingTask = pdfjs.getDocument({ data });
+  const doc = await loadingTask.promise;
+  try {
+    const total = doc.numPages;
+    const parts: string[] = [];
+    let totalLen = 0;
+    for (let n = 1; n <= total; n++) {
+      const page = await doc.getPage(n);
+      const content = await page.getTextContent();
+      const text = content.items
+        .map((item) => ("str" in item ? item.str : ""))
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      page.cleanup();
+      if (text.length > 0) {
+        parts.push(`【pdf:${n}】 ${text}`);
+        totalLen += text.length;
+      }
+      // 上限到達で打ち切り (巨大本のコスト/速度対策、末尾は概念区切りに不要なことが多い)
+      if (totalLen >= FULL_TEXT_MAX_CHARS) break;
+    }
+    const hasTextLayer = totalLen >= DIGITAL_TEXT_MIN_TOTAL;
+    return {
+      hasTextLayer,
+      packedText: hasTextLayer ? parts.join("\n") : "",
+      numPages: total,
+    };
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
 /** PDF の outline (しおり) ノードの最小型 */
 type OutlineNode = {
   title: string;

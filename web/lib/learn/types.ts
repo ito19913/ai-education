@@ -591,6 +591,13 @@ export type Material = {
   pdfPath?: string;
   /** 元 PDF のバイトサイズ (段階1-B)。 */
   pdfSize?: number;
+  /**
+   * 教材の「まとまり (一単元) = 1 概念」区切り (M1-M10、2026-06-06)。
+   * 登録時バックグラウンドで全書を区切り、PDF 紙番号ベースで保存。
+   * 読書ビューの単元提示・範囲要約・縦スライダー・N9④スケジュール配分の土台。
+   * 段階1-B 同様 materials.concept_segments (JSONB) に永続化。
+   */
+  conceptSegments?: ConceptSegment[];
 };
 
 /**
@@ -612,8 +619,13 @@ export type NoteEntry = {
   status: "understood" | "open";
   /** 出典の教材 ID (N5) */
   sourceMaterialId?: string;
-  /** 出典のページ範囲 (N5、"p.42-45") */
+  /** 出典のページ範囲 (N5、"p.42-45"、表示用文字列) */
   sourcePageRange?: string;
+  /**
+   * このノートを刻んだ「まとまり」= ConceptSegment.id への参照 (M1、2026-06-06)。
+   * スライダーの「ノート化済み緑チェック」(M5) はこの有無で判定する。
+   */
+  sourceSegmentId?: string;
   /** ノート体系図③の親 (概念階層、未指定 = root) */
   parentRef?: string;
   /** 子の自分メモ (N7: 本体は守り、子はメモで所有) */
@@ -1385,6 +1397,33 @@ export type AiExtractedNode = {
   matchedNodeId: string | null;
   /** 信頼度（0-1、mock では固定） */
   confidence: number;
+};
+
+/**
+ * 教材の「まとまり (一単元) = 1 概念」区切り (まとめノート M1-M10、2026-06-06)。
+ *
+ * grill 確定: ノートは「今ページ要約」でなく「一単元 (まとまり) 要約」であるべき。
+ * まとまり = 1 概念 = 1 ノートエントリ (M1)。話が切り替わる所を AI が中身を読んで
+ * **PDF の紙番号 (PDF page index、1-indexed) で直接区切る** (M3)。印刷ページ番号
+ * (AiExtractedNode.pageRange) とは意味が違う数値なので、別物として持つ (混ぜると
+ * 印刷⇄PDF ズレのバグが再発する)。登録時バックグラウンドで全書を区切り、
+ * materials.concept_segments (JSONB) に保存 (M4)。
+ */
+export type ConceptSegment = {
+  /** material 内ユニークな安定 ID ("seg-1" 等) */
+  id: string;
+  /** 概念名 (M1: 話のまとまりの名前) */
+  conceptName: string;
+  /** まとまりの開始 PDF 紙番号 (1-indexed、PDF page index、M3) */
+  startPdfPage: number;
+  /** まとまりの終了 PDF 紙番号 (1-indexed、含む) */
+  endPdfPage: number;
+  /** 親の目次ノード (AiExtractedNode.tempId) への参照 (任意、M1 の階層繋ぎ) */
+  parentNodeTempId?: string;
+  /** 区切りの由来 (デジタル本文テキスト / スキャン vision / 目次土台 / 言葉修正) */
+  source?: "digital-text" | "scan-vision" | "outline" | "manual";
+  /** 印刷ページ番号などの人間表示用ヒント (区切りには使わない、M3) */
+  printPageHint?: string;
 };
 
 /** 教材登録ウィザードの入力データ */

@@ -41,12 +41,18 @@ import {
   type AokiChatMessage,
 } from "@/lib/admin/aoki-chat-claude";
 import { NoteGateDialog } from "@/components/notes/NoteGateDialog";
-import { findConceptForPage } from "@/lib/notes/concept-for-page";
+import {
+  findConceptForPage,
+  findSegmentForPage,
+  findNextUnnotedSegment,
+  segmentPages,
+} from "@/lib/notes/concept-for-page";
 import { SubjectTeacherAvatar } from "@/components/ui/subject-teacher-avatar";
 import { MarkdownText } from "@/components/chat/MarkdownText";
 import { NotebookPen, Play } from "lucide-react";
 import type {
   AiExtractedNode,
+  ConceptSegment,
   Material,
   NoteEntry,
   Subject,
@@ -60,7 +66,22 @@ type Props = {
   onBack: () => void;
   /** まとめノート N9①: 能動ゲート通過でエントリを刻んだ時に親へ通知 */
   onNoteAdded?: (entry: NoteEntry) => void;
+  /** 既にノート化済みの まとまり ID 集合 (M7: 次の未まとめ単元の提示に使う) */
+  notedSegmentIds?: Set<string>;
 };
+
+// まとまり全体を vision で渡す時の最大ページ数 (payload / 速度の上限、M8)。
+// これを超える単元は均等サンプリングして代表ページだけ渡す。
+const MAX_SEGMENT_VISION_PAGES = 12;
+
+/** 範囲 [start,end] のページを最大 max 枚に均等サンプリングして返す。 */
+function sampleRangePages(pages: number[], max: number): number[] {
+  if (pages.length <= max) return pages;
+  const out: number[] = [];
+  const stepF = (pages.length - 1) / (max - 1);
+  for (let i = 0; i < max; i++) out.push(pages[Math.round(i * stepF)]);
+  return [...new Set(out)];
+}
 
 /** "p.24-37" / "p.24-" などから開始ページ番号を取り出す。取れなければ null。 */
 function parseStartPage(pageRange?: string): number | null {
@@ -75,6 +96,7 @@ export function MaterialReadPane({
   initialPage,
   onBack,
   onNoteAdded,
+  notedSegmentIds,
 }: Props) {
   const [loaded, setLoaded] = useState<LoadedPdf | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -112,14 +134,28 @@ export function MaterialReadPane({
   const [sending, setSending] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
-  // 単元ジャンプ用リスト (extractedNodes のうちページ番号が取れるもの)
-  const unitJumps = useMemo(
-    () =>
-      (material.extractedNodes ?? [])
-        .map((n) => ({ name: n.name, start: parseStartPage(n.pageRange) }))
-        .filter((u): u is { name: string; start: number } => u.start !== null),
-    [material.extractedNodes],
+  // まとまり (一単元=1概念) 区切り。あれば PDF 紙番号ベースで正確 (M3)。
+  const segments = material.conceptSegments;
+
+  // 今表示中ページが属する まとまり (M7: 範囲提示・範囲要約の基準)。
+  const currentSegment = useMemo(
+    () => findSegmentForPage(page, segments),
+    [page, segments],
   );
+
+  // 単元ジャンプ用リスト。
+  // まとまりがあれば PDF 紙番号で正確にジャンプ (推奨)。無ければ従来の extractedNodes
+  // (印刷ページ番号≒近傍、レガシー) にフォールバック。
+  const unitJumps = useMemo(() => {
+    if (segments && segments.length > 0) {
+      return [...segments]
+        .sort((a, b) => a.startPdfPage - b.startPdfPage)
+        .map((s) => ({ name: s.conceptName, start: s.startPdfPage }));
+    }
+    return (material.extractedNodes ?? [])
+      .map((n) => ({ name: n.name, start: parseStartPage(n.pageRange) }))
+      .filter((u): u is { name: string; start: number } => u.start !== null);
+  }, [segments, material.extractedNodes]);
 
   // ----- PDF ロード -----
   // 段階1-B: まず L1 キャッシュ (session-pdf-store) を見る。無ければ Storage の
@@ -248,29 +284,60 @@ export function MaterialReadPane({
   const [gateOpen, setGateOpen] = useState(false);
   const [gatePacked, setGatePacked] = useState("");
   const [gateConcept, setGateConcept] = useState<AiExtractedNode | null>(null);
+  const [gateSegment, setGateSegment] = useState<ConceptSegment | null>(null);
   const [preparingGate, setPreparingGate] = useState(false);
   // フロー再設計: 学習セッション開始 (葵が今のページを自分から説明する)
   const [starting, setStarting] = useState(false);
 
+  // 指定ページ群を JPEG 化して改行連結 1 文字列にする (vision 用、共通)。
+  const packPages = useCallback(
+    async (pages: number[]): Promise<string | undefined> => {
+      if (!loaded) return undefined;
+      const imgs: string[] = [];
+      for (const pn of pages) {
+        if (pn < 1 || pn > numPages) continue;
+        const b64 = await renderPageToJpeg(loaded.doc, pn);
+        if (b64) imgs.push(b64);
+      }
+      return imgs.length > 0 ? imgs.join("\n") : undefined;
+    },
+    [loaded, numPages],
+  );
+
+  // M6/M7: 学習開始 = AI が「今日のまとまり」を提示 → 範囲先頭へジャンプ → オリエン
+  // (「ここはこういう所。まず通して読もう、分からない所は飛ばして OK」) → 2 フェーズの①通読へ。
   const handleStartLearning = useCallback(async () => {
     if (!loaded || starting || sending) return;
     setStarting(true);
     try {
-      const imgs: string[] = [];
-      for (const pn of pagesToShow) {
-        const b64 = await renderPageToJpeg(loaded.doc, pn);
-        if (b64) imgs.push(b64);
-      }
+      // 対象まとまり: 今ページの所属 → 次の未まとめ → 先頭、の順で決める (M7)。
+      const target =
+        currentSegment ??
+        findNextUnnotedSegment(segments, notedSegmentIds ?? new Set()) ??
+        (segments && segments.length > 0 ? segments[0] : null);
+
+      // 範囲があれば先頭ページへ移動 (子はページ番号を意識しない、M2/M3)。
+      if (target) setPage(target.startPdfPage);
+
+      // 渡す画像: まとまりがあれば範囲全体 (大きければサンプリング)、無ければ今表示ページ。
+      const visionPages = target
+        ? sampleRangePages(segmentPages(target), MAX_SEGMENT_VISION_PAGES)
+        : pagesToShow;
+      const packed = await packPages(visionPages);
+
+      const userMessage = target
+        ? `（学習を開始）今日のまとまりは「${target.conceptName}」だよ。これは1つのまとまり(一単元)。まず「このまとまりはこういう所だよ」と全体像を2〜3文で説明し、「ここに注意して読んでみてね」と読む時の着目点を1つ示して。最後に「まずは一度ざっと通して読んでみよう、分からない所は飛ばして大丈夫。読み終えて『ノートにまとめる』を押したら、一緒に概念ごとにまとめていこうね」と通読を促して。`
+        : "（学習を開始）今開いているページの要点を、中学生にわかるように2〜4文で説明して。最後に「分からないところがあれば聞いてね」と一言添えて。";
+
       const aiText = await respondViaAokiChat({
         materialName: material.name,
         subjectName: subject?.name ?? "教科",
         gradeLevel: material.gradeLevel ?? "中2",
-        focusNodeName: null,
+        focusNodeName: target?.conceptName ?? null,
         history,
-        userMessage:
-          "（学習を開始）今開いているページの要点を、中学生にわかるように2〜4文で説明して。最後に「分からないところがあれば聞いてね」と一言添えて。",
-        currentPageImagesPacked: imgs.length > 0 ? imgs.join("\n") : undefined,
-        currentPageNumber: page,
+        userMessage,
+        currentPageImagesPacked: packed,
+        currentPageNumber: target?.startPdfPage ?? page,
       });
       // 葵の説明だけを積む (キックオフ発話は可視 history に出さない = 自分から説明したように見せる)
       setHistory((prev) => [...prev, { role: "assistant", text: aiText }]);
@@ -286,27 +353,53 @@ export function MaterialReadPane({
     } finally {
       setStarting(false);
     }
-  }, [loaded, starting, sending, pagesToShow, material, subject, page, history]);
+  }, [
+    loaded,
+    starting,
+    sending,
+    currentSegment,
+    segments,
+    notedSegmentIds,
+    pagesToShow,
+    packPages,
+    material,
+    subject,
+    page,
+    history,
+  ]);
 
+  // M8: まとめる = まとまり (一単元) 全体を vision で渡して 1 概念の要約を作る。
+  // まとまりが無ければ従来通り今表示ページだけ (フォールバック)。
   const openNoteGate = useCallback(async () => {
     if (!loaded || preparingGate) return;
     setPreparingGate(true);
     try {
-      // 今表示中のページを JPEG 化 (葵 chat と同じ手順)
-      const imgs: string[] = [];
-      for (const pn of pagesToShow) {
-        const b64 = await renderPageToJpeg(loaded.doc, pn);
-        if (b64) imgs.push(b64);
-      }
-      setGatePacked(imgs.join("\n"));
-      setGateConcept(findConceptForPage(page, material.extractedNodes));
+      const seg = currentSegment;
+      const visionPages = seg
+        ? sampleRangePages(segmentPages(seg), MAX_SEGMENT_VISION_PAGES)
+        : pagesToShow;
+      const packed = await packPages(visionPages);
+      setGatePacked(packed ?? "");
+      setGateSegment(seg);
+      // レガシー目次ノード (印刷番号) はまとまりが無い時だけ概念名ヒントに使う。
+      setGateConcept(
+        seg ? null : findConceptForPage(page, material.extractedNodes),
+      );
       setGateOpen(true);
     } catch (err) {
       console.error("[読書] ノートゲート準備失敗:", err);
     } finally {
       setPreparingGate(false);
     }
-  }, [loaded, preparingGate, pagesToShow, page, material.extractedNodes]);
+  }, [
+    loaded,
+    preparingGate,
+    currentSegment,
+    pagesToShow,
+    packPages,
+    page,
+    material.extractedNodes,
+  ]);
 
   const handleSend = async () => {
     const userMessage = draft.trim();
@@ -603,6 +696,14 @@ export function MaterialReadPane({
               )}
               <span>ノートにまとめる</span>
             </Button>
+            {currentSegment && (
+              <span
+                className="ml-auto truncate rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+                title="今読んでいる まとまり (一単元)"
+              >
+                今のまとまり: {currentSegment.conceptName}
+              </span>
+            )}
           </div>
           <div
             ref={chatScrollRef}
@@ -713,6 +814,7 @@ export function MaterialReadPane({
         pageNumber={page}
         pageImagesPacked={gatePacked}
         currentConcept={gateConcept}
+        segment={gateSegment}
         dialogue={history}
         onCommitted={(entry) => {
           onNoteAdded?.(entry);

@@ -27,6 +27,7 @@ type NoteEntryRow = {
   status: string;
   source_material_id: string | null;
   source_page_range: string | null;
+  source_segment_id: string | null;
   parent_ref: string | null;
   user_note: string | null;
   deleted_at: string | null;
@@ -41,6 +42,7 @@ function rowToNoteEntry(row: NoteEntryRow): NoteEntry {
     status: row.status === "open" ? "open" : "understood",
     sourceMaterialId: row.source_material_id ?? undefined,
     sourcePageRange: row.source_page_range ?? undefined,
+    sourceSegmentId: row.source_segment_id ?? undefined,
     parentRef: row.parent_ref ?? undefined,
     userNote: row.user_note ?? undefined,
     deletedAt: row.deleted_at ?? undefined,
@@ -69,6 +71,8 @@ export type NewNoteEntryInput = {
   status?: "understood" | "open";
   sourceMaterialId?: string;
   sourcePageRange?: string;
+  /** 刻んだ まとまり ConceptSegment.id (M1)。スライダーの緑チェック判定に使う。 */
+  sourceSegmentId?: string;
   parentRef?: string;
   /** まとめ時に取り込んだ子のメモ (N7、grill Q2) */
   userNote?: string;
@@ -90,6 +94,7 @@ export async function insertNoteEntry(
       status: input.status ?? "understood",
       source_material_id: input.sourceMaterialId ?? null,
       source_page_range: input.sourcePageRange ?? null,
+      source_segment_id: input.sourceSegmentId ?? null,
       parent_ref: input.parentRef ?? null,
       user_note: input.userNote ?? null,
     })
