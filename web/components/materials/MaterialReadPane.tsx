@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -511,7 +512,13 @@ export function MaterialReadPane({
       const block = blocks[index];
       if (!block || !loaded) return;
       setGuidedIndex(index);
-      setPage(block.pdfPage); // 該当ページを表示
+      // 既に見えているページ (見開きの左右どちらか) ならめくらず、ハイライトだけ隣へ動かす。
+      // 見えていないページの時だけ移動 (見開きの中で左→右へ自然に進める)。
+      setPage((cur) =>
+        block.pdfPage === cur || (spread && block.pdfPage === cur + 1)
+          ? cur
+          : block.pdfPage,
+      );
       const packed = await packPages([block.pdfPage]);
       const levelText =
         level <= 0
@@ -536,7 +543,7 @@ export function MaterialReadPane({
       });
       setHistory((prev) => [...prev, { role: "assistant", text: aiText }]);
     },
-    [loaded, packPages, material, subject, history],
+    [loaded, spread, packPages, material, subject, history],
   );
 
   // 入口の一覧から まとまり を選んだ時: ガイド読書を開始 (ブロックプラン生成 → 最初を解説)。
@@ -554,7 +561,7 @@ export function MaterialReadPane({
           ...prev,
           {
             role: "assistant",
-            text: `「${seg.conceptName}」を一緒に見ていこう📖\n上から順に、わたしが少しずつ説明するね。**次へ**で進めて、むずかしかったら**もっと簡単に**、聞きたいことはいつでも入力してOK。`,
+            text: `「${seg.conceptName}」を一緒に見ていこう📖\n読みたい所を **「前 / 次」やページのタップ** で選んで(青い枠が動くよ)、**「ここを解説」**を押すと、わたしがそこを説明するね。むずかしかったら **やさしく**、聞きたいことはいつでも入力してOK。`,
           },
         ]);
         // ブロックプラン (セッションキャッシュ優先)。
@@ -586,8 +593,10 @@ export function MaterialReadPane({
             },
           ];
         }
+        // 最初のブロックを「選択」状態にする (まだ読まない、G-2)。子が「ここを解説」で読む。
         setGuidedBlocks(blocks);
-        await explainGuidedBlock(blocks, 0, 0, seg.conceptName);
+        setGuidedIndex(0);
+        setPage(blocks[0]?.pdfPage ?? seg.startPdfPage);
       } catch (err) {
         console.error("[ガイド読書] 開始失敗:", err);
         setHistory((prev) => [
@@ -601,16 +610,7 @@ export function MaterialReadPane({
         setGuidedBusy(false);
       }
     },
-    [
-      loaded,
-      starting,
-      sending,
-      guidedBusy,
-      packPages,
-      material,
-      subject,
-      explainGuidedBlock,
-    ],
+    [loaded, starting, sending, guidedBusy, packPages, material, subject],
   );
 
   const startUnit = useCallback(
@@ -620,30 +620,38 @@ export function MaterialReadPane({
     [startGuided],
   );
 
-  // 「次へ」: 次のブロックを解説。最後まで来たら まとめを促す。
-  const goNextBlock = useCallback(async () => {
+  // 選択カーソルを動かす (API なし・即時)。ハイライトと表示ページだけ動かし、まだ読まない。
+  // → 子が「次/前/タップ」で読む所と順序を自由に選んでから「ここを解説」で読める。
+  const moveCursor = useCallback(
+    (index: number) => {
+      if (!guidedBlocks) return;
+      const clamped = Math.min(guidedBlocks.length - 1, Math.max(0, index));
+      setGuidedIndex(clamped);
+      const block = guidedBlocks[clamped];
+      if (block) {
+        setPage((cur) =>
+          block.pdfPage === cur || (spread && block.pdfPage === cur + 1)
+            ? cur
+            : block.pdfPage,
+        );
+      }
+    },
+    [guidedBlocks, spread],
+  );
+
+  // 「ここを解説」: 今選択中 (カーソル) のブロックを葵が読む (API)。
+  const explainCursor = useCallback(async () => {
     if (!guidedBlocks || guidedBusy || sending) return;
-    const ni = guidedIndex + 1;
-    if (ni >= guidedBlocks.length) {
-      setHistory((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          text: "このまとまりはここまで見たね！おつかれさま😊 もう一度読み返してもOK。よければ上の**「ノートにまとめる」**で、今の内容を1つのまとまりとしてノートに残そう。",
-        },
-      ]);
-      return;
-    }
     setGuidedBusy(true);
     try {
       await explainGuidedBlock(
         guidedBlocks,
-        ni,
+        guidedIndex,
         guidedLevel,
         guidedSegment?.conceptName ?? "",
       );
     } catch (err) {
-      console.error("[ガイド読書] 次へ失敗:", err);
+      console.error("[ガイド読書] 解説失敗:", err);
     } finally {
       setGuidedBusy(false);
     }
@@ -686,6 +694,43 @@ export function MaterialReadPane({
       guidedSegment,
       explainGuidedBlock,
     ],
+  );
+
+  // ページをタップ → その位置のブロックを「選択」する (G-2、読まずに選ぶだけ)。
+  // bbox が点を含む最小ブロック優先、無ければそのページ内で中心が最も近いブロック。
+  const handlePageClick = useCallback(
+    (pn: number, e: ReactMouseEvent<HTMLDivElement>) => {
+      if (!guidedBlocks || guidedBusy || sending) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      let best = -1;
+      let bestArea = Number.POSITIVE_INFINITY;
+      guidedBlocks.forEach((b, i) => {
+        if (b.pdfPage !== pn || !b.bbox) return;
+        const { x: bx, y: by, w, h } = b.bbox;
+        if (x >= bx && x <= bx + w && y >= by && y <= by + h && w * h < bestArea) {
+          bestArea = w * h;
+          best = i;
+        }
+      });
+      if (best === -1) {
+        let bestDist = Number.POSITIVE_INFINITY;
+        guidedBlocks.forEach((b, i) => {
+          if (b.pdfPage !== pn || !b.bbox) return;
+          const cx = b.bbox.x + b.bbox.w / 2;
+          const cy = b.bbox.y + b.bbox.h / 2;
+          const d = (x - cx) ** 2 + (y - cy) ** 2;
+          if (d < bestDist) {
+            bestDist = d;
+            best = i;
+          }
+        });
+      }
+      if (best >= 0) moveCursor(best);
+    },
+    [guidedBlocks, guidedBusy, sending, moveCursor],
   );
 
   // M8: まとめる = まとまり (一単元) 全体を vision で渡して 1 概念の要約を作る。
@@ -965,15 +1010,39 @@ export function MaterialReadPane({
               // 見開き全体が画面の高さに収まるように、各ページは高さフィット
               // (本を開いた見た目。縦スクロール不要でバランス良く)
               <div className="flex min-h-full w-full items-center justify-center gap-0">
-                {pagesToShow.map((pn, i) => (
-                  <canvas
-                    key={pn}
-                    ref={(el) => {
-                      canvasRefs.current[i] = el;
-                    }}
-                    className="block shrink-0 bg-white"
-                  />
-                ))}
+                {pagesToShow.map((pn, i) => {
+                  // ガイド読書中: 今のブロックがこのページにあり bbox があれば枠を重ねる (G-B)。
+                  const cur = guidedBlocks?.[guidedIndex];
+                  const showBox = !!cur?.bbox && cur.pdfPage === pn;
+                  return (
+                    <div
+                      key={pn}
+                      className={`relative block shrink-0 ${guidedBlocks ? "cursor-pointer" : ""}`}
+                      onClick={
+                        guidedBlocks ? (e) => handlePageClick(pn, e) : undefined
+                      }
+                      title={guidedBlocks ? "読みたい所をタップすると、そこを説明するよ" : undefined}
+                    >
+                      <canvas
+                        ref={(el) => {
+                          canvasRefs.current[i] = el;
+                        }}
+                        className="block bg-white"
+                      />
+                      {showBox && cur?.bbox && (
+                        <div
+                          className="pointer-events-none absolute rounded-sm border-2 border-sky-500/80 bg-sky-300/20 shadow-[0_0_0_3px_rgba(56,189,248,0.18)] transition-all duration-300"
+                          style={{
+                            left: `${cur.bbox.x * 100}%`,
+                            top: `${cur.bbox.y * 100}%`,
+                            width: `${cur.bbox.w * 100}%`,
+                            height: `${cur.bbox.h * 100}%`,
+                          }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1064,38 +1133,66 @@ export function MaterialReadPane({
           {/* ガイド読書コントロール (G-A): まとまりを一区切りずつ歩いている間だけ表示。
               子は受け身で「次へ / もっと簡単に / もっと詳しく」+ 下の入力欄で質問。 */}
           {guidedBlocks && !showUnitMenu && (
-            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-sky-50/60 px-3 py-1.5">
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border bg-sky-50/60 px-3 py-1.5">
+              {/* 前/次 = 読む所を「選ぶ」だけ (青枠が動く、まだ読まない)。順序を手動調整できる。 */}
               <Button
                 size="sm"
-                onClick={() => void goNextBlock()}
+                variant="outline"
+                onClick={() => moveCursor(guidedIndex - 1)}
+                disabled={!loaded || guidedBusy || sending || guidedIndex <= 0}
+                className="gap-1 px-2"
+                title="前の区切りを選ぶ (まだ読まない)"
+              >
+                <ChevronLeft className="size-4" />
+                <span>前</span>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => moveCursor(guidedIndex + 1)}
+                disabled={
+                  !loaded || guidedBusy || sending || guidedIndex >= guidedBlocks.length - 1
+                }
+                className="gap-1 px-2"
+                title="次の区切りを選ぶ (まだ読まない)"
+              >
+                <span>次</span>
+                <ChevronRight className="size-4" />
+              </Button>
+              {/* ここを解説 = 選んだ所を初めて葵が読む (主ボタン)。 */}
+              <Button
+                size="sm"
+                onClick={() => void explainCursor()}
                 disabled={!loaded || guidedBusy || sending}
                 className="gap-1.5"
-                title="次の区切りへ進む"
+                title="選んでいる所を葵に説明してもらう"
               >
                 {guidedBusy ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <ChevronRight className="size-4" />
+                  <Play className="size-4" />
                 )}
-                <span>次へ</span>
+                <span>ここを解説</span>
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => void adjustGuidedLevel(-1)}
                 disabled={!loaded || guidedBusy || sending}
+                className="px-2"
                 title="今の説明をもっとやさしく言い直す"
               >
-                もっと簡単に
+                やさしく
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => void adjustGuidedLevel(1)}
                 disabled={!loaded || guidedBusy || sending}
+                className="px-2"
                 title="今の説明をもっと詳しく言い直す"
               >
-                もっと詳しく
+                詳しく
               </Button>
               <span className="ml-auto text-xs text-muted-foreground">
                 {guidedIndex + 1} / {guidedBlocks.length}
