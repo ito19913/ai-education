@@ -74,6 +74,17 @@ type Props = {
 // これを超える単元は均等サンプリングして代表ページだけ渡す。
 const MAX_SEGMENT_VISION_PAGES = 12;
 
+/**
+ * 「学習内容でない区切り」(表紙・前付け・目次・使い方・奥付・索引など) かを名前で判定。
+ * 区切り生成プロンプト (segment-claude) でも出さないようにしているが、古いデータや
+ * 取りこぼし対策として、学習開始時はこれをスキップして最初の本物の単元へ進む。
+ */
+function isFrontMatterName(name: string): boolean {
+  return /表紙|扉|前付|まえがき|はじめに|序文|目次|もくじ|使い方|凡例|奥付|索引|さくいん|著者|広告|後付|あとがき/.test(
+    name,
+  );
+}
+
 /** 範囲 [start,end] のページを最大 max 枚に均等サンプリングして返す。 */
 function sampleRangePages(pages: number[], max: number): number[] {
   if (pages.length <= max) return pages;
@@ -310,11 +321,19 @@ export function MaterialReadPane({
     if (!loaded || starting || sending) return;
     setStarting(true);
     try {
-      // 対象まとまり: 今ページの所属 → 次の未まとめ → 先頭、の順で決める (M7)。
+      // 対象まとまり (M7): 学習内容でない区切り (前付け等) は飛ばす。
+      // 今ページが本物の単元内ならそれ、違えば「次の未まとめの本物の単元」→ 先頭の順。
+      const contentSegments = (segments ?? []).filter(
+        (s) => !isFrontMatterName(s.conceptName),
+      );
+      const effectiveCurrent =
+        currentSegment && !isFrontMatterName(currentSegment.conceptName)
+          ? currentSegment
+          : null;
       const target =
-        currentSegment ??
-        findNextUnnotedSegment(segments, notedSegmentIds ?? new Set()) ??
-        (segments && segments.length > 0 ? segments[0] : null);
+        effectiveCurrent ??
+        findNextUnnotedSegment(contentSegments, notedSegmentIds ?? new Set()) ??
+        (contentSegments.length > 0 ? contentSegments[0] : null);
 
       // 範囲があれば先頭ページへ移動 (子はページ番号を意識しない、M2/M3)。
       if (target) setPage(target.startPdfPage);
