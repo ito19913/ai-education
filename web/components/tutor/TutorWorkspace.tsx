@@ -435,7 +435,12 @@ export function TutorWorkspace({
   // ----- まとめノート N9①: 能動ゲート通過でエントリが刻まれた時 -----
   const handleNoteAdded = useCallback(
     (entry: NoteEntry) => {
-      setNoteEntries((prev) => [...prev, entry]);
+      // upsert: 2 周目の深化更新 (同じ id) は置換、新規は追加 (G-C で重複を防ぐ)。
+      setNoteEntries((prev) =>
+        prev.some((e) => e.id === entry.id)
+          ? prev.map((e) => (e.id === entry.id ? entry : e))
+          : [...prev, entry],
+      );
       const text =
         entry.status === "open"
           ? `「${entry.conceptName}」を「振り返りたい」としてノートに残したよ📌\nあとでまた一緒に見て、自分の言葉で説明できたら理解済みにしよう。メニューの「ノート」から振り返れるよ。`
@@ -872,6 +877,7 @@ export function TutorWorkspace({
                   .map((e) => e.sourceSegmentId as string),
               )
             }
+            noteEntries={noteEntries}
           />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">

@@ -66,6 +66,11 @@ export type SummarizeInput = {
    * そこで明確になったことを要約に反映する (= オリジナルノート、grill Q2)。
    */
   dialogue?: { role: "user" | "assistant"; text: string }[];
+  /**
+   * 難易度レベル (G-6、周回数で上がる)。0 = 初回 (やさしい言葉)、
+   * 1 以上 = 2 周目以降 (より正式な用語を交え、一歩踏み込んで深める)。
+   */
+  formalLevel?: number;
 };
 
 export type SummarizeOutput = {
@@ -95,6 +100,9 @@ export async function summarizeConceptForNote(
 - **本人との対話がある場合は、本人が引っかかった点・質問・そこで腑に落ちた説明を要約に
   反映する**（＝本人の理解の足跡が入った、その子だけの要約にする）。対話が無ければページ本文のみ。
 - 要約は 120〜300 字程度。markdown 可 (強調・箇条書き)。
+- **難易度レベル (G-6)**: レベル 0 (初回) はやさしい言葉で要点だけ。レベル 1 以上 (2 周目
+  以降) は、同じ概念を**より正式な用語を交えて、一歩踏み込んで深めた**要約にする (前回より
+  正確・体系的に。ただし中学生が読める範囲は保つ)。
 
 ## 出力フォーマット (JSON のみ、前置き無し)
 {"conceptName": "論点名 (短く)", "summary": "正しい要約"}
@@ -109,9 +117,14 @@ ${getPhilosophy()}`;
           .join("\n")}`
       : "";
 
+  const levelText =
+    (input.formalLevel ?? 0) >= 1
+      ? "\n難易度: 2 周目以降。前回より正式な用語を交え、一歩踏み込んで深めた要約にすること。"
+      : "\n難易度: 初回。やさしい言葉で要点を。";
+
   const contextText = `教材: ${input.materialName} / 科目: ${input.subjectName} / 学年: ${input.gradeLevel}${
     input.pageNumber ? ` / ページ: ${input.pageNumber}` : ""
-  }${input.currentConceptName ? `\n論点名のヒント (体系図から): ${input.currentConceptName}` : ""}${dialogueText}
+  }${input.currentConceptName ? `\n論点名のヒント (体系図から): ${input.currentConceptName}` : ""}${levelText}${dialogueText}
 
 今添付されているページの中心的な論点を 1 つ選び${input.dialogue && input.dialogue.length > 0 ? "（上の対話で本人が触れた点を踏まえて）" : ""}、まとめノート用の正しい要約を JSON で返してください。`;
 

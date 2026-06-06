@@ -76,6 +76,8 @@ type Props = {
   onNoteAdded?: (entry: NoteEntry) => void;
   /** 既にノート化済みの まとまり ID 集合 (M7: 次の未まとめ単元の提示に使う) */
   notedSegmentIds?: Set<string>;
+  /** まとめノートのエントリ一覧 (G-C: 2 周目検知 + 既存エントリの深化更新に使う) */
+  noteEntries?: NoteEntry[];
 };
 
 // まとまり全体を vision で渡す時の最大ページ数 (payload / 速度の上限、M8)。
@@ -139,6 +141,7 @@ export function MaterialReadPane({
   onBack,
   onNoteAdded,
   notedSegmentIds,
+  noteEntries,
 }: Props) {
   const [loaded, setLoaded] = useState<LoadedPdf | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -552,7 +555,8 @@ export function MaterialReadPane({
       if (!loaded || starting || sending || guidedBusy) return;
       setShowUnitMenu(false);
       setGuidedSegment(seg);
-      setGuidedLevel(0);
+      // G-6: 2 周目以降 (既にノート化済み) は最初からやや踏み込んだ難易度で始める。
+      setGuidedLevel(notedSegmentIds?.has(seg.id) ? 1 : 0);
       setGuidedBusy(true);
       try {
         setPage(seg.startPdfPage);
@@ -610,7 +614,7 @@ export function MaterialReadPane({
         setGuidedBusy(false);
       }
     },
-    [loaded, starting, sending, guidedBusy, packPages, material, subject],
+    [loaded, starting, sending, guidedBusy, packPages, material, subject, notedSegmentIds],
   );
 
   const startUnit = useCallback(
@@ -1374,6 +1378,21 @@ export function MaterialReadPane({
         currentConcept={gateConcept}
         segment={gateSegment}
         dialogue={history}
+        existingForSegment={
+          gateSegment
+            ? noteEntries?.find(
+                (e) => e.sourceSegmentId === gateSegment.id && !e.deletedAt,
+              )
+            : undefined
+        }
+        studyLevel={
+          gateSegment &&
+          noteEntries?.some(
+            (e) => e.sourceSegmentId === gateSegment.id && !e.deletedAt,
+          )
+            ? 1
+            : 0
+        }
         onCommitted={(entry) => {
           onNoteAdded?.(entry);
         }}

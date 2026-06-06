@@ -109,15 +109,16 @@ export async function insertNoteEntry(
   return rowToNoteEntry(data as NoteEntryRow);
 }
 
-/** 自分メモ / ステータスの更新。 */
+/** 自分メモ / ステータス / 要約 (2周目の深化、G-C) の更新。 */
 export async function updateNoteEntry(
   id: string,
-  patch: Partial<Pick<NoteEntry, "userNote" | "status">>,
+  patch: Partial<Pick<NoteEntry, "userNote" | "status" | "aiSummary">>,
 ): Promise<void> {
   const supabase = createClient();
   const row: Record<string, unknown> = {};
   if (patch.userNote !== undefined) row.user_note = patch.userNote;
   if (patch.status !== undefined) row.status = patch.status;
+  if (patch.aiSummary !== undefined) row.ai_summary = patch.aiSummary;
   if (Object.keys(row).length === 0) return;
   const { error } = await supabase.from("note_entries").update(row).eq("id", id);
   if (error) throw error;

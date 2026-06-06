@@ -35,7 +35,11 @@ import {
   summarizeConceptForNote,
   judgeExplanation,
 } from "@/lib/notes/note-gate-claude";
-import { insertNoteEntry, getCurrentUserId } from "@/lib/notes/notes-repo";
+import {
+  insertNoteEntry,
+  updateNoteEntry,
+  getCurrentUserId,
+} from "@/lib/notes/notes-repo";
 import type { AokiChatMessage } from "@/lib/admin/aoki-chat-claude";
 import type {
   AiExtractedNode,
@@ -64,8 +68,15 @@ type Props = {
   segment?: ConceptSegment | null;
   /** ここまでの葵 chat 対話 (要約に反映、grill Q2) */
   dialogue?: AokiChatMessage[];
-  /** create: 通過してノートに刻めたエントリを親に渡す */
+  /** create: 通過してノートに刻めたエントリを親に渡す (update 時も同じ id で渡す = upsert) */
   onCommitted?: (entry: NoteEntry) => void;
+  /**
+   * G-C: このまとまりに既にノートがある時のエントリ (= 2 周目)。あれば新規作成でなく
+   * 更新 (要約を深化、open→understood 昇格、メモ追記) して重複を防ぐ。
+   */
+  existingForSegment?: NoteEntry;
+  /** G-C: 難易度レベル (0=初回 / 1 以上=2 周目以降)。要約の深さに渡す (G-6)。 */
+  studyLevel?: number;
 
   // --- review モード ---
   /** review: 既存の open エントリ (要約は既存、説明だけ再ゲート) */
@@ -103,6 +114,8 @@ export function NoteGateDialog(props: Props) {
     segment,
     dialogue,
     onCommitted,
+    existingForSegment,
+    studyLevel,
     existingEntry,
     onUpgraded,
   } = props;
@@ -166,6 +179,7 @@ export function NoteGateDialog(props: Props) {
           pageImagesPacked,
           pageNumber,
           dialogue: dialogue?.map((m) => ({ role: m.role, text: m.text })),
+          formalLevel: studyLevel ?? (existingForSegment ? 1 : 0),
         });
         if (cancelled) return;
         setConceptName(out.conceptName);
@@ -198,6 +212,8 @@ export function NoteGateDialog(props: Props) {
     currentConcept,
     conceptHint,
     dialogue,
+    studyLevel,
+    existingForSegment,
   ]);
 
   // ----- 最終確定 (本人の決定で understood / open) -----
@@ -217,6 +233,36 @@ export function NoteGateDialog(props: Props) {
 
       // create: 新規エントリを刻む (real は DB、mock は in-memory)
       const trimmedMemo = memo.trim() || undefined;
+
+      // G-C: 2 周目 (既にこのまとまりのノートがある) → 新規作成でなく更新。要約を深化 +
+      // 昇格 (open→understood) + メモ追記。同じ id で onCommitted = 親は upsert で重複を防ぐ。
+      if (existingForSegment) {
+        const mergedMemo =
+          [existingForSegment.userNote, trimmedMemo].filter(Boolean).join("\n") ||
+          undefined;
+        const updated: NoteEntry = {
+          ...existingForSegment,
+          aiSummary: summary,
+          status,
+          userNote: mergedMemo,
+        };
+        try {
+          if (isSupabaseConfigured()) {
+            await updateNoteEntry(existingForSegment.id, {
+              aiSummary: summary,
+              status,
+              userNote: mergedMemo,
+            });
+          }
+        } catch (err) {
+          console.error("[ノート] 更新失敗 (in-memory 反映のみ):", err);
+        }
+        onCommitted?.(updated);
+        setOutcome(status);
+        setStage("done");
+        return;
+      }
+
       try {
         if (isSupabaseConfigured()) {
           const ownerId = await getCurrentUserId();
@@ -258,6 +304,7 @@ export function NoteGateDialog(props: Props) {
     [
       mode,
       existingEntry,
+      existingForSegment,
       onUpgraded,
       onOpenChange,
       subjectId,
