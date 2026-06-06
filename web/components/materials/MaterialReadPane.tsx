@@ -32,8 +32,10 @@ import {
   loadPdfDocument,
   renderPageToCanvas,
   renderPageToJpeg,
+  extractFullPageTexts,
   type LoadedPdf,
 } from "@/lib/admin/pdf-extract-text";
+import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
 import { getSessionPdf, setSessionPdf } from "@/lib/admin/session-pdf-store";
 import { downloadMaterialPdf } from "@/lib/materials/pdf-storage";
 import {
@@ -84,6 +86,13 @@ function isFrontMatterName(name: string): boolean {
     name,
   );
 }
+
+/**
+ * 区切り (ConceptSegment[]) のセッション内キャッシュ (materialId → segments)。
+ * migration 未適用で DB 保存できない / 既存教材で未生成 の時、開くたびに葵が
+ * その場で区切り直す (M4 のオンデマンド版)。同セッションでは 1 回だけ走る。
+ */
+const sessionSegmentCache = new Map<string, ConceptSegment[]>();
 
 /** 範囲 [start,end] のページを最大 max 枚に均等サンプリングして返す。 */
 function sampleRangePages(pages: number[], max: number): number[] {
@@ -145,8 +154,17 @@ export function MaterialReadPane({
   const [sending, setSending] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
-  // まとまり (一単元=1概念) 区切り。あれば PDF 紙番号ベースで正確 (M3)。
-  const segments = material.conceptSegments;
+  // まとまり (一単元=1概念) 区切り。
+  // 優先: DB 永続 (material.conceptSegments) → セッション内でその場生成した localSegments。
+  // migration 未適用や既存教材でも、開いた時に葵がその場で区切り直す (下の effect)。
+  const [localSegments, setLocalSegments] = useState<ConceptSegment[] | null>(
+    null,
+  );
+  const [segmenting, setSegmenting] = useState(false);
+  const segments =
+    material.conceptSegments && material.conceptSegments.length > 0
+      ? material.conceptSegments
+      : (localSegments ?? undefined);
 
   // 今表示中ページが属する まとまり (M7: 範囲提示・範囲要約の基準)。
   const currentSegment = useMemo(
@@ -248,6 +266,70 @@ export function MaterialReadPane({
       if (local) void local.destroy();
     };
   }, [material.id, material.pdfPath]);
+
+  // ----- まとまり区切りのオンデマンド生成 (M4 フォールバック) -----
+  // DB に区切りが無い (migration 未適用 / 既存教材 / まだ生成前) 場合、PDF が読めたら
+  // その場で葵が全書を読んで区切る。セッション内キャッシュで 1 回だけ。デジタル PDF のみ
+  // (文字レイヤー無し = スキャン本は対象外、将来 C-8)。
+  useEffect(() => {
+    const hasPersisted =
+      !!material.conceptSegments && material.conceptSegments.length > 0;
+    if (hasPersisted || !loaded) return;
+
+    const cached = sessionSegmentCache.get(material.id);
+    if (cached) {
+      if (!localSegments) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLocalSegments(cached);
+      }
+      return;
+    }
+    if (localSegments || segmenting) return;
+
+    const file = getSessionPdf(material.id);
+    if (!file) return;
+
+    let cancelled = false;
+    setSegmenting(true);
+    (async () => {
+      try {
+        const { hasTextLayer, packedText } = await extractFullPageTexts(file);
+        if (cancelled) return;
+        if (!hasTextLayer || packedText.length === 0) {
+          setSegmenting(false);
+          return;
+        }
+        const segs = await segmentConceptsFromText({
+          materialName: material.name,
+          subjectName: subject?.name ?? "教科",
+          gradeLevel: material.gradeLevel ?? "中2",
+          packedText,
+        });
+        if (cancelled) return;
+        if (segs.length > 0) {
+          sessionSegmentCache.set(material.id, segs);
+          setLocalSegments(segs);
+        }
+      } catch (err) {
+        console.error("[読書] まとまり生成失敗:", err);
+      } finally {
+        if (!cancelled) setSegmenting(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    loaded,
+    material.id,
+    material.conceptSegments,
+    material.name,
+    material.gradeLevel,
+    subject,
+    localSegments,
+    segmenting,
+  ]);
 
   // ----- 表示中ページ (1 or 2 枚) を各 canvas に描画 (エリアにフィット × zoom) -----
   useEffect(() => {
@@ -700,7 +782,12 @@ export function MaterialReadPane({
           </div>
           {/* 入口: まとまり一覧から選ぶ (M6/M7)。まとまり未生成の本は今ページから開始の保険。 */}
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-primary/5 px-3 py-1.5">
-            {contentSegments.length > 0 ? (
+            {segmenting && contentSegments.length === 0 ? (
+              <Button size="sm" variant="outline" disabled className="gap-1.5">
+                <Loader2 className="size-4 animate-spin" />
+                <span>まとまりを準備中…</span>
+              </Button>
+            ) : contentSegments.length > 0 ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -760,7 +847,18 @@ export function MaterialReadPane({
             ref={chatScrollRef}
             className="min-h-0 flex-1 overflow-y-auto p-3"
           >
-            {showUnitMenu && contentSegments.length > 0 ? (
+            {segmenting && contentSegments.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
+                <Loader2 className="size-5 animate-spin text-primary" />
+                <div className="max-w-[260px] text-sm text-muted-foreground">
+                  葵先生が本全体を読んで、
+                  <br />
+                  「まとまり (単元)」に区切っているよ…
+                  <br />
+                  <span className="text-xs">（初回だけ少し待ってね）</span>
+                </div>
+              </div>
+            ) : showUnitMenu && contentSegments.length > 0 ? (
               /* 入口: 全まとまり (グルーピング) を見せて「どこからやる?」と選ばせる */
               <div className="flex flex-col gap-3">
                 <div className="flex items-end gap-2">

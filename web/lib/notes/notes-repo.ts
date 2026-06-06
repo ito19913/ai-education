@@ -84,20 +84,25 @@ export async function insertNoteEntry(
   ownerId: string,
 ): Promise<NoteEntry> {
   const supabase = createClient();
+  // source_segment_id 列はマイグレーション後にしか無い。未提供時はキーごと省いて
+  // 列が無い環境でも note 自体は保存できるようにする (セグメント未対応への耐性)。
+  const row: Record<string, unknown> = {
+    owner_id: ownerId,
+    subject_id: input.subjectId,
+    concept_name: input.conceptName,
+    ai_summary: input.aiSummary,
+    status: input.status ?? "understood",
+    source_material_id: input.sourceMaterialId ?? null,
+    source_page_range: input.sourcePageRange ?? null,
+    parent_ref: input.parentRef ?? null,
+    user_note: input.userNote ?? null,
+  };
+  if (input.sourceSegmentId !== undefined) {
+    row.source_segment_id = input.sourceSegmentId;
+  }
   const { data, error } = await supabase
     .from("note_entries")
-    .insert({
-      owner_id: ownerId,
-      subject_id: input.subjectId,
-      concept_name: input.conceptName,
-      ai_summary: input.aiSummary,
-      status: input.status ?? "understood",
-      source_material_id: input.sourceMaterialId ?? null,
-      source_page_range: input.sourcePageRange ?? null,
-      source_segment_id: input.sourceSegmentId ?? null,
-      parent_ref: input.parentRef ?? null,
-      user_note: input.userNote ?? null,
-    })
+    .insert(row)
     .select("*")
     .single();
   if (error) throw error;
