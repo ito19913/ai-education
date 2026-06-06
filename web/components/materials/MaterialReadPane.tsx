@@ -36,6 +36,7 @@ import {
   type LoadedPdf,
 } from "@/lib/admin/pdf-extract-text";
 import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
+import { buildScanSegments } from "@/lib/admin/scan-segment-builder";
 import { getSessionPdf, setSessionPdf } from "@/lib/admin/session-pdf-store";
 import { downloadMaterialPdf } from "@/lib/materials/pdf-storage";
 import { updateMaterialSegments } from "@/lib/materials/materials-repo";
@@ -304,27 +305,37 @@ export function MaterialReadPane({
     // 投げっぱなし (cancel しない)。途中でキャンセルすると setSegmenting(false) が
     // 走らず固まるため、必ず finally で false に戻す。再入は attempted が防ぐ。
     attemptedSegmentation.add(material.id);
+    const doc = loaded.doc;
     setSegmenting(true);
     (async () => {
+      // 生成できたまとまりを cache / state / DB に反映 (デジタル・スキャン共通)。
+      const persist = (segs: ConceptSegment[]) => {
+        if (segs.length === 0) return;
+        sessionSegmentCache.set(material.id, segs);
+        setLocalSegments(segs);
+        // real モードなら DB に保存 → 次回開いた時は即表示 (再生成不要)。
+        if (isSupabaseConfigured()) {
+          updateMaterialSegments(material.id, segs).catch((e) =>
+            console.error("[読書] まとまり保存失敗:", e),
+          );
+        }
+      };
       try {
         const { hasTextLayer, packedText } = await extractFullPageTexts(file);
         if (hasTextLayer && packedText.length > 0) {
-          const segs = await segmentConceptsFromText({
-            materialName: material.name,
-            subjectName: subject?.name ?? "教科",
-            gradeLevel: material.gradeLevel ?? "中2",
-            packedText,
-          });
-          if (segs.length > 0) {
-            sessionSegmentCache.set(material.id, segs);
-            setLocalSegments(segs);
-            // real モードなら DB に保存 → 次回開いた時は即表示 (再生成不要)。
-            if (isSupabaseConfigured()) {
-              updateMaterialSegments(material.id, segs).catch((e) =>
-                console.error("[読書] まとまり保存失敗:", e),
-              );
-            }
-          }
+          // デジタル PDF: 本文テキストから PDF 紙番号で直接区切る (M3)。
+          persist(
+            await segmentConceptsFromText({
+              materialName: material.name,
+              subjectName: subject?.name ?? "教科",
+              gradeLevel: material.gradeLevel ?? "中2",
+              packedText,
+            }),
+          );
+        } else {
+          // C-8: スキャン本 (文字レイヤー無し) → ハイブリッド (目次土台 + オフセット較正)
+          // or 全ページ vision 経路。
+          persist(await buildScanSegments(doc, material, subject?.name ?? "教科"));
         }
       } catch (err) {
         console.error("[読書] まとまり生成失敗:", err);
