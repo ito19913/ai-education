@@ -1868,6 +1868,31 @@ ito19 さんの実教材「税法実務講座 税法入門 法人税 (TAC)」(18
 `aoki-chat-claude.ts` (葵応答) / `note-gate-claude.ts` (`summarizeConceptForNote` dialogue 反映済) /
 `NoteGateDialog.tsx` (能動ゲート + review モード)。ガイド読書はこの上に「区切りごとの解説ステップ」を載せる。
 
+#### 実装 G-A / G-B / G-C (2026-06-06、✅ G-A/G-B 実機確認 / ⏳ G-C E2E 未検証)
+
+| 段階 | commit | 内容 | 状態 |
+|---|---|---|---|
+| G-A 中核 | `f107ced` | `buildGuidedReadingPlan` (Opus vision → 教える順序ブロック列 GuidedBlock[]、POINT/MEMO は補足で末尾、bbox 付き) + MaterialReadPane で 1 ブロックずつ解説、子は受け身。`sessionGuidedPlanCache`。 | ✅ ito19 確認 |
+| G-B ハイライト+タップ | `c4047bf` | 今のブロックに青枠 (bbox を canvas に絶対配置) + ページタップで選択 + **見開き対応** (見えてるページなら めくらず枠だけ移動) + **「次へ=自動で読む」を廃止し選択(前/次/タップ)と解説(「ここを解説」)を分離** (順序を手動調整可、ito19 指摘)。 | ✅ ito19 確認 |
+| G-C 周回+深化+ゲート | `cf6d5e4` | 2 周目検知=既ノート有無 (migration 不要)。2 周目は難易度↑ (guidedLevel=1) + `summarizeConceptForNote` formalLevel で要約を正式用語で深化 + 既存エントリを**更新** (重複作らず open→understood 昇格)。`updateNoteEntry` が ai_summary 可、`handleNoteAdded` upsert 化。 | ⏳ E2E 未検証 |
+
+**実装ファイル**: 新規 `lib/admin/guided-reading-claude.ts` / `lib/learn/types.ts` (`GuidedBlock`) /
+改修 `components/materials/MaterialReadPane.tsx` (ガイド状態機械: guidedBlocks/guidedIndex=カーソル/
+guidedLevel/guidedBusy、moveCursor=選択のみ・explainCursor=解説・adjustGuidedLevel・handlePageClick=タップ選択、
+青枠オーバーレイ) / `lib/notes/note-gate-claude.ts` (formalLevel) / `lib/notes/notes-repo.ts` (updateNoteEntry
+ai_summary) / `components/notes/NoteGateDialog.tsx` (existingForSegment/studyLevel→更新分岐) /
+`components/tutor/TutorWorkspace.tsx` (noteEntries を渡す + handleNoteAdded upsert)。
+
+**設計どおり確認できた点**: 留保金課税見開きで 14 ブロック (本文12+補足2) を正しい順序+POINT/MEMO 末尾+全 bbox
+で生成。前/次・タップで選択、見開きの中で左→右へ枠が流れる、「ここを解説」で該当ブロックのみ説明。
+
+**残課題 (次セッション)**:
+- **G-C の実機 E2E** (2 周目で難易度↑・要約深化・既存ノート更新=重複しない を本番 DB で確認)。
+- 視覚ハイライト bbox の精度 (vision 推定なのでズレ得る、許容範囲かの体感)。
+- 周回数の厳密カウント (現状 1周目/2周目以降の 2 値。3 周目以降の細かな深化は将来、必要なら study_count 列)。
+- 既存「学習を開始する」(まとまり無し本の `runOrientation(null)`) とガイド読書の関係整理。
+- ガイド中の history がまとまりを跨いで蓄積する点 (まとまり切替時のクリア要否)。
+
 ---
 
 ## ゆい→葵への申し送り（TutorHandoff）
