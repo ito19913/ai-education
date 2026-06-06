@@ -790,12 +790,7 @@ export function MaterialReadPane({
           </div>
           {/* 入口: まとまり一覧から選ぶ (M6/M7)。まとまり未生成の本は今ページから開始の保険。 */}
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-primary/5 px-3 py-1.5">
-            {segmenting && contentSegments.length === 0 ? (
-              <Button size="sm" variant="outline" disabled className="gap-1.5">
-                <Loader2 className="size-4 animate-spin" />
-                <span>まとまりを準備中…</span>
-              </Button>
-            ) : contentSegments.length > 0 ? (
+            {contentSegments.length > 0 ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -828,6 +823,13 @@ export function MaterialReadPane({
                 <span>学習を開始する</span>
               </Button>
             )}
+            {/* 区切りは裏で生成中。画面は塞がず、出来たら「まとまりを選ぶ」が出る。 */}
+            {segmenting && contentSegments.length === 0 && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" />
+                単元一覧を準備中…
+              </span>
+            )}
             <Button
               size="sm"
               onClick={() => void openNoteGate()}
@@ -855,18 +857,7 @@ export function MaterialReadPane({
             ref={chatScrollRef}
             className="min-h-0 flex-1 overflow-y-auto p-3"
           >
-            {segmenting && contentSegments.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
-                <Loader2 className="size-5 animate-spin text-primary" />
-                <div className="max-w-[260px] text-sm text-muted-foreground">
-                  葵先生が本全体を読んで、
-                  <br />
-                  「まとまり (単元)」に区切っているよ…
-                  <br />
-                  <span className="text-xs">（初回だけ少し待ってね）</span>
-                </div>
-              </div>
-            ) : showUnitMenu && contentSegments.length > 0 ? (
+            {showUnitMenu && contentSegments.length > 0 ? (
               /* 入口: 全まとまり (グルーピング) を見せて「どこからやる?」と選ばせる */
               <div className="flex flex-col gap-3">
                 <div className="flex items-end gap-2">
@@ -929,12 +920,24 @@ export function MaterialReadPane({
                 <div className="max-w-[260px] rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3 text-sm text-card-foreground shadow-sm">
                   こんにちは、{teacherName}だよ📖
                   <br />
-                  まだ「まとまり」が準備できていないみたい。
-                  <br />
-                  <span className="font-medium text-primary">
-                    ▶ 学習を開始する
-                  </span>{" "}
-                  で今のページから始めることもできるよ。
+                  {segmenting ? (
+                    <>
+                      今、本を読んで単元一覧を準備中だよ（少し待ってね）。
+                      <br />
+                      待つ間も{" "}
+                      <span className="font-medium text-primary">
+                        ▶ 学習を開始する
+                      </span>{" "}
+                      で今のページから読み始められるよ。
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium text-primary">
+                        ▶ 学習を開始する
+                      </span>{" "}
+                      を押すと、今のページから一緒に読むよ。分からない所は何でも聞いてね。
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
