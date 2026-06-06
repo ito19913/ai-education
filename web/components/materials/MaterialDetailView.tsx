@@ -70,6 +70,13 @@ type Props = {
   onMaterialDeleted: (id: string) => void;
 };
 
+/**
+ * 評価コメント (葵) のセッション内キャッシュ (materialId → 結果)。
+ * generateMaterialReviewViaClaude は Opus 4.8 で 10〜40 秒かかる。教材詳細を開く
+ * たびに毎回走ると体感が重く API も占有するため、同セッションでは 1 教材 1 回だけにする。
+ */
+const sessionReviewCache = new Map<string, MaterialReviewOutput>();
+
 export function MaterialDetailView({
   material,
   subject,
@@ -269,7 +276,13 @@ export function MaterialDetailView({
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // 同セッションで生成済みなら即それを表示 (Opus の重い再生成を避ける)。
+    const cached = sessionReviewCache.get(material.id);
+    if (cached) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAoiReview(cached);
+      return;
+    }
     setAoiReview(mockReview);
     const useClaude = process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true";
     if (!useClaude) return;
@@ -281,6 +294,7 @@ export function MaterialDetailView({
       label: material.label,
     })
       .then((res) => {
+        sessionReviewCache.set(material.id, res);
         if (!cancelled) setAoiReview(res);
       })
       .catch((err) => {
