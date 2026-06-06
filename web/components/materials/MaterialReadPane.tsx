@@ -45,12 +45,11 @@ import { PageThumbnailRail } from "@/components/materials/PageThumbnailRail";
 import {
   findConceptForPage,
   findSegmentForPage,
-  findNextUnnotedSegment,
   segmentPages,
 } from "@/lib/notes/concept-for-page";
 import { SubjectTeacherAvatar } from "@/components/ui/subject-teacher-avatar";
 import { MarkdownText } from "@/components/chat/MarkdownText";
-import { NotebookPen, Play } from "lucide-react";
+import { NotebookPen, Play, ListChecks, Check } from "lucide-react";
 import type {
   AiExtractedNode,
   ConceptSegment,
@@ -154,6 +153,19 @@ export function MaterialReadPane({
     () => findSegmentForPage(page, segments),
     [page, segments],
   );
+
+  // 学習対象になる「本物のまとまり」一覧 (前付け等を除き、ページ順)。
+  // 開いた直後にこれを「グルーピング一覧」として見せ、子に選ばせる (入口)。
+  const contentSegments = useMemo(
+    () =>
+      (segments ?? [])
+        .filter((s) => !isFrontMatterName(s.conceptName))
+        .sort((a, b) => a.startPdfPage - b.startPdfPage),
+    [segments],
+  );
+
+  // 入口の「まとまり一覧」を表示中か (開いた直後 = true、単元を選ぶと false)。
+  const [showUnitMenu, setShowUnitMenu] = useState(true);
 
   // 単元ジャンプ用リスト。
   // まとまりがあれば PDF 紙番号で正確にジャンプ (推奨)。無ければ従来の extractedNodes
@@ -316,81 +328,67 @@ export function MaterialReadPane({
     [loaded, numPages],
   );
 
-  // M6/M7: 学習開始 = AI が「今日のまとまり」を提示 → 範囲先頭へジャンプ → オリエン
-  // (「ここはこういう所。まず通して読もう、分からない所は飛ばして OK」) → 2 フェーズの①通読へ。
-  const handleStartLearning = useCallback(async () => {
-    if (!loaded || starting || sending) return;
-    setStarting(true);
-    try {
-      // 対象まとまり (M7): 学習内容でない区切り (前付け等) は飛ばす。
-      // 今ページが本物の単元内ならそれ、違えば「次の未まとめの本物の単元」→ 先頭の順。
-      const contentSegments = (segments ?? []).filter(
-        (s) => !isFrontMatterName(s.conceptName),
-      );
-      const effectiveCurrent =
-        currentSegment && !isFrontMatterName(currentSegment.conceptName)
-          ? currentSegment
-          : null;
-      const target =
-        effectiveCurrent ??
-        findNextUnnotedSegment(contentSegments, notedSegmentIds ?? new Set()) ??
-        (contentSegments.length > 0 ? contentSegments[0] : null);
+  // M6: 指定した まとまり (target) のオリエンを葵に語らせる。範囲先頭へジャンプ →
+  // 「今日はここ(p.X〜Y)を『○○』として勉強しよう。まず通して読もう」と案内 (2フェーズ①)。
+  // target が null の時は「今表示ページの説明」フォールバック (まとまり未生成の本)。
+  const runOrientation = useCallback(
+    async (target: ConceptSegment | null) => {
+      if (!loaded || starting || sending) return;
+      setStarting(true);
+      try {
+        // 範囲があれば先頭ページへ移動 (子はページ番号を意識しない、M2/M3)。
+        if (target) setPage(target.startPdfPage);
 
-      // 範囲があれば先頭ページへ移動 (子はページ番号を意識しない、M2/M3)。
-      if (target) setPage(target.startPdfPage);
+        // 渡す画像: まとまりがあれば範囲全体 (大きければサンプリング)、無ければ今表示ページ。
+        const visionPages = target
+          ? sampleRangePages(segmentPages(target), MAX_SEGMENT_VISION_PAGES)
+          : pagesToShow;
+        const packed = await packPages(visionPages);
 
-      // 渡す画像: まとまりがあれば範囲全体 (大きければサンプリング)、無ければ今表示ページ。
-      const visionPages = target
-        ? sampleRangePages(segmentPages(target), MAX_SEGMENT_VISION_PAGES)
-        : pagesToShow;
-      const packed = await packPages(visionPages);
-
-      const userMessage = target
-        ? `（学習を開始）今日のまとまりは「${target.conceptName}」、この本の ${target.startPdfPage}ページ〜${target.endPdfPage}ページ だよ。これは 1 つのまとまり(一単元)。次の順で、いきなり中身を詳しく説明せず軽く案内して:
+        const userMessage = target
+          ? `（学習を開始）今日のまとまりは「${target.conceptName}」、この本の ${target.startPdfPage}ページ〜${target.endPdfPage}ページ だよ。これは 1 つのまとまり(一単元)。次の順で、いきなり中身を詳しく説明せず軽く案内して:
 1) まず「今日はここ(${target.startPdfPage}〜${target.endPdfPage}ページ)を『${target.conceptName}』というまとまりとして勉強していこう」と**範囲を伝える**。
 2) 「ここではこういうことを学ぶよ」と、このまとまりで扱う内容を 2〜3 文でざっくり。
 3) 「読むときはここに注目してね」と着目点を 1 つ。
 4) 最後に「まずは一度ざっと通して読んでみよう。分からない所は飛ばして大丈夫。読み終えて『ノートにまとめる』を押したら、概念ごとに一緒にまとめていこうね。ここから始めていい?」と通読を促し、軽く確認する。`
-        : "（学習を開始）今開いているページの要点を、中学生にわかるように2〜4文で説明して。最後に「分からないところがあれば聞いてね」と一言添えて。";
+          : "（学習を開始）今開いているページの要点を、中学生にわかるように2〜4文で説明して。最後に「分からないところがあれば聞いてね」と一言添えて。";
 
-      const aiText = await respondViaAokiChat({
-        materialName: material.name,
-        subjectName: subject?.name ?? "教科",
-        gradeLevel: material.gradeLevel ?? "中2",
-        focusNodeName: target?.conceptName ?? null,
-        history,
-        userMessage,
-        currentPageImagesPacked: packed,
-        currentPageNumber: target?.startPdfPage ?? page,
-      });
-      // 葵の説明だけを積む (キックオフ発話は可視 history に出さない = 自分から説明したように見せる)
-      setHistory((prev) => [...prev, { role: "assistant", text: aiText }]);
-    } catch (err) {
-      console.error("[読書] 学習開始失敗:", err);
-      setHistory((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          text: "ごめん、今うまく読み取れなかった…ページをめくり直すか、もう一度試してくれる?",
-        },
-      ]);
-    } finally {
-      setStarting(false);
-    }
-  }, [
-    loaded,
-    starting,
-    sending,
-    currentSegment,
-    segments,
-    notedSegmentIds,
-    pagesToShow,
-    packPages,
-    material,
-    subject,
-    page,
-    history,
-  ]);
+        const aiText = await respondViaAokiChat({
+          materialName: material.name,
+          subjectName: subject?.name ?? "教科",
+          gradeLevel: material.gradeLevel ?? "中2",
+          focusNodeName: target?.conceptName ?? null,
+          history,
+          userMessage,
+          currentPageImagesPacked: packed,
+          currentPageNumber: target?.startPdfPage ?? page,
+        });
+        // 葵の説明だけを積む (キックオフ発話は可視 history に出さない = 自分から説明したように見せる)
+        setHistory((prev) => [...prev, { role: "assistant", text: aiText }]);
+      } catch (err) {
+        console.error("[読書] 学習開始失敗:", err);
+        setHistory((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            text: "ごめん、今うまく読み取れなかった…ページをめくり直すか、もう一度試してくれる?",
+          },
+        ]);
+      } finally {
+        setStarting(false);
+      }
+    },
+    [loaded, starting, sending, pagesToShow, packPages, material, subject, page, history],
+  );
+
+  // 入口の一覧から まとまり を選んだ時: 一覧を閉じてその単元のオリエンを開始。
+  const startUnit = useCallback(
+    (seg: ConceptSegment) => {
+      setShowUnitMenu(false);
+      void runOrientation(seg);
+    },
+    [runOrientation],
+  );
 
   // M8: まとめる = まとまり (一単元) 全体を vision で渡して 1 概念の要約を作る。
   // まとまりが無ければ従来通り今表示ページだけ (フォールバック)。
@@ -700,23 +698,41 @@ export function MaterialReadPane({
               </span>
             </div>
           </div>
-          {/* フロー再設計: 学習を開始する (葵が説明) + ノートにまとめる (いつでも) */}
+          {/* 入口: まとまり一覧から選ぶ (M6/M7)。まとまり未生成の本は今ページから開始の保険。 */}
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-primary/5 px-3 py-1.5">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void handleStartLearning()}
-              disabled={!loaded || starting || sending}
-              className="gap-1.5"
-              title="葵先生が今のページを説明してくれるよ。分からない所を聞いて深めよう。"
-            >
-              {starting ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Play className="size-4" />
-              )}
-              <span>学習を開始する</span>
-            </Button>
+            {contentSegments.length > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowUnitMenu(true)}
+                disabled={!loaded || starting || sending}
+                className="gap-1.5"
+                title="まとまり(単元)の一覧から、勉強する所を選べるよ。"
+              >
+                {starting ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ListChecks className="size-4" />
+                )}
+                <span>まとまりを選ぶ</span>
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void runOrientation(null)}
+                disabled={!loaded || starting || sending}
+                className="gap-1.5"
+                title="葵先生が今のページを説明してくれるよ。"
+              >
+                {starting ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Play className="size-4" />
+                )}
+                <span>学習を開始する</span>
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={() => void openNoteGate()}
@@ -744,7 +760,59 @@ export function MaterialReadPane({
             ref={chatScrollRef}
             className="min-h-0 flex-1 overflow-y-auto p-3"
           >
-            {history.length === 0 ? (
+            {showUnitMenu && contentSegments.length > 0 ? (
+              /* 入口: 全まとまり (グルーピング) を見せて「どこからやる?」と選ばせる */
+              <div className="flex flex-col gap-3">
+                <div className="flex items-end gap-2">
+                  <SubjectTeacherAvatar
+                    subjectId={teacherSubjectId}
+                    size={28}
+                    fallbackLetter={teacherAvatarLetter}
+                    className="shrink-0 shadow-sm ring-2 ring-white"
+                  />
+                  <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-2 text-sm text-card-foreground shadow-sm">
+                    この本はこんな「まとまり」に分けたよ📚
+                    <br />
+                    どこから勉強する? 押すと、そのページを開いて一緒に始めるよ。
+                  </div>
+                </div>
+                <ul className="flex flex-col gap-1.5">
+                  {contentSegments.map((seg) => {
+                    const noted = !!notedSegmentIds?.has(seg.id);
+                    return (
+                      <li key={seg.id}>
+                        <button
+                          type="button"
+                          onClick={() => startUnit(seg)}
+                          disabled={starting || sending}
+                          className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm shadow-sm transition-colors hover:border-primary/50 hover:bg-primary/5 disabled:opacity-60"
+                        >
+                          {noted ? (
+                            <Check className="size-4 shrink-0 text-emerald-600" />
+                          ) : (
+                            <span className="size-4 shrink-0" />
+                          )}
+                          <span className="min-w-0 flex-1 truncate font-medium">
+                            {seg.conceptName}
+                          </span>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            p.{seg.startPdfPage}–{seg.endPdfPage}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="px-1 text-[11px] text-muted-foreground">
+                  ✓ は、もうノートにまとめた まとまりだよ。
+                </p>
+              </div>
+            ) : history.length === 0 && starting ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                <span>葵先生が準備しているよ…</span>
+              </div>
+            ) : history.length === 0 ? (
               <div className="flex flex-col items-center gap-3 px-3 py-8 text-center">
                 <SubjectTeacherAvatar
                   subjectId={teacherSubjectId}
@@ -755,12 +823,12 @@ export function MaterialReadPane({
                 <div className="max-w-[260px] rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3 text-sm text-card-foreground shadow-sm">
                   こんにちは、{teacherName}だよ📖
                   <br />
+                  まだ「まとまり」が準備できていないみたい。
+                  <br />
                   <span className="font-medium text-primary">
                     ▶ 学習を開始する
                   </span>{" "}
-                  を押すと、今のページを説明するね。
-                  <br />
-                  分からない所は何でも聞いてね。
+                  で今のページから始めることもできるよ。
                 </div>
               </div>
             ) : (
