@@ -1714,7 +1714,7 @@ N8「学習概念は全部ノート・理解済み/未理解(=Issue)ステータ
 
 ---
 
-### まとめノートの「まとまり (一単元) 区切り」設計 (2026-06-06、★grill 確定 M1-M10、未実装★)
+### まとめノートの「まとまり (一単元) 区切り」設計 (2026-06-06、★grill 確定 M1-M10、MVP 実装済 [C-1〜C-6]・E2E 未確認★)
 
 **問題 (ito19 さん指摘)**: 現状 `summarizeConceptForNote` は**今表示中ページ画像だけ**を渡す = ノートが「今ページ要約」になり「一単元 (まとまり) の要約」になっていない。テキストの一単元は1ページ/見開きに収まらず、どこからどこまでが一区切りかを**先に**決める必要がある。**「話が切り替わる所を区切る力こそ、できる子は持ちできない子は持たない能力」→ そこを AI が代行するのがこのアプリの核心価値** (コーチングで足場を外部化)。
 
@@ -1741,6 +1741,21 @@ N8「学習概念は全部ノート・理解済み/未理解(=Issue)ステータ
 - `findConceptForPage` の **PDF-index 化** (現状は印刷番号と PDF index を直接比較する潜在バグあり)
 
 **現状コードとの差分の起点**: `lib/notes/note-gate-claude.ts` (`summarizeConceptForNote` が今ページ画像のみ) / `lib/notes/concept-for-page.ts` (`findConceptForPage` 印刷番号比較) / `components/materials/MaterialReadPane.tsx` (`openNoteGate`/`handleStartLearning` が `pagesToShow` のみ) / `lib/admin/extract-claude.ts` (目次→`pageRange` 印刷番号抽出)。
+
+#### MVP 実装 (2026-06-06、C-1〜C-6、デジタル本で M3 本物・E2E 未確認)
+
+未決1-5 への採用解 + 実装:
+- **未決1 (体系図②との関係)**: 目次体系図 (`AiExtractedNode`・印刷番号) は**置き換えず併存**。`ConceptSegment` を別データとして持つ (意味の違う数値=PDF紙番号 を混ぜない)。
+- **未決2 (データ構造)**: 新型 `ConceptSegment` (lib/learn/types.ts、id/conceptName/startPdfPage/endPdfPage/parentNodeTempId?/source?/printPageHint?)。保存は `materials.concept_segments` (JSONB)、`note_entries.source_segment_id` (text)。**migration 2 本 = ADD COLUMN のみ** (RLS 不変、新テーブル無し)。
+- **未決3 (スキャン本コスト)**: MVP は**デジタル PDF (文字レイヤーあり) 経路のみ**。`extractFullPageTexts` が全ページ本文を `【pdf:N】` 連結 → `segmentConceptsFromText` (Claude 4.8、vision 不要・激安) が概念単位に区切る。N=PDF紙番号なので出力が最初から PDF紙番号 (M3、ズレ消滅)。スキャン本 vision 区切りは**後段 C-8** (未実装、現状はセグメント無し→従来の今ページ要約にフォールバック)。
+- **未決4 (「学習を開始する」)**: 単元提示 + オリエン + 通読促し (2 フェーズ①) に再構成。フェーズ①→②の自動遷移検知は MVP では省略。
+- **未決5 (findConceptForPage)**: PDF-index 版 `findSegmentForPage` を新設、読書ビューはこちらを使用。旧版は温存しレガシー (まとまり無し教材) 用に降格。
+
+実装ファイル: 新規 `lib/admin/segment-claude.ts` / `supabase/migrations/20260606000000_add_concept_segments.sql` + `20260606010000_add_note_source_segment.sql`。改修 `lib/learn/types.ts` `lib/notes/concept-for-page.ts` `lib/notes/notes-repo.ts` `lib/notes/note-gate-claude.ts` `lib/materials/materials-repo.ts` `lib/admin/pdf-extract-text.ts` `components/materials/MaterialReadPane.tsx` `components/notes/NoteGateDialog.tsx` `components/tutor/TutorWorkspace.tsx`。tsc/eslint/build クリア。
+
+**★セットアップ必須 (real モード)★**: migration 2 本を本番 DB に未適用。**適用前は note_entries への insert が `source_segment_id` 列欠如で失敗** → NoteGateDialog が in-memory フォールバック (動線は止まらないがノートが永続化されない)。SQL Editor で 2 本適用が必要。Supabase 未設定 (mock) なら影響なし。
+
+**後段 (未実装)**: C-7 区切りのバックグラウンド完了通知の磨き / C-8 スキャン本 低解像度 vision 区切り / C-9 左縦スライダー (全ページサムネ+概念境界+色帯+ノート化済み緑、M5) / C-10 範囲大きすぎ分割提案 / C-11 言葉での区切り修正 (M2) / C-12 体系図③ 2 階層繋ぎ。
 
 ---
 
