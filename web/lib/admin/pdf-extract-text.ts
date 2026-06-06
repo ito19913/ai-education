@@ -53,6 +53,11 @@ const IMAGE_JPEG_QUALITY = 0.72;
 
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
+// pdf.js v6 の JBIG2/JPEG2000 画像デコーダ wasm の配置先 (public/pdfjs-wasm/)。
+// JBIG2 で圧縮された自炊スキャン本は、これが無いとページが真っ白になる (描画失敗)。
+// node_modules/pdfjs-dist/wasm/*.wasm を public/pdfjs-wasm/ にコピー済み。
+const WASM_URL = "/pdfjs-wasm/";
+
 let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 
 async function getPdfjs(): Promise<typeof import("pdfjs-dist")> {
@@ -97,17 +102,23 @@ export type IngestionText = {
   tocImages: string[];
 };
 
-/** ページを JPEG に描画して base64 (prefix 無し) を返す。失敗時 null。 */
-export async function renderPageToJpeg(
+/**
+ * ページを指定の長辺 px / JPEG 品質で描画して base64 (prefix 無し) を返す。失敗時 null。
+ * longEdge / quality を呼び出し側で選べる (C-8: vision 区切りは低解像度で payload とコストを
+ * 抑え、オフセット較正の番号読みは高めの解像度で小さなノンブルを読む、と使い分ける)。
+ */
+export async function renderPageToJpegAt(
   doc: PDFDocumentProxy,
   pageNum: number,
+  longEdge: number,
+  quality: number,
 ): Promise<string | null> {
   try {
     const page = await doc.getPage(pageNum);
     const base = page.getViewport({ scale: 1 });
-    const longEdge = Math.max(base.width, base.height);
+    const baseLong = Math.max(base.width, base.height);
     // 拡大はしない (scale<=3 で上限、潰れた小さい PDF の暴走防止)
-    const scale = Math.min(IMAGE_TARGET_LONG_EDGE / longEdge, 3);
+    const scale = Math.min(longEdge / baseLong, 3);
     const viewport = page.getViewport({ scale });
 
     const canvas = document.createElement("canvas");
@@ -124,7 +135,7 @@ export async function renderPageToJpeg(
 
     // v6 では canvas を渡すのが推奨 (canvasContext は後方互換)。
     await page.render({ canvas, viewport }).promise;
-    const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_JPEG_QUALITY);
+    const dataUrl = canvas.toDataURL("image/jpeg", quality);
     page.cleanup();
     // canvas を解放 (大きな PDF を多数描画するときのメモリ対策)
     canvas.width = 0;
@@ -135,6 +146,14 @@ export async function renderPageToJpeg(
     console.error(`[PDF 画像化] p.${pageNum} 描画失敗:`, err);
     return null;
   }
+}
+
+/** ページを JPEG に描画して base64 (prefix 無し) を返す (既定の高解像度)。失敗時 null。 */
+export async function renderPageToJpeg(
+  doc: PDFDocumentProxy,
+  pageNum: number,
+): Promise<string | null> {
+  return renderPageToJpegAt(doc, pageNum, IMAGE_TARGET_LONG_EDGE, IMAGE_JPEG_QUALITY);
 }
 
 // ============================================================================
@@ -154,7 +173,7 @@ export type LoadedPdf = {
 export async function loadPdfDocument(file: File): Promise<LoadedPdf> {
   const pdfjs = await getPdfjs();
   const data = await file.arrayBuffer();
-  const loadingTask = pdfjs.getDocument({ data });
+  const loadingTask = pdfjs.getDocument({ data, wasmUrl: WASM_URL });
   const doc = await loadingTask.promise;
   return {
     doc,
@@ -261,7 +280,7 @@ export async function extractFullPageTexts(file: File): Promise<FullPageTexts> {
 
   const pdfjs = await getPdfjs();
   const data = await file.arrayBuffer();
-  const loadingTask = pdfjs.getDocument({ data });
+  const loadingTask = pdfjs.getDocument({ data, wasmUrl: WASM_URL });
   const doc = await loadingTask.promise;
   try {
     const total = doc.numPages;
@@ -370,7 +389,7 @@ export async function extractIngestionText(file: File): Promise<IngestionText> {
 
   const pdfjs = await getPdfjs();
   const data = await file.arrayBuffer();
-  const loadingTask = pdfjs.getDocument({ data });
+  const loadingTask = pdfjs.getDocument({ data, wasmUrl: WASM_URL });
   const doc = await loadingTask.promise;
 
   try {

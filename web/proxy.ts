@@ -22,7 +22,9 @@ export const config = {
      * - favicon.ico
      * - 拡張子付きの公開アセット (画像・worker など)
      *   mjs/js は pdf.js worker (public/pdf.worker.min.mjs) を認証で弾かないために除外
+     *   wasm は pdf.js の JBIG2/JPEG2000 デコーダ (public/pdfjs-wasm/*.wasm) を
+     *   認証で弾かないために除外 (これが無いと JBIG2 スキャン本のページが真っ白になる)
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mjs|js)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mjs|js|wasm)$).*)",
   ],
 };
