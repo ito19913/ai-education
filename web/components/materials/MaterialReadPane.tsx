@@ -280,6 +280,10 @@ export function MaterialReadPane({
   // DB に区切りが無い (migration 未適用 / 既存教材 / まだ生成前) 場合、PDF が読めたら
   // その場で葵が全書を読んで区切る。セッション内キャッシュで 1 回だけ。デジタル PDF のみ
   // (文字レイヤー無し = スキャン本は対象外、将来 C-8)。
+  // ★依存は [loaded, material.id, material.conceptSegments] だけにする★
+  // segmenting / localSegments を deps に入れると、setSegmenting(true) で自エフェクトが
+  // 再実行→ cleanup で in-flight をキャンセル→ segmenting=true のまま固まる (実機バグ)。
+  // 再入防止は attemptedSegmentation (module Set) が担うので state を deps に入れない。
   useEffect(() => {
     const hasPersisted =
       !!material.conceptSegments && material.conceptSegments.length > 0;
@@ -287,67 +291,49 @@ export function MaterialReadPane({
 
     const cached = sessionSegmentCache.get(material.id);
     if (cached) {
-      if (!localSegments) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setLocalSegments(cached);
-      }
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLocalSegments(cached);
       return;
     }
-    if (localSegments || segmenting) return;
-    // 一度試した教材は再試行しない (スキャン本=0件 でも無限ループしない)。
+    // 一度試した教材は再試行しない (スキャン本=0件 でも無限ループ・再生成しない)。
     if (attemptedSegmentation.has(material.id)) return;
 
     const file = getSessionPdf(material.id);
     if (!file) return;
 
-    let cancelled = false;
+    // 投げっぱなし (cancel しない)。途中でキャンセルすると setSegmenting(false) が
+    // 走らず固まるため、必ず finally で false に戻す。再入は attempted が防ぐ。
     attemptedSegmentation.add(material.id);
     setSegmenting(true);
     (async () => {
       try {
         const { hasTextLayer, packedText } = await extractFullPageTexts(file);
-        if (cancelled) return;
-        if (!hasTextLayer || packedText.length === 0) {
-          setSegmenting(false);
-          return;
-        }
-        const segs = await segmentConceptsFromText({
-          materialName: material.name,
-          subjectName: subject?.name ?? "教科",
-          gradeLevel: material.gradeLevel ?? "中2",
-          packedText,
-        });
-        if (cancelled) return;
-        if (segs.length > 0) {
-          sessionSegmentCache.set(material.id, segs);
-          setLocalSegments(segs);
-          // real モードなら DB に保存 → 次回開いた時は即表示 (再生成不要)。
-          if (isSupabaseConfigured()) {
-            updateMaterialSegments(material.id, segs).catch((e) =>
-              console.error("[読書] まとまり保存失敗:", e),
-            );
+        if (hasTextLayer && packedText.length > 0) {
+          const segs = await segmentConceptsFromText({
+            materialName: material.name,
+            subjectName: subject?.name ?? "教科",
+            gradeLevel: material.gradeLevel ?? "中2",
+            packedText,
+          });
+          if (segs.length > 0) {
+            sessionSegmentCache.set(material.id, segs);
+            setLocalSegments(segs);
+            // real モードなら DB に保存 → 次回開いた時は即表示 (再生成不要)。
+            if (isSupabaseConfigured()) {
+              updateMaterialSegments(material.id, segs).catch((e) =>
+                console.error("[読書] まとまり保存失敗:", e),
+              );
+            }
           }
         }
       } catch (err) {
         console.error("[読書] まとまり生成失敗:", err);
       } finally {
-        if (!cancelled) setSegmenting(false);
+        setSegmenting(false);
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    loaded,
-    material.id,
-    material.conceptSegments,
-    material.name,
-    material.gradeLevel,
-    subject?.name,
-    localSegments,
-    segmenting,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, material.id, material.conceptSegments]);
 
   // ----- 表示中ページ (1 or 2 枚) を各 canvas に描画 (エリアにフィット × zoom) -----
   useEffect(() => {
