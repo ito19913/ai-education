@@ -41,6 +41,7 @@ import {
   type AokiChatMessage,
 } from "@/lib/admin/aoki-chat-claude";
 import { NoteGateDialog } from "@/components/notes/NoteGateDialog";
+import { PageThumbnailRail } from "@/components/materials/PageThumbnailRail";
 import {
   findConceptForPage,
   findSegmentForPage,
@@ -345,7 +346,11 @@ export function MaterialReadPane({
       const packed = await packPages(visionPages);
 
       const userMessage = target
-        ? `（学習を開始）今日のまとまりは「${target.conceptName}」だよ。これは1つのまとまり(一単元)。まず「このまとまりはこういう所だよ」と全体像を2〜3文で説明し、「ここに注意して読んでみてね」と読む時の着目点を1つ示して。最後に「まずは一度ざっと通して読んでみよう、分からない所は飛ばして大丈夫。読み終えて『ノートにまとめる』を押したら、一緒に概念ごとにまとめていこうね」と通読を促して。`
+        ? `（学習を開始）今日のまとまりは「${target.conceptName}」、この本の ${target.startPdfPage}ページ〜${target.endPdfPage}ページ だよ。これは 1 つのまとまり(一単元)。次の順で、いきなり中身を詳しく説明せず軽く案内して:
+1) まず「今日はここ(${target.startPdfPage}〜${target.endPdfPage}ページ)を『${target.conceptName}』というまとまりとして勉強していこう」と**範囲を伝える**。
+2) 「ここではこういうことを学ぶよ」と、このまとまりで扱う内容を 2〜3 文でざっくり。
+3) 「読むときはここに注目してね」と着目点を 1 つ。
+4) 最後に「まずは一度ざっと通して読んでみよう。分からない所は飛ばして大丈夫。読み終えて『ノートにまとめる』を押したら、概念ごとに一緒にまとめていこうね。ここから始めていい?」と通読を促し、軽く確認する。`
         : "（学習を開始）今開いているページの要点を、中学生にわかるように2〜4文で説明して。最後に「分からないところがあれば聞いてね」と一言添えて。";
 
       const aiText = await respondViaAokiChat({
@@ -523,6 +528,17 @@ export function MaterialReadPane({
 
       {/* 本体: 広い画面=左右、狭い画面=上下スタック */}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* 左端の縦スライダー (全ページサムネ + まとまり色分け、見る地図、M5) */}
+        <PageThumbnailRail
+          doc={loaded?.doc ?? null}
+          numPages={numPages}
+          currentPage={page}
+          segments={segments}
+          currentSegmentId={currentSegment?.id ?? null}
+          notedSegmentIds={notedSegmentIds}
+          onJump={jumpTo}
+        />
+
         {/* PDF ビューア */}
         <div className="flex min-h-0 flex-1 flex-col border-b border-border lg:border-b-0 lg:border-r">
           {/* ページコントロール */}
