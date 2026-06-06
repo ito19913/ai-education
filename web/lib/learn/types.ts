@@ -1426,6 +1426,38 @@ export type ConceptSegment = {
   printPageHint?: string;
 };
 
+/**
+ * AI 主導ガイド読書の「説明ブロック」(G-1〜G-7、2026-06-06)。
+ *
+ * まとまり (ConceptSegment) を開いた時、葵 (Opus vision) がその全ページを解析して
+ * 「教える順序のブロック列」に分ける (= 区切りの"下書き提案"、G-3)。葵が一区切りずつ
+ * 解説し、子は「次へ/もっと簡単に/質問」で受け身に進む。順序は提案にすぎず子が直せる。
+ */
+export type GuidedBlock = {
+  /** まとまり内ユニークな安定 ID ("blk-1" 等) */
+  id: string;
+  /** 短いブロック名 (例: "■租税回避の防止" / "判定の表") */
+  label: string;
+  /** このブロックがある PDF 紙番号 (1-indexed) */
+  pdfPage: number;
+  /** ブロックの種類 (POINT/MEMO/補足 は本文の後に回す、G-4) */
+  kind:
+    | "heading"
+    | "body"
+    | "table"
+    | "figure"
+    | "point"
+    | "memo"
+    | "supplement"
+    | "example";
+  /** 紙面での概略位置 (言葉、例: "上中" "下右"。視覚枠が無い時の案内に使う、G-3) */
+  positionHint?: string;
+  /** 本文とは別の補足 (POINT/MEMO/補足) か。true は本文を流した後に差し込む (G-4) */
+  supplementary: boolean;
+  /** 紙面での概略矩形 (0-1 正規化、視覚ハイライト用、任意・G-B)。葵の vision 推定で不正確な場合あり */
+  bbox?: { x: number; y: number; w: number; h: number };
+};
+
 /** 教材登録ウィザードの入力データ */
 export type MaterialDraft = {
   name: string;

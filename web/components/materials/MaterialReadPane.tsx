@@ -37,6 +37,7 @@ import {
 } from "@/lib/admin/pdf-extract-text";
 import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
 import { buildScanSegments } from "@/lib/admin/scan-segment-builder";
+import { buildGuidedReadingPlan } from "@/lib/admin/guided-reading-claude";
 import { getSessionPdf, setSessionPdf } from "@/lib/admin/session-pdf-store";
 import { downloadMaterialPdf } from "@/lib/materials/pdf-storage";
 import { updateMaterialSegments } from "@/lib/materials/materials-repo";
@@ -58,6 +59,7 @@ import { NotebookPen, Play, ListChecks, Check } from "lucide-react";
 import type {
   AiExtractedNode,
   ConceptSegment,
+  GuidedBlock,
   Material,
   NoteEntry,
   Subject,
@@ -103,6 +105,15 @@ const sessionSegmentCache = new Map<string, ConceptSegment[]>();
  * 無限ループを防ぐ (= 1 教材 1 回だけ試す)。成功時は sessionSegmentCache に入る。
  */
 const attemptedSegmentation = new Set<string>();
+
+/**
+ * ガイド読書のブロックプラン (GuidedBlock[]) のセッション内キャッシュ (segment.id → blocks)。
+ * 同じまとまりを開き直しても葵の vision 解析を 1 回で済ませる (G-A)。
+ */
+const sessionGuidedPlanCache = new Map<string, GuidedBlock[]>();
+
+// ガイド読書のブロックプラン生成で vision に渡すまとまりページの上限 (大きすぎるまとまり対策)。
+const GUIDED_MAX_PAGES = 16;
 
 /** 範囲 [start,end] のページを最大 max 枚に均等サンプリングして返す。 */
 function sampleRangePages(pages: number[], max: number): number[] {
@@ -410,6 +421,15 @@ export function MaterialReadPane({
   // フロー再設計: 学習セッション開始 (葵が今のページを自分から説明する)
   const [starting, setStarting] = useState(false);
 
+  // ----- AI 主導ガイド読書 (G-A、2026-06-06) -----
+  // まとまりを「教える順序のブロック」に分け、葵が一区切りずつ解説する。
+  const [guidedBlocks, setGuidedBlocks] = useState<GuidedBlock[] | null>(null);
+  const [guidedIndex, setGuidedIndex] = useState(0);
+  const [guidedSegment, setGuidedSegment] = useState<ConceptSegment | null>(null);
+  // 難易度: 0=やさしい / 1=ふつう / 2=詳しい (G-6、初回はやさしい。周回数連動は G-C)。
+  const [guidedLevel, setGuidedLevel] = useState(0);
+  const [guidedBusy, setGuidedBusy] = useState(false);
+
   // 指定ページ群を JPEG 化して改行連結 1 文字列にする (vision 用、共通)。
   const packPages = useCallback(
     async (pages: number[]): Promise<string | undefined> => {
@@ -478,13 +498,194 @@ export function MaterialReadPane({
     [loaded, starting, sending, pagesToShow, packPages, material, subject, page, history],
   );
 
-  // 入口の一覧から まとまり を選んだ時: 一覧を閉じてその単元のオリエンを開始。
+  // ----- ガイド読書: 1 ブロックを葵が解説する (G-A) -----
+  // 葵が「このブロックだけ」を、難易度 level に応じて説明し、最後に「次に行く?」と促す。
+  // ガイド用の userMessage は可視 history に積まない (葵が自分から説明したように見せる)。
+  const explainGuidedBlock = useCallback(
+    async (
+      blocks: GuidedBlock[],
+      index: number,
+      level: number,
+      conceptName: string,
+    ) => {
+      const block = blocks[index];
+      if (!block || !loaded) return;
+      setGuidedIndex(index);
+      setPage(block.pdfPage); // 該当ページを表示
+      const packed = await packPages([block.pdfPage]);
+      const levelText =
+        level <= 0
+          ? "中学生にやさしい言葉で、短めに"
+          : level === 1
+            ? "中学生に分かるように、ふつうの詳しさで"
+            : "もう少し踏み込んで、正式な用語も交えて";
+      const suppText = block.supplementary
+        ? "これは本文の補足 (POINT/MEMO など) だよ。本文の要点をおさらいする感じで、"
+        : "";
+      const posText = block.positionHint ? `（${block.positionHint}あたり）` : "";
+      const userMessage = `（ガイド読書）${suppText}次は「${block.label}」${posText}を ${levelText} 説明して。今このブロックだけに絞って、長くなりすぎないように。最後に「ここまで大丈夫? 次に行く?」と一言添えてね。`;
+      const aiText = await respondViaAokiChat({
+        materialName: material.name,
+        subjectName: subject?.name ?? "教科",
+        gradeLevel: material.gradeLevel ?? "中2",
+        focusNodeName: conceptName || block.label,
+        history,
+        userMessage,
+        currentPageImagesPacked: packed,
+        currentPageNumber: block.pdfPage,
+      });
+      setHistory((prev) => [...prev, { role: "assistant", text: aiText }]);
+    },
+    [loaded, packPages, material, subject, history],
+  );
+
+  // 入口の一覧から まとまり を選んだ時: ガイド読書を開始 (ブロックプラン生成 → 最初を解説)。
+  const startGuided = useCallback(
+    async (seg: ConceptSegment) => {
+      if (!loaded || starting || sending || guidedBusy) return;
+      setShowUnitMenu(false);
+      setGuidedSegment(seg);
+      setGuidedLevel(0);
+      setGuidedBusy(true);
+      try {
+        setPage(seg.startPdfPage);
+        // 短いオリエン (API 不要のテンプレ)。
+        setHistory((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            text: `「${seg.conceptName}」を一緒に見ていこう📖\n上から順に、わたしが少しずつ説明するね。**次へ**で進めて、むずかしかったら**もっと簡単に**、聞きたいことはいつでも入力してOK。`,
+          },
+        ]);
+        // ブロックプラン (セッションキャッシュ優先)。
+        let blocks = sessionGuidedPlanCache.get(seg.id);
+        if (!blocks) {
+          const pages = sampleRangePages(segmentPages(seg), GUIDED_MAX_PAGES);
+          const packed = await packPages(pages);
+          blocks = packed
+            ? await buildGuidedReadingPlan({
+                materialName: material.name,
+                subjectName: subject?.name ?? "教科",
+                gradeLevel: material.gradeLevel ?? "中2",
+                conceptName: seg.conceptName,
+                imagesPacked: packed,
+                pageNumbers: pages,
+              })
+            : [];
+          if (blocks.length > 0) sessionGuidedPlanCache.set(seg.id, blocks);
+        }
+        // ブロック化できなければ、まとまり全体を 1 ブロック扱いにフォールバック。
+        if (!blocks || blocks.length === 0) {
+          blocks = [
+            {
+              id: "blk-1",
+              label: seg.conceptName,
+              pdfPage: seg.startPdfPage,
+              kind: "body",
+              supplementary: false,
+            },
+          ];
+        }
+        setGuidedBlocks(blocks);
+        await explainGuidedBlock(blocks, 0, 0, seg.conceptName);
+      } catch (err) {
+        console.error("[ガイド読書] 開始失敗:", err);
+        setHistory((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            text: "ごめん、うまく準備できなかった…もう一度試してくれる?",
+          },
+        ]);
+      } finally {
+        setGuidedBusy(false);
+      }
+    },
+    [
+      loaded,
+      starting,
+      sending,
+      guidedBusy,
+      packPages,
+      material,
+      subject,
+      explainGuidedBlock,
+    ],
+  );
+
   const startUnit = useCallback(
     (seg: ConceptSegment) => {
-      setShowUnitMenu(false);
-      void runOrientation(seg);
+      void startGuided(seg);
     },
-    [runOrientation],
+    [startGuided],
+  );
+
+  // 「次へ」: 次のブロックを解説。最後まで来たら まとめを促す。
+  const goNextBlock = useCallback(async () => {
+    if (!guidedBlocks || guidedBusy || sending) return;
+    const ni = guidedIndex + 1;
+    if (ni >= guidedBlocks.length) {
+      setHistory((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: "このまとまりはここまで見たね！おつかれさま😊 もう一度読み返してもOK。よければ上の**「ノートにまとめる」**で、今の内容を1つのまとまりとしてノートに残そう。",
+        },
+      ]);
+      return;
+    }
+    setGuidedBusy(true);
+    try {
+      await explainGuidedBlock(
+        guidedBlocks,
+        ni,
+        guidedLevel,
+        guidedSegment?.conceptName ?? "",
+      );
+    } catch (err) {
+      console.error("[ガイド読書] 次へ失敗:", err);
+    } finally {
+      setGuidedBusy(false);
+    }
+  }, [
+    guidedBlocks,
+    guidedBusy,
+    sending,
+    guidedIndex,
+    guidedLevel,
+    guidedSegment,
+    explainGuidedBlock,
+  ]);
+
+  // 「もっと簡単に / もっと詳しく」: 難易度を上下して今のブロックを言い直す (G-6)。
+  const adjustGuidedLevel = useCallback(
+    async (delta: number) => {
+      if (!guidedBlocks || guidedBusy || sending) return;
+      const newLevel = Math.min(2, Math.max(0, guidedLevel + delta));
+      setGuidedLevel(newLevel);
+      setGuidedBusy(true);
+      try {
+        await explainGuidedBlock(
+          guidedBlocks,
+          guidedIndex,
+          newLevel,
+          guidedSegment?.conceptName ?? "",
+        );
+      } catch (err) {
+        console.error("[ガイド読書] 説明調整失敗:", err);
+      } finally {
+        setGuidedBusy(false);
+      }
+    },
+    [
+      guidedBlocks,
+      guidedBusy,
+      sending,
+      guidedLevel,
+      guidedIndex,
+      guidedSegment,
+      explainGuidedBlock,
+    ],
   );
 
   // M8: まとめる = まとまり (一単元) 全体を vision で渡して 1 概念の要約を作る。
@@ -802,7 +1003,7 @@ export function MaterialReadPane({
                 size="sm"
                 variant="outline"
                 onClick={() => setShowUnitMenu(true)}
-                disabled={!loaded || starting || sending}
+                disabled={!loaded || starting || sending || guidedBusy}
                 className="gap-1.5"
                 title="まとまり(単元)の一覧から、勉強する所を選べるよ。"
               >
@@ -818,7 +1019,7 @@ export function MaterialReadPane({
                 size="sm"
                 variant="outline"
                 onClick={() => void runOrientation(null)}
-                disabled={!loaded || starting || sending}
+                disabled={!loaded || starting || sending || guidedBusy}
                 className="gap-1.5"
                 title="葵先生が今のページを説明してくれるよ。"
               >
@@ -840,7 +1041,7 @@ export function MaterialReadPane({
             <Button
               size="sm"
               onClick={() => void openNoteGate()}
-              disabled={!loaded || preparingGate}
+              disabled={!loaded || preparingGate || guidedBusy}
               className="gap-1.5"
               title="今のページと葵との対話から、自分のノートに刻むよ。"
             >
@@ -860,6 +1061,47 @@ export function MaterialReadPane({
               </span>
             )}
           </div>
+          {/* ガイド読書コントロール (G-A): まとまりを一区切りずつ歩いている間だけ表示。
+              子は受け身で「次へ / もっと簡単に / もっと詳しく」+ 下の入力欄で質問。 */}
+          {guidedBlocks && !showUnitMenu && (
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-sky-50/60 px-3 py-1.5">
+              <Button
+                size="sm"
+                onClick={() => void goNextBlock()}
+                disabled={!loaded || guidedBusy || sending}
+                className="gap-1.5"
+                title="次の区切りへ進む"
+              >
+                {guidedBusy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ChevronRight className="size-4" />
+                )}
+                <span>次へ</span>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void adjustGuidedLevel(-1)}
+                disabled={!loaded || guidedBusy || sending}
+                title="今の説明をもっとやさしく言い直す"
+              >
+                もっと簡単に
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void adjustGuidedLevel(1)}
+                disabled={!loaded || guidedBusy || sending}
+                title="今の説明をもっと詳しく言い直す"
+              >
+                もっと詳しく
+              </Button>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {guidedIndex + 1} / {guidedBlocks.length}
+              </span>
+            </div>
+          )}
           <div
             ref={chatScrollRef}
             className="min-h-0 flex-1 overflow-y-auto p-3"
@@ -911,7 +1153,7 @@ export function MaterialReadPane({
                   ✓ は、もうノートにまとめた まとまりだよ。
                 </p>
               </div>
-            ) : history.length === 0 && starting ? (
+            ) : history.length === 0 && (starting || guidedBusy) ? (
               <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
                 <span>葵先生が準備しているよ…</span>
@@ -970,7 +1212,7 @@ export function MaterialReadPane({
                     </li>
                   ),
                 )}
-                {sending && (
+                {(sending || guidedBusy) && (
                   <li className="flex items-end gap-2">
                     <SubjectTeacherAvatar
                       subjectId={teacherSubjectId}
@@ -1002,12 +1244,12 @@ export function MaterialReadPane({
               }}
               placeholder="今のページについて聞く（Ctrl+Enter で送信）"
               className="max-h-32 min-h-[44px] flex-1 resize-none"
-              disabled={sending}
+              disabled={sending || guidedBusy}
             />
             <Button
               size="icon"
               onClick={() => void handleSend()}
-              disabled={sending || draft.trim().length === 0}
+              disabled={sending || guidedBusy || draft.trim().length === 0}
               aria-label="送信"
             >
               {sending ? (
