@@ -38,6 +38,8 @@ import {
 import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
 import { getSessionPdf, setSessionPdf } from "@/lib/admin/session-pdf-store";
 import { downloadMaterialPdf } from "@/lib/materials/pdf-storage";
+import { updateMaterialSegments } from "@/lib/materials/materials-repo";
+import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
 import {
   respondViaAokiChat,
   type AokiChatMessage,
@@ -309,6 +311,12 @@ export function MaterialReadPane({
         if (segs.length > 0) {
           sessionSegmentCache.set(material.id, segs);
           setLocalSegments(segs);
+          // real モードなら DB に保存 → 次回開いた時は即表示 (再生成不要)。
+          if (isSupabaseConfigured()) {
+            updateMaterialSegments(material.id, segs).catch((e) =>
+              console.error("[読書] まとまり保存失敗:", e),
+            );
+          }
         }
       } catch (err) {
         console.error("[読書] まとまり生成失敗:", err);
