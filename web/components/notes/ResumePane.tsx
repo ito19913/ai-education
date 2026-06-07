@@ -23,7 +23,10 @@ import {
   CircleX,
   Sparkles,
   BookOpenCheck,
+  Mic,
+  MicOff,
 } from "lucide-react";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
 import { reviewResume } from "@/lib/notes/note-gate-claude";
 import type { ResumeReviewResult } from "@/lib/notes/note-gate-claude";
@@ -85,6 +88,28 @@ export function ResumePane(props: Props) {
   // 直前の添削が「仕上げる(強制・関所)」起点か「葵に見てもらう(任意の途中チェック)」起点か。
   // 仕上げる → 結果に応じて確定へ誘導。任意 → 書き続けに戻す。
   const [finalizeRequested, setFinalizeRequested] = useState(false);
+
+  // 音声入力 (R4): 話した内容をレジュメ本文に追記する。
+  const {
+    supported: micSupported,
+    listening,
+    interim,
+    start: startMic,
+    stop: stopMic,
+  } = useSpeechRecognition();
+
+  // 確定した聞き取り断片を本文に追記。添削後なら writing に戻す (古い判定で確定させない)。
+  const appendVoice = useCallback((text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    setBody((prev) => (prev ? prev + t : t));
+    setStage((s) => (s === "reviewed" ? "writing" : s));
+  }, []);
+
+  const toggleMic = useCallback(() => {
+    if (listening) stopMic();
+    else startMic(appendVoice);
+  }, [listening, startMic, stopMic, appendVoice]);
 
   // まとまりが変わったら書き直し (続きなら既存本文を初期値に)。
   const segKey = segment?.id ?? conceptName;
@@ -157,6 +182,7 @@ export function ResumePane(props: Props) {
     async (status: Outcome) => {
       const text = body.trim();
       if (text.length === 0) return;
+      stopMic(); // 確定するなら録音は止める
       setStage("committing");
 
       // 2 周目 (既存エントリあり) → 更新。なければ新規作成。
@@ -227,6 +253,7 @@ export function ResumePane(props: Props) {
       sourcePageRange,
       segment,
       onCommitted,
+      stopMic,
     ],
   );
 
@@ -280,12 +307,37 @@ export function ResumePane(props: Props) {
           <>
             {/* 書く欄 */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium">
-                教科書を閉じて、自分の言葉でまとめてみよう
-              </label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm font-medium">
+                  教科書を閉じて、自分の言葉でまとめてみよう
+                </label>
+                {micSupported && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={listening ? "default" : "outline"}
+                    onClick={toggleMic}
+                    disabled={stage === "reviewing" || stage === "committing"}
+                    className="shrink-0 gap-1.5"
+                    title={
+                      listening
+                        ? "タップで停止"
+                        : "タップで音声入力。話した内容がレジュメに入るよ"
+                    }
+                  >
+                    {listening ? (
+                      <MicOff className="size-4" />
+                    ) : (
+                      <Mic className="size-4" />
+                    )}
+                    <span>{listening ? "停止" : "話す"}</span>
+                  </Button>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
                 さっき分かったことを「つまりこういうこと」と要約して。
-                声に出すみたいに書いてOK。お手本は出さないよ — 自分の言葉が大事。
+                {micSupported ? "「話す」で声でも入れられるよ。" : ""}
+                お手本は出さないよ — 自分の言葉が大事。
               </p>
               <Textarea
                 value={body}
@@ -298,6 +350,11 @@ export function ResumePane(props: Props) {
                 className="min-h-[140px] resize-none"
                 disabled={stage === "reviewing" || stage === "committing"}
               />
+              {listening && (
+                <p className="text-xs text-sky-600">
+                  🎙 聞き取り中… {interim || "（話してね）"}
+                </p>
+              )}
               {errorMsg && (
                 <p className="text-sm text-destructive">{errorMsg}</p>
               )}
