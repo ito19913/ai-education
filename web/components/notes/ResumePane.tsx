@@ -82,6 +82,9 @@ export function ResumePane(props: Props) {
   const [result, setResult] = useState<ResumeReviewResult | null>(null);
   const [outcome, setOutcome] = useState<Outcome>("understood");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // 直前の添削が「仕上げる(強制・関所)」起点か「葵に見てもらう(任意の途中チェック)」起点か。
+  // 仕上げる → 結果に応じて確定へ誘導。任意 → 書き続けに戻す。
+  const [finalizeRequested, setFinalizeRequested] = useState(false);
 
   // まとまりが変わったら書き直し (続きなら既存本文を初期値に)。
   const segKey = segment?.id ?? conceptName;
@@ -93,12 +96,16 @@ export function ResumePane(props: Props) {
     setStage("writing");
     setResult(null);
     setErrorMsg(null);
+    setFinalizeRequested(false);
   }, [segKey, existingEntry]);
 
   // ----- 葵に添削してもらう (3 色) -----
-  const handleReview = useCallback(async () => {
+  // finalize=true: 「このまとまりを仕上げる」(関所・強制)。false: 任意の途中チェック。
+  const handleReview = useCallback(
+    async (finalize: boolean) => {
     const text = body.trim();
     if (text.length === 0) return;
+    setFinalizeRequested(finalize);
     setStage("reviewing");
     setErrorMsg(null);
     try {
@@ -282,7 +289,11 @@ export function ResumePane(props: Props) {
               </p>
               <Textarea
                 value={body}
-                onChange={(e) => setBody(e.target.value)}
+                onChange={(e) => {
+                  setBody(e.target.value);
+                  // 添削後に編集したら writing に戻す (古い3色判定を確定に使わせない)。
+                  if (stage === "reviewed") setStage("writing");
+                }}
                 placeholder="例: つまり〜ということ。ポイントは〜で、〜のときは〜になる…（自分の言葉でOK）"
                 className="min-h-[140px] resize-none"
                 disabled={stage === "reviewing" || stage === "committing"}
@@ -292,8 +303,8 @@ export function ResumePane(props: Props) {
               )}
             </div>
 
-            {/* 3 色フィードバック */}
-            {(stage === "reviewed" || stage === "committing") && result && (
+            {/* 3 色フィードバック (添削後は書き続けても参照できるよう、result があれば表示) */}
+            {result && (
               <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/30 p-2.5">
                 <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   <Sparkles className="size-3.5" />
@@ -335,58 +346,64 @@ export function ResumePane(props: Props) {
       {/* 操作ボタン (フッター) */}
       {stage !== "done" && (
         <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-background/80 p-2.5 backdrop-blur">
-          {stage === "reviewed" && result?.resolved ? (
+          {stage === "reviewing" || stage === "committing" ? (
+            <Button disabled className="gap-2">
+              <Loader2 className="size-4 animate-spin" />
+              <span>{stage === "reviewing" ? "葵が読んでるよ…" : "保存中…"}</span>
+            </Button>
+          ) : stage === "reviewed" && finalizeRequested && result?.resolved ? (
+            /* 仕上げる → 誤りなし: 確定へ (R8、本人決定) */
             <>
-              <Button
-                variant="ghost"
-                onClick={() => void finalize("open")}
-                disabled={stage !== "reviewed"}
-              >
-                まだ不安、残す
+              <Button variant="ghost" onClick={() => setStage("writing")}>
+                もう少し直す
               </Button>
               <Button onClick={() => void finalize("understood")}>
-                理解済みにする
+                理解済みで確定
               </Button>
             </>
-          ) : stage === "reviewed" ? (
+          ) : stage === "reviewed" && finalizeRequested ? (
+            /* 仕上げる → 誤り/重大な抜けあり: 直すか Issue で残す */
             <>
               <Button variant="ghost" onClick={() => void finalize("open")}>
-                今日はここまで（残す）
+                今は Issue で残す
               </Button>
-              <Button onClick={() => void handleReview()}>
-                直して、もう一回見てもらう
+              <Button onClick={() => setStage("writing")}>直す</Button>
+            </>
+          ) : stage === "reviewed" ? (
+            /* 任意の途中チェック後: 書き続ける or 仕上げる (関所) */
+            <>
+              <Button variant="ghost" onClick={() => setStage("writing")}>
+                書き続ける
+              </Button>
+              <Button onClick={() => void handleReview(true)}>
+                このまとまりを仕上げる
               </Button>
             </>
           ) : (
+            /* writing: 中断(添削なし) / 任意チェック / 仕上げる(関所・強制添削) */
             <>
               <Button
                 variant="ghost"
                 onClick={() => void finalize("open")}
-                disabled={
-                  body.trim().length === 0 ||
-                  stage === "reviewing" ||
-                  stage === "committing"
-                }
+                disabled={body.trim().length === 0}
+                title="まだ途中。書いた分を Issue として残す (添削なし)"
               >
                 今日はここまで
               </Button>
               <Button
-                onClick={() => void handleReview()}
-                disabled={
-                  body.trim().length === 0 ||
-                  stage === "reviewing" ||
-                  stage === "committing"
-                }
-                className="gap-2"
+                variant="outline"
+                onClick={() => void handleReview(false)}
+                disabled={body.trim().length === 0}
+                title="途中で葵にチェックしてもらう (任意)"
               >
-                {stage === "reviewing" ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    <span>葵が読んでるよ…</span>
-                  </>
-                ) : (
-                  <span>葵に見てもらう</span>
-                )}
+                葵に見てもらう
+              </Button>
+              <Button
+                onClick={() => void handleReview(true)}
+                disabled={body.trim().length === 0}
+                title="まとまり完成。葵の添削を必ず通す (関所)"
+              >
+                このまとまりを仕上げる
               </Button>
             </>
           )}
