@@ -1515,9 +1515,10 @@ function buildNextTutorReplyInner(args: {
   }
 
   // C44 2026-05-26 (ito19 さん意見、残課題⑤ 解消):
-  // 「ノート」「まとめノート」 → まとめノートのホーム (N9①、体系図③ + リスト)
-  // 注意: 「教材」分岐より前に置く (「ノート」単独 word を確実に拾う)
+  // 「レジュメ」(旧称「ノート」) → レジュメのホーム (N9①、レジュメ体系図 + リスト)
+  // 注意: 「教材」分岐より前に置く (単独 word を確実に拾う)。旧「ノート」系も後方互換で残す。
   if (
+    lower.includes("レジュメ") ||
     lower.includes("まとめノート") ||
     lower === "ノート" ||
     lower === "ノート見せて" ||
@@ -1530,7 +1531,7 @@ function buildNextTutorReplyInner(args: {
       reply: {
         id: makeId(),
         role: "tutor",
-        text: "OK、これまでのまとめノートを右で見せるね。\n自分で理解して刻んだ 1 冊だよ。体系図でも見られるよ。",
+        text: "OK、これまでのレジュメを右で見せるね。\n自分で理解して書いた 1 冊だよ。レジュメ体系図でも見られるよ。",
         rightPaneAction: { kind: "open-notes" },
         createdAt: now,
       },
@@ -1647,7 +1648,7 @@ function buildNextTutorReplyInner(args: {
       reply: {
         id: makeId(),
         role: "tutor",
-        text: "あおい先生（英語）との対話履歴、右に出すね。\n見ながら「ここ課題にして」「ここノートにまとめて」って言ってくれたら拾うよ。",
+        text: "あおい先生（英語）との対話履歴、右に出すね。\n見ながら「ここ課題にして」「ここレジュメにして」って言ってくれたら拾うよ。",
         rightPaneAction: {
           kind: "open-subject-history",
           subjectId: "subj-english",

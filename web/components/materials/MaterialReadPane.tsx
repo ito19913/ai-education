@@ -618,7 +618,7 @@ export function MaterialReadPane({
 1) まず「今日はここ(${target.startPdfPage}〜${target.endPdfPage}ページ)を『${target.conceptName}』というまとまりとして勉強していこう」と**範囲を伝える**。
 2) 「ここではこういうことを学ぶよ」と、このまとまりで扱う内容を 2〜3 文でざっくり。
 3) 「読むときはここに注目してね」と着目点を 1 つ。
-4) 最後に「まずは一度ざっと通して読んでみよう。分からない所は飛ばして大丈夫。読み終えて『ノートにまとめる』を押したら、概念ごとに一緒にまとめていこうね。ここから始めていい?」と通読を促し、軽く確認する。`
+4) 最後に「まずは一度ざっと通して読んでみよう。分からない所は飛ばして大丈夫。読み終えて『レジュメにする』を押したら、概念ごとに一緒にまとめていこうね。ここから始めていい?」と通読を促し、軽く確認する。`
           : "（学習を開始）今開いているページの要点を、中学生にわかるように2〜4文で説明して。最後に「分からないところがあれば聞いてね」と一言添えて。";
 
         const aiText = await respondViaAokiChat({
@@ -1376,14 +1376,14 @@ export function MaterialReadPane({
               onClick={() => void openNoteGate()}
               disabled={!loaded || preparingGate || guidedBusy}
               className="gap-1.5"
-              title="今のページと葵との対話から、自分のノートに刻むよ。"
+              title="今のページと葵との対話から、自分のレジュメにするよ。"
             >
               {preparingGate ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <NotebookPen className="size-4" />
               )}
-              <span>ノートにまとめる</span>
+              <span>レジュメにする</span>
             </Button>
             {currentSegment && (
               <span
@@ -1511,7 +1511,7 @@ export function MaterialReadPane({
                   })}
                 </ul>
                 <p className="px-1 text-[11px] text-muted-foreground">
-                  ✓ は、もうノートにまとめた まとまりだよ。
+                  ✓ は、もうレジュメにした まとまりだよ。
                 </p>
               </div>
             ) : history.length === 0 && (starting || guidedBusy) ? (

@@ -87,7 +87,7 @@ export function NotesHomeView({
       {/* ヘッダー */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-background px-4 py-2">
         <NotebookPen className="size-5 text-primary" />
-        <span className="text-sm font-semibold">まとめノート</span>
+        <span className="text-sm font-semibold">レジュメ</span>
         <span className="text-xs text-muted-foreground">
           理解済み {understoodCount}・振り返り {openCount}
         </span>
@@ -125,10 +125,10 @@ export function NotesHomeView({
           <div className="flex flex-col items-center justify-center gap-3 py-20 text-center text-sm text-muted-foreground">
             <NotebookPen className="size-10 text-muted-foreground/60" />
             <p>
-              まだノートに刻んだものがないよ。
+              まだレジュメにしたものがないよ。
               <br />
               教材を「一緒に読む」で開いて、
-              <strong>「✍️ ここをノートにまとめる」</strong>
+              <strong>「✍️ ここをレジュメにする」</strong>
               から始めよう。
             </p>
           </div>
@@ -138,7 +138,7 @@ export function NotesHomeView({
               nodes={mapNodes}
               currentNodeId=""
               onSelectNode={() => {}}
-              viewTitle="まとめノートの体系図"
+              viewTitle="レジュメ体系図"
               visibleNodeCount={mapNodes.length}
               statusById={statusById}
             />

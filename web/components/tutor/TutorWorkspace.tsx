@@ -473,8 +473,8 @@ export function TutorWorkspace({
       );
       const text =
         entry.status === "open"
-          ? `「${entry.conceptName}」を「振り返りたい」としてノートに残したよ📌\nあとでまた一緒に見て、自分の言葉で説明できたら理解済みにしよう。メニューの「ノート」から振り返れるよ。`
-          : `ノートに 1 つ刻んだね ✍️「${entry.conceptName}」\n自分の言葉で説明できたから、これは身についてる証拠だよ。メニューの「ノート」でいつでも見返せるよ。`;
+          ? `「${entry.conceptName}」を「振り返りたい」としてレジュメに残したよ📌\nあとでまた一緒に見て、自分の言葉で説明できたら理解済みにしよう。メニューの「レジュメ」から振り返れるよ。`
+          : `レジュメに 1 つ追加したね ✍️「${entry.conceptName}」\n自分の言葉で説明できたから、これは身についてる証拠だよ。メニューの「レジュメ」でいつでも見返せるよ。`;
       const reply: TutorMessage = {
         id: `t-note-${Date.now()}`,
         role: "tutor",
@@ -526,7 +526,7 @@ export function TutorWorkspace({
         id: `t-note-nudge-${Date.now()}`,
         role: "tutor",
         text: `そういえば、前に「まだ」だった「${firstOpen.conceptName}」があるよ。\n気が向いたら、もう一回説明してみる? できそうなら理解済みにできるよ。`,
-        quickReplies: ["ノートを見る"],
+        quickReplies: ["レジュメを見る"],
         createdAt: new Date().toISOString(),
       },
     ]);

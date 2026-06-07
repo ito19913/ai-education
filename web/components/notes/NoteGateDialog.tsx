@@ -359,12 +359,12 @@ export function NoteGateDialog(props: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PenLine className="size-5 text-primary" />
-            {isReview ? "もう一回、説明してみる" : "ノートにまとめる"}
+            {isReview ? "もう一回、説明してみる" : "レジュメにする"}
           </DialogTitle>
           <DialogDescription>
             {isReview
               ? `前に「まだ」だった「${conceptName}」。自分の言葉で説明できたら理解済みにできるよ。`
-              : `${materialName ?? "教材"}${sourcePageRange ? `（${sourcePageRange}）` : ""} から、理解できたら自分のノートに刻むよ。`}
+              : `${materialName ?? "教材"}${sourcePageRange ? `（${sourcePageRange}）` : ""} から、理解できたら自分のレジュメにするよ。`}
           </DialogDescription>
         </DialogHeader>
 
@@ -382,7 +382,7 @@ export function NoteGateDialog(props: Props) {
             )}
             <p className="text-sm font-medium">
               {outcome === "understood"
-                ? "ノートに刻んだよ ✍️（理解済み）"
+                ? "レジュメにしたよ ✍️（理解済み）"
                 : outcome === "upgraded"
                   ? "理解済みにしたよ ✍️"
                   : "「振り返りたい」として残したよ"}
