@@ -1031,14 +1031,15 @@ C61 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段�
 
 【次セッションで進める論点 — 段階1-A/1-C/1-B 完成。次は 1-B のE2E確認 → 学習プラン grill or 段階2】
 
-**★2026-06-07 (最新): 実機課題対応 — 科目永続化 + 読書ビューUI + まとまり登録時生成 + スキャン本ページずれ修正 (★コミット未・次セッションで一括予定★)★**:
-ito19 さん実機で連続発見した課題を対応 (詳細は ARCHITECTURE「### 2026-06-07: 科目永続化 + 読書ビュー UI + …」)。
+**★2026-06-07 (最新): 実機課題対応 — 科目永続化 + 読書ビューUI + まとまり生成 + スキャン本ページずれ + ガイド読書 (全て実機確認済・コミット済)★**:
+ito19 さん実機で連続発見した課題を対応 (詳細は ARCHITECTURE「### 2026-06-07: …」+「### 2026-06-07 後段: ガイド読書…」)。
 - **科目(subject)永続化** (重大欠落だった): `subjects` テーブル (migration `20260607000000_init_subjects.sql`・**本番適用済**) + `lib/subjects/subjects-repo.ts`。カスタム科目のみ DB 保存→起動時に5教科へ id dedupe マージ。`TutorWorkspace.handleSubjectAdded`/`/admin/subjects` を async DB 保存に。実機「法人税」科目+教材は REST で復旧 (孤児を新科目 uuid に再リンク+重複論理削除)。
 - **読書ビュー 3 ペインのリサイズ** (`MaterialReadPane`、`ResizablePanelGroup`)。★ライブラリ仕様: 数値=px / **% は文字列 (`"15%"`)**★。狭画面は縦スタック。
 - **サムネ縦スライダーのキーボード操作** (`PageThumbnailRail`、↑↓/PageUp/Down/Home/End)。
 - **まとまりをアップロード時にBG生成** (`runSegmentation` を C-8 スキャン本対応に拡張)。on-demand は安全網継続。
-- **スキャン本まとまり +N ずれ → vision 経路に固定** (`scan-segment-builder.ts` `USE_HYBRID=false`)。真因=目次抽出番号が印刷/PDFどちらか見分けられずオフセット二重適用。vision 経路は目次非依存でズレ無し。ハイブリッドは flag 温存。実機「わかりやすく」の旧まとまりは DB クリア済→再生成で検証中。
-- ⏳ **未検証**: vision 再生成後にページが一致するか (ito19 さん確認待ち)。tsc/lint クリア (build/コミットは次セッション)。
+- **スキャン本まとまり +N ずれ → vision 経路に固定 + PDFページラベル焼き込み** (`scan-segment-builder.ts` `USE_HYBRID=false` / `renderPageToJpegAt` の label 引数で左上に「PDF-N」赤バッジ → AI はそれを読んで startPdfPage を返す)。✅実機「わかりやすく」で LESSON 01=PDF22-23 (印刷14-15) と一致確認。
+- **ガイド読書 (後段)**: page-walk 改修を一旦実装→ito19「子は今どこ読んでるか見えないとやりづらい」で**ブロック+「ここを解説」+青枠の元仕様に巻き戻し** (git checkout)。ズレは**青枠を直接ドラッグで手動調整** (`EditableHighlight`、移動+四隅リサイズ、`bboxOverrides` でセッション内記憶) で解決。✅実機「すごくいい」確認。レールも細く (60px) +非表示トグル。詳細 ARCHITECTURE「### 2026-06-07 後段」。
+- ✅ **全て tsc/lint クリア + 実機確認 + コミット済**。
 
 **★改善候補 (未着手・ito19 さん要望で記録): まとまり生成をサーバー側BGジョブ化★**: 現状はブラウザのタブ内で動くため (1) 完了までタブを開いたままにする必要 (2) 「アップロードだけして PC を閉じ、後で来たら全部完成」ができない。理想=使うテキストを事前一括登録→後で来たら単元一覧もまとまりも完成済み。実現には区切り処理 (vision) を Supabase Edge Function / キュー等のサーバージョブへ。Vercel 実行時間上限と vision コストに注意。**着手前に設計 grill 推奨**。詳細 ARCHITECTURE 同節末。
 

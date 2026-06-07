@@ -1910,6 +1910,17 @@ ai_summary) / `components/notes/NoteGateDialog.tsx` (existingForSegment/studyLev
 - **理想ワークフロー** (ito19 さん): 使う予定のテキストを事前に一括アップロード → 後で来た時には単元一覧もまとまりも完成済み。
 - **実現に必要なこと**: 区切り処理 (vision 経路、`buildScanSegments`/`segmentConceptsFromText`) を**サーバー側のジョブ**へ移す。候補 = Supabase Edge Function / キュー (登録時に enqueue → ワーカが PDF を Storage から取得して区切り → `concept_segments` を書き戻し → 完了で通知)。Vercel 関数の実行時間上限 (Hobby) と大判スキャンの vision コスト・所要時間に注意。**着手前に設計 grill 推奨** (どこで動かす / 進捗と完了通知 / 失敗再試行 / 体系図抽出も同様にジョブ化するか)。
 
+### 2026-06-07 後段: ガイド読書は「ブロック+ここを解説」を維持 + 青枠を手動ドラッグ調整 / レール細く+トグル
+
+実機で「### AI 主導ガイド読書」(ブロック+青枠 bbox) の **青枠位置が解説内容とズレる**問題を確認。
+一旦「ブロック廃止 → ページを上から1ページずつ送り読み」方式に作り替えたが (grill 5 論点で設計)、
+ito19 さん実機評価で **「子どもは"今どこを読んでるか"が見えないとやりづらい」** → **ブロック+「ここを解説」+ 青枠の元仕様に戻す**判断 (page-walk 改修は未コミットだったため `git checkout` で巻き戻し)。
+ズレ問題は **AI を完璧にする方向ではなく、子が直接直せる方向**で解決:
+- **青枠を直接ドラッグで手動調整** (`EditableHighlight` in `MaterialReadPane.tsx`): 枠本体ドラッグで移動 / 四隅ハンドルで拡大・縮小。調整値は `bboxOverrides` (key=`${segmentId}:${blockId}`) に**セッション内記憶**。表示 bbox = override ?? AI 推定 bbox。
+- 読み方の方針 (ito19 さん): 塊を選ぶ → そこをベースに質問・不明点を聞く、を一区切りずつ。
+- **未決**: 手動調整値の DB 永続 (今はセッション内のみ)。bbox 精度自体の改善は不要 (手動で直せるため棚上げ)。
+- 併せて **左サムネレールを細く** (サムネ 84→60px、レール幅をピクセル指定で密着) + **表示/非表示トグル** (操作バー左端、`railVisible`)。`PageThumbnailRail` に**キーボード操作** (↑↓/PageUp/Down/Home/End) も追加済 (前段)。
+
 ---
 
 ## ゆい→葵への申し送り（TutorHandoff）

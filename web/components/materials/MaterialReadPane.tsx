@@ -15,7 +15,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,6 +31,8 @@ import {
   ArrowLeft,
   ZoomIn,
   ZoomOut,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import {
   loadPdfDocument,
@@ -140,6 +145,121 @@ function parseStartPage(pageRange?: string): number | null {
   return m ? Number.parseInt(m[1], 10) : null;
 }
 
+type Bbox = { x: number; y: number; w: number; h: number };
+
+/**
+ * ガイド読書の青枠ハイライト (手動調整つき)。
+ * 枠本体をドラッグで移動、四隅のハンドルで拡大・縮小。座標は親 (ページ div) に対する
+ * 正規化 (0-1)。AI 推定 bbox がズレた時、子がその場で直接ドラッグして直せる (ito19 要望)。
+ */
+function EditableHighlight({
+  bbox,
+  onChange,
+}: {
+  bbox: Bbox;
+  onChange: (b: Bbox) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const drag = useRef<{
+    mode: string;
+    px: number;
+    py: number;
+    start: Bbox;
+    rw: number;
+    rh: number;
+  } | null>(null);
+
+  // 押した対象の data-handle 属性で「移動 (move)」か「四隅リサイズ (nw/ne/sw/se)」かを判定。
+  // ※ ハンドラはレンダーごとに生成せず直接割り当てる (factory-in-render を避け、ref 警告を回避)。
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const box = ref.current;
+    const parent = box?.parentElement;
+    if (!box || !parent) return;
+    const mode = (e.target as HTMLElement).dataset.handle ?? "move";
+    const rect = parent.getBoundingClientRect();
+    drag.current = {
+      mode,
+      px: e.clientX,
+      py: e.clientY,
+      start: { ...bbox },
+      rw: rect.width || 1,
+      rh: rect.height || 1,
+    };
+    box.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    e.preventDefault();
+    const dx = (e.clientX - d.px) / d.rw;
+    const dy = (e.clientY - d.py) / d.rh;
+    let { x, y, w, h } = d.start;
+    if (d.mode === "move") {
+      x += dx;
+      y += dy;
+    } else {
+      if (d.mode.includes("e")) w += dx;
+      if (d.mode.includes("s")) h += dy;
+      if (d.mode.includes("w")) {
+        x += dx;
+        w -= dx;
+      }
+      if (d.mode.includes("n")) {
+        y += dy;
+        h -= dy;
+      }
+    }
+    w = Math.max(0.04, Math.min(1, w));
+    h = Math.max(0.04, Math.min(1, h));
+    x = Math.max(0, Math.min(1 - w, x));
+    y = Math.max(0, Math.min(1 - h, y));
+    onChange({ x, y, w, h });
+  };
+
+  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    drag.current = null;
+    ref.current?.releasePointerCapture?.(e.pointerId);
+  };
+
+  const handlePos: Record<string, string> = {
+    nw: "left-0 top-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize",
+    ne: "right-0 top-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize",
+    sw: "left-0 bottom-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize",
+    se: "right-0 bottom-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize",
+  };
+
+  return (
+    <div
+      ref={ref}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onClick={(e) => e.stopPropagation()}
+      title="枠をドラッグで移動 / 角をつまんでサイズ変更"
+      className="absolute cursor-move touch-none rounded-sm border-2 border-sky-500/80 bg-sky-300/20 shadow-[0_0_0_3px_rgba(56,189,248,0.18)]"
+      style={{
+        left: `${bbox.x * 100}%`,
+        top: `${bbox.y * 100}%`,
+        width: `${bbox.w * 100}%`,
+        height: `${bbox.h * 100}%`,
+      }}
+    >
+      {(["nw", "ne", "sw", "se"] as const).map((c) => (
+        <div
+          key={c}
+          data-handle={c}
+          className={`absolute size-3 rounded-full border border-white bg-sky-600 shadow ${handlePos[c]}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function MaterialReadPane({
   material,
   subject,
@@ -161,6 +281,13 @@ export function MaterialReadPane({
   const [downloading, setDownloading] = useState(false);
   // 見開き (2ページ表示) ⇄ 単ページ。default = 見開き (ユーザー要望)。
   const [spread, setSpread] = useState(true);
+  // 左サムネレールの表示/非表示 (ito19 要望: 細く + 隠せるように)。default = 表示。
+  const [railVisible, setRailVisible] = useState(true);
+  // 青枠ハイライトの手動調整値 (key = `${segmentId}:${blockId}` → 正規化 bbox)。
+  // AI 推定の bbox がズレた時、子が直接ドラッグで動かす/広げる/狭めた結果をセッション内で覚える。
+  const [bboxOverrides, setBboxOverrides] = useState<
+    Record<string, { x: number; y: number; w: number; h: number }>
+  >({});
   // ズーム倍率。1 = エリアにフィット、>1 で拡大 (スクロール)。
   const [zoom, setZoom] = useState(1);
   // ページの縦横比 (width / height)。フィット計算に使う。
@@ -887,13 +1014,13 @@ export function MaterialReadPane({
       >
         {/* 左端の縦スライダー (全ページサムネ + まとまり色分け、見る地図、M5)。
             広い画面だけ表示。ハンドルで幅可変。 */}
-        {!isMobile && (
+        {!isMobile && railVisible && (
           <>
             <ResizablePanel
               id="rail"
-              defaultSize="15%"
-              minSize="9%"
-              maxSize="34%"
+              defaultSize={78}
+              minSize={66}
+              maxSize={240}
               className="min-w-0 border-r border-border"
             >
               <PageThumbnailRail
@@ -920,6 +1047,23 @@ export function MaterialReadPane({
           <div className="flex h-full min-h-0 flex-col">
           {/* ページコントロール */}
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-muted/30 px-2 py-1">
+            {/* 左サムネレールの表示/非表示トグル (広い画面のみ)。 */}
+            {!isMobile && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setRailVisible((v) => !v)}
+                className="px-2"
+                title={railVisible ? "ページ一覧を隠す" : "ページ一覧を表示"}
+                aria-label={railVisible ? "ページ一覧を隠す" : "ページ一覧を表示"}
+              >
+                {railVisible ? (
+                  <PanelLeftClose className="size-4" />
+                ) : (
+                  <PanelLeftOpen className="size-4" />
+                )}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -1047,9 +1191,15 @@ export function MaterialReadPane({
               // (本を開いた見た目。縦スクロール不要でバランス良く)
               <div className="flex min-h-full w-full items-center justify-center gap-0">
                 {pagesToShow.map((pn, i) => {
-                  // ガイド読書中: 今のブロックがこのページにあり bbox があれば枠を重ねる (G-B)。
+                  // ガイド読書中: 今のブロックがこのページにあれば青枠を重ねる。
+                  // 枠は AI 推定 (bbox) だがズレるので、子が直接ドラッグで動かす/サイズ変更できる。
                   const cur = guidedBlocks?.[guidedIndex];
-                  const showBox = !!cur?.bbox && cur.pdfPage === pn;
+                  const overrideKey = cur
+                    ? `${guidedSegment?.id ?? ""}:${cur.id}`
+                    : "";
+                  const displayBbox =
+                    cur && (bboxOverrides[overrideKey] ?? cur.bbox);
+                  const showBox = !!cur && !!displayBbox && cur.pdfPage === pn;
                   return (
                     <div
                       key={pn}
@@ -1065,15 +1215,12 @@ export function MaterialReadPane({
                         }}
                         className="block bg-white"
                       />
-                      {showBox && cur?.bbox && (
-                        <div
-                          className="pointer-events-none absolute rounded-sm border-2 border-sky-500/80 bg-sky-300/20 shadow-[0_0_0_3px_rgba(56,189,248,0.18)] transition-all duration-300"
-                          style={{
-                            left: `${cur.bbox.x * 100}%`,
-                            top: `${cur.bbox.y * 100}%`,
-                            width: `${cur.bbox.w * 100}%`,
-                            height: `${cur.bbox.h * 100}%`,
-                          }}
+                      {showBox && displayBbox && (
+                        <EditableHighlight
+                          bbox={displayBbox}
+                          onChange={(b) =>
+                            setBboxOverrides((m) => ({ ...m, [overrideKey]: b }))
+                          }
                         />
                       )}
                     </div>

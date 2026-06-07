@@ -32,7 +32,7 @@ type Props = {
   onJump: (page: number) => void;
 };
 
-const THUMB_WIDTH = 84; // px (CSS 論理幅)
+const THUMB_WIDTH = 60; // px (CSS 論理幅、レールを細くできるよう小さめ)
 
 export function PageThumbnailRail({
   doc,
@@ -192,7 +192,7 @@ export function PageThumbnailRail({
         role="listbox"
         aria-label="ページ一覧（上下キーで移動）"
         onKeyDown={handleKeyDown}
-        className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
+        className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
       >
         {numPages > 0 ? (
           Array.from({ length: numPages }, (_, i) => renderSlot(i))
