@@ -80,6 +80,42 @@ export function PageThumbnailRail({
     if (el) el.scrollIntoView({ block: "nearest" });
   }, [currentPage]);
 
+  // キーボード操作 (ユーザー要望): レールにフォーカスがある時、上下キーでページ移動。
+  // ↑/← = 前ページ、↓/→ = 次ページ、PageUp/Down = ±5、Home/End = 先頭/末尾。
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (numPages <= 0) return;
+      let next: number | null = null;
+      switch (e.key) {
+        case "ArrowDown":
+        case "ArrowRight":
+          next = currentPage + 1;
+          break;
+        case "ArrowUp":
+        case "ArrowLeft":
+          next = currentPage - 1;
+          break;
+        case "PageDown":
+          next = currentPage + 5;
+          break;
+        case "PageUp":
+          next = currentPage - 5;
+          break;
+        case "Home":
+          next = 1;
+          break;
+        case "End":
+          next = numPages;
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+      onJump(Math.min(Math.max(1, next), numPages));
+    },
+    [currentPage, numPages, onJump],
+  );
+
   const renderSlot = useCallback(
     (i: number) => {
       const pageNum = i + 1;
@@ -143,13 +179,20 @@ export function PageThumbnailRail({
   );
 
   return (
-    <div className="hidden shrink-0 flex-col border-r border-border bg-muted/20 lg:flex lg:w-[108px]">
+    <div className="flex h-full w-full min-w-0 flex-col bg-muted/20">
       <div className="shrink-0 border-b border-border px-2 py-1.5 text-center text-[10px] font-medium text-muted-foreground">
         全 {numPages || "…"} ページ
+        <span className="mt-0.5 block text-[9px] font-normal text-muted-foreground/70">
+          ↑↓ で移動
+        </span>
       </div>
       <div
         ref={scrollRef}
-        className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5"
+        tabIndex={0}
+        role="listbox"
+        aria-label="ページ一覧（上下キーで移動）"
+        onKeyDown={handleKeyDown}
+        className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
       >
         {numPages > 0 ? (
           Array.from({ length: numPages }, (_, i) => renderSlot(i))

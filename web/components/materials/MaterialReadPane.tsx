@@ -50,6 +50,12 @@ import {
 import { NoteGateDialog } from "@/components/notes/NoteGateDialog";
 import { PageThumbnailRail } from "@/components/materials/PageThumbnailRail";
 import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
+import { useIsMobile } from "@/hooks/use-mobile";
+import {
   findConceptForPage,
   findSegmentForPage,
   segmentPages,
@@ -143,6 +149,9 @@ export function MaterialReadPane({
   notedSegmentIds,
   noteEntries,
 }: Props) {
+  // 狭い画面では縦スタック (rail は隠す)、広い画面では横3ペイン。
+  const isMobile = useIsMobile();
+
   const [loaded, setLoaded] = useState<LoadedPdf | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [page, setPage] = useState(initialPage && initialPage > 0 ? initialPage : 1);
@@ -871,21 +880,44 @@ export function MaterialReadPane({
         </span>
       </div>
 
-      {/* 本体: 広い画面=左右、狭い画面=上下スタック */}
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* 左端の縦スライダー (全ページサムネ + まとまり色分け、見る地図、M5) */}
-        <PageThumbnailRail
-          doc={loaded?.doc ?? null}
-          numPages={numPages}
-          currentPage={page}
-          segments={segments}
-          currentSegmentId={currentSegment?.id ?? null}
-          notedSegmentIds={notedSegmentIds}
-          onJump={jumpTo}
-        />
+      {/* 本体: 広い画面=横3ペイン (ハンドルをドラッグで幅可変)、狭い画面=縦スタック */}
+      <ResizablePanelGroup
+        orientation={isMobile ? "vertical" : "horizontal"}
+        className="flex min-h-0 flex-1"
+      >
+        {/* 左端の縦スライダー (全ページサムネ + まとまり色分け、見る地図、M5)。
+            広い画面だけ表示。ハンドルで幅可変。 */}
+        {!isMobile && (
+          <>
+            <ResizablePanel
+              id="rail"
+              defaultSize="15%"
+              minSize="9%"
+              maxSize="34%"
+              className="min-w-0 border-r border-border"
+            >
+              <PageThumbnailRail
+                doc={loaded?.doc ?? null}
+                numPages={numPages}
+                currentPage={page}
+                segments={segments}
+                currentSegmentId={currentSegment?.id ?? null}
+                notedSegmentIds={notedSegmentIds}
+                onJump={jumpTo}
+              />
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+          </>
+        )}
 
         {/* PDF ビューア */}
-        <div className="flex min-h-0 flex-1 flex-col border-b border-border lg:border-b-0 lg:border-r">
+        <ResizablePanel
+          id="viewer"
+          defaultSize={isMobile ? "58%" : "55%"}
+          minSize="30%"
+          className="min-w-0"
+        >
+          <div className="flex h-full min-h-0 flex-col">
           {/* ページコントロール */}
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-muted/30 px-2 py-1">
             <Button
@@ -1050,10 +1082,19 @@ export function MaterialReadPane({
               </div>
             )}
           </div>
-        </div>
+          </div>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
 
         {/* 葵 chat */}
-        <div className="flex min-h-0 flex-col bg-gradient-to-b from-sky-50/60 to-background lg:w-[34%] lg:min-w-[360px] lg:max-w-[560px] lg:shrink-0">
+        <ResizablePanel
+          id="chat"
+          defaultSize={isMobile ? "42%" : "30%"}
+          minSize="18%"
+          className="min-w-0"
+        >
+        <div className="flex h-full min-h-0 flex-col bg-gradient-to-b from-sky-50/60 to-background">
           {/* 先生ヘッダー */}
           <div className="flex shrink-0 items-center gap-2 border-b border-border bg-background/80 px-3 py-2 backdrop-blur">
             <SubjectTeacherAvatar
@@ -1361,7 +1402,8 @@ export function MaterialReadPane({
             </Button>
           </div>
         </div>
-      </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       {/* まとめノート N9①: 能動ゲートダイアログ */}
       <NoteGateDialog
