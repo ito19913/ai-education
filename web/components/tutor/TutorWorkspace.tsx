@@ -945,9 +945,15 @@ export function TutorWorkspace({
             }
             onNoteAdded={handleNoteAdded}
             notedSegmentIds={
+              // ★ segment id は教材内ユニーク (seg-1 等) なので、必ず教材で絞る。
+              //   絞らないと別教材の同名 seg がこの教材の緑チェックに誤マッチする。
               new Set(
                 noteEntries
-                  .filter((e) => e.sourceSegmentId)
+                  .filter(
+                    (e) =>
+                      e.sourceSegmentId &&
+                      e.sourceMaterialId === readMaterial.id,
+                  )
                   .map((e) => e.sourceSegmentId as string),
               )
             }

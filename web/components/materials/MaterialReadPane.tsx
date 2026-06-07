@@ -1337,14 +1337,20 @@ export function MaterialReadPane({
             existingEntry={
               gateSegment
                 ? noteEntries?.find(
-                    (e) => e.sourceSegmentId === gateSegment.id && !e.deletedAt,
+                    (e) =>
+                      e.sourceSegmentId === gateSegment.id &&
+                      e.sourceMaterialId === material.id &&
+                      !e.deletedAt,
                   )
                 : undefined
             }
             studyLevel={
               gateSegment &&
               noteEntries?.some(
-                (e) => e.sourceSegmentId === gateSegment.id && !e.deletedAt,
+                (e) =>
+                  e.sourceSegmentId === gateSegment.id &&
+                  e.sourceMaterialId === material.id &&
+                  !e.deletedAt,
               )
                 ? 1
                 : 0
