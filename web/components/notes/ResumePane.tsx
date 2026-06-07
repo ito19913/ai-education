@@ -283,7 +283,7 @@ export function ResumePane(props: Props) {
               <Textarea
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                placeholder="例: 不定詞の名詞的用法は、to + 動詞で「〜すること」という意味になって…"
+                placeholder="例: つまり〜ということ。ポイントは〜で、〜のときは〜になる…（自分の言葉でOK）"
                 className="min-h-[140px] resize-none"
                 disabled={stage === "reviewing" || stage === "committing"}
               />

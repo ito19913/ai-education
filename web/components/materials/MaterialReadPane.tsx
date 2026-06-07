@@ -1310,6 +1310,61 @@ export function MaterialReadPane({
 
         <ResizableHandle withHandle />
 
+        {/* レジュメモード時: 教材の横にレジュメ書く欄 (R6、左右並び)。葵 chat はさらに右。
+            見開きはレジュメモード中は禁止 (pagesToShow で単一ページ強制)。 */}
+        {resumeMode && (
+          <>
+            <ResizablePanel
+              id="resume-write"
+              defaultSize="36%"
+              minSize="22%"
+              className="min-w-0"
+            >
+              <ResumePane
+                conceptName={
+                  gateSegment?.conceptName ?? gateConcept?.name ?? "この論点"
+                }
+                segment={gateSegment}
+                materialId={material.id}
+                materialName={material.name}
+                subjectId={material.subjectId}
+                subjectName={subject?.name ?? "教科"}
+                gradeLevel={material.gradeLevel ?? "中2"}
+                pageImagesPacked={gatePacked}
+                sourcePageRange={
+                  gateSegment?.printPageHint ??
+                  gateConcept?.pageRange ??
+                  (page ? `p.${page}` : undefined)
+                }
+                existingEntry={
+                  gateSegment
+                    ? noteEntries?.find(
+                        (e) =>
+                          e.sourceSegmentId === gateSegment.id &&
+                          e.sourceMaterialId === material.id &&
+                          !e.deletedAt,
+                      )
+                    : undefined
+                }
+                studyLevel={
+                  gateSegment &&
+                  noteEntries?.some(
+                    (e) =>
+                      e.sourceSegmentId === gateSegment.id &&
+                      e.sourceMaterialId === material.id &&
+                      !e.deletedAt,
+                  )
+                    ? 1
+                    : 0
+                }
+                onCommitted={(entry) => onNoteAdded?.(entry)}
+                onClose={() => setResumeMode(false)}
+              />
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+          </>
+        )}
+
         {/* 葵 chat */}
         <ResizablePanel
           id="chat"
@@ -1317,48 +1372,6 @@ export function MaterialReadPane({
           minSize="18%"
           className="min-w-0"
         >
-        {resumeMode ? (
-          <ResumePane
-            conceptName={
-              gateSegment?.conceptName ?? gateConcept?.name ?? "この論点"
-            }
-            segment={gateSegment}
-            materialId={material.id}
-            materialName={material.name}
-            subjectId={material.subjectId}
-            subjectName={subject?.name ?? "教科"}
-            gradeLevel={material.gradeLevel ?? "中2"}
-            pageImagesPacked={gatePacked}
-            sourcePageRange={
-              gateSegment?.printPageHint ??
-              gateConcept?.pageRange ??
-              (page ? `p.${page}` : undefined)
-            }
-            existingEntry={
-              gateSegment
-                ? noteEntries?.find(
-                    (e) =>
-                      e.sourceSegmentId === gateSegment.id &&
-                      e.sourceMaterialId === material.id &&
-                      !e.deletedAt,
-                  )
-                : undefined
-            }
-            studyLevel={
-              gateSegment &&
-              noteEntries?.some(
-                (e) =>
-                  e.sourceSegmentId === gateSegment.id &&
-                  e.sourceMaterialId === material.id &&
-                  !e.deletedAt,
-              )
-                ? 1
-                : 0
-            }
-            onCommitted={(entry) => onNoteAdded?.(entry)}
-            onClose={() => setResumeMode(false)}
-          />
-        ) : (
         <div className="flex h-full min-h-0 flex-col bg-gradient-to-b from-sky-50/60 to-background">
           {/* 先生ヘッダー */}
           <div className="flex shrink-0 items-center gap-2 border-b border-border bg-background/80 px-3 py-2 backdrop-blur">
@@ -1442,7 +1455,7 @@ export function MaterialReadPane({
           </div>
           {/* ガイド読書コントロール (G-A): まとまりを一区切りずつ歩いている間だけ表示。
               子は受け身で「次へ / もっと簡単に / もっと詳しく」+ 下の入力欄で質問。 */}
-          {guidedBlocks && !showUnitMenu && !resumeMode && (
+          {guidedBlocks && !showUnitMenu && (
             <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border bg-sky-50/60 px-3 py-1.5">
               {/* 前/次 = 読む所を「選ぶ」だけ (青枠が動く、まだ読まない)。順序を手動調整できる。 */}
               <Button
@@ -1667,7 +1680,6 @@ export function MaterialReadPane({
             </Button>
           </div>
         </div>
-        )}
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>
