@@ -1043,7 +1043,7 @@ C61 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段�
 - R7 **3 色添削** (◎合ってる/△抜け/✕違う・答えは書かず方向だけ示す)。R8 誤りゼロ&重大な抜けゼロで理解済み、中断は Issue 保存。
 - **実装順 (案)**: ①リネーム (範囲 A) → ②レジュメ pane+教材単一ページ切替 → ③音声入力 → ④子が書く+3 色添削フロー (`NoteGateDialog`/`note-gate-claude` 改造、`summarizeConceptForNote`→子が書く・`judgeExplanation`→3 色添削) → ⑤自動リンク。**未決**(実装時): レジュメ本文の保存先 (`aiSummary` 流用 or 新カラム) / 「整える」と「添削」の AI 呼び出し 1 本化か / 図クリップ(後乗せ) / 2 周目 G-C 統合 / 通読→レジュメ遷移 UI。
 
-**【ガイド読書 永続化 (commit `020bee2`・push 済、★E2E 実機確認 保留中★)】**: `materials.guided_plans` JSONB (migration `20260607010000`・本番適用済) にガイドプランを固定保存→2 回目以降 Opus 再生成なし+青枠調整 (`block.bbox` 焼き込み) がリロード後も維持。`bboxOverrides`→`guidedPlansMap` に統一。**次セッション冒頭で実機確認**: まとまりを開く→別→戻る/リロードで即表示 / 青枠ドラッグ→リロードで位置維持。詳細 ARCHITECTURE「### 2026-06-07 後段 > #### 2026-06-07: ガイドプラン + 青枠調整を DB 永続化」。
+**【ガイド読書 永続化 (commit `020bee2`・push 済、✅ E2E 実機確認済 2026-06-07)】**: `materials.guided_plans` JSONB (migration `20260607010000`・本番適用済) にガイドプランを固定保存→2 回目以降 Opus 再生成なし+青枠調整 (`block.bbox` 焼き込み) がリロード後も維持。`bboxOverrides`→`guidedPlansMap` に統一。**✅ 法人税(TAC) で実機確認** (リロード後も即表示 / 青枠ドラッグ→リロードで位置維持)。詳細 ARCHITECTURE「### 2026-06-07 後段 > #### 2026-06-07: ガイドプラン + 青枠調整を DB 永続化」。
 
 **【別件メモ】** `npm run lint` が vendored な pdf.js wasm バンドル (web/public/pdfjs-wasm) 由来で 13 エラー (HEAD でも既存・本変更とは無関係)。`eslint.config.mjs` の globalIgnores に `public/pdfjs-wasm/**` を足せば解消 (background task 化済)。
 

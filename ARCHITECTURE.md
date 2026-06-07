@@ -1929,7 +1929,7 @@ ito19 さん実機評価で **「子どもは"今どこを読んでるか"が見
 - `Material.guidedPlans?` + `materials-repo` の `guided_plans` マッピング + `updateMaterialGuidedPlans()`。
 - `MaterialReadPane`: `bboxOverrides` マップを廃止し `guidedPlansMap` state に統一。プラン取得は **①DB/local map → ②session キャッシュ → ③Opus 生成** の順。新規生成 (フォールバック1ブロック含む) は map+cache に入れ DB へ保存 → **2 回目以降は Opus を呼ばず即表示 (無料・速い)**。
 - 青枠の手動調整は `block.bbox` に直接焼き込み: ドラッグ中はローカル即追従 (`editGuidedBbox`)、**指を離した時** (`EditableHighlight` の `onCommit`→`commitGuidedBbox`) に 1 回だけ DB 永続化。失敗はログのみ。`guided_plans` が無ければ従来どおりオンデマンド生成にフォールバック。
-- **★E2E は ito19 さん実機確認 保留中** (migration 適用直後、確認後に SSoT へ ✅ 反映)。
+- **✅ E2E 実機確認済 (2026-06-07、ito19 さん)**: 法人税(TAC) でまとまりを開く→リロード後も**生成待ちなく即表示** (プラン永続)、青枠をドラッグ調整→**リロード後も位置・サイズ維持** (bbox 焼き込み永続) を確認。
 - 併せて **左サムネレールを細く** (サムネ 84→60px、レール幅をピクセル指定で密着) + **表示/非表示トグル** (操作バー左端、`railVisible`)。`PageThumbnailRail` に**キーボード操作** (↑↓/PageUp/Down/Home/End) も追加済 (前段)。
 
 ---
