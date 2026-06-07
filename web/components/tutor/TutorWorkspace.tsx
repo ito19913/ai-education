@@ -34,8 +34,12 @@ import {
   softDeleteMaterial,
   getCurrentUserId,
 } from "@/lib/materials/materials-repo";
-import { extractFullPageTexts } from "@/lib/admin/pdf-extract-text";
+import {
+  extractFullPageTexts,
+  loadPdfDocument,
+} from "@/lib/admin/pdf-extract-text";
 import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
+import { buildScanSegments } from "@/lib/admin/scan-segment-builder";
 import {
   uploadMaterialPdf,
   removeMaterialPdf,
@@ -45,6 +49,10 @@ import {
   updateNoteEntry,
   softDeleteNoteEntry,
 } from "@/lib/notes/notes-repo";
+import {
+  fetchCustomSubjects,
+  insertSubject,
+} from "@/lib/subjects/subjects-repo";
 import {
   buildInitialTutorThread,
   buildNextTutorReply,
@@ -63,6 +71,7 @@ import {
 import { MOCK_MATERIALS, MOCK_SUBJECTS } from "@/lib/learn/mock-data";
 import type {
   ChatMessage,
+  ConceptSegment,
   ExamPrep,
   Homework,
   Issue,
@@ -136,6 +145,27 @@ export function TutorWorkspace({
   // C30 2026-05-25 grill 2 S7: 科目追加対応で subjects を useState 化
   // SubjectSettingsPanel から動的 push される
   const [subjects, setSubjects] = useState<Subject[]>(initialSubjects);
+
+  // 2026-06-07 科目永続化: real モードでは起動時に DB からカスタム科目を取得し、
+  // ハードコード5教科 (initialSubjects) にマージする。id で dedupe (同一セッション中に
+  // 追加→DB fetch が二重にならないように)。これで手動追加した科目がリロード後も残る。
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+    fetchCustomSubjects()
+      .then((rows) => {
+        if (cancelled) return;
+        setSubjects((prev) => {
+          const ids = new Set(prev.map((s) => s.id));
+          const additions = rows.filter((s) => !ids.has(s.id));
+          return additions.length > 0 ? [...prev, ...additions] : prev;
+        });
+      })
+      .catch((err) => console.error("[科目] 一覧取得失敗:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // C46 2026-05-26 F (ito19 さん意見): 教材編集・削除のため materials を state 管理。
   // 段階1-B (2026-06-05): real モード (Supabase 設定済) は起動時 DB fetch で復元、
   // mock モードは MOCK_MATERIALS をフォールバック表示 (リロードで消える割り切り)。
@@ -509,10 +539,12 @@ export function TutorWorkspace({
   // これで一覧 (MaterialsListPane) にも詳細にも登録した教材が出る。Phase 7 で永続化に置換。
   const handleMaterialAdded = useCallback(
     (material: Material, approvedNodeCount: number, file?: File | null) => {
-      // まとまり (一単元=1概念) 区切り (M1-M10、2026-06-06)。
-      // 登録後バックグラウンドで全書を読み、デジタル PDF は本文テキストで概念単位に区切る。
+      // まとまり (一単元=1概念) 区切り (M1-M10、2026-06-06 / C-8 スキャン本対応)。
+      // 登録後バックグラウンドで全書を読み、概念単位に区切る:
+      //   - デジタル PDF (文字レイヤーあり) → 本文テキストで区切る (segmentConceptsFromText)
+      //   - スキャン PDF (文字レイヤー無し)   → C-8 経路 (buildScanSegments、目次土台 + vision)
       // 結果は materials state に反映 (+ real モードは DB 保存) + ゆいが「区切れたよ」と通知。
-      // スキャン PDF (文字レイヤー無し) は今は区切らない (将来 C-8 の低解像度 vision 経路)。
+      // これで「開いた時に待つ」のではなく「アップロード時に裏で作っておく」状態になる。
       const runSegmentation = (m: Material, persist: boolean) => {
         if (!file) return;
         const subjectName =
@@ -520,13 +552,25 @@ export function TutorWorkspace({
         void (async () => {
           try {
             const { hasTextLayer, packedText } = await extractFullPageTexts(file);
-            if (!hasTextLayer || packedText.length === 0) return;
-            const segments = await segmentConceptsFromText({
-              materialName: m.name,
-              subjectName,
-              gradeLevel: m.gradeLevel ?? "中2",
-              packedText,
-            });
+            let segments: ConceptSegment[];
+            if (hasTextLayer && packedText.length > 0) {
+              // デジタル PDF: 本文テキストから PDF 紙番号で直接区切る (M3)。
+              segments = await segmentConceptsFromText({
+                materialName: m.name,
+                subjectName,
+                gradeLevel: m.gradeLevel ?? "中2",
+                packedText,
+              });
+            } else {
+              // スキャン PDF: C-8 ハイブリッド (目次土台 + オフセット較正) or 全ページ vision。
+              // buildScanSegments は PDFDocumentProxy が要るので一時的にロードして使う。
+              const loadedPdf = await loadPdfDocument(file);
+              try {
+                segments = await buildScanSegments(loadedPdf.doc, m, subjectName);
+              } finally {
+                void loadedPdf.destroy();
+              }
+            }
             if (segments.length === 0) return;
             setMaterials((prev) =>
               prev.map((x) =>
@@ -646,10 +690,17 @@ export function TutorWorkspace({
   // SubjectSettingsPanel から呼ばれる。新規 Subject を生成して subjects state に追加、
   // ゆいに完了発話を追加して右ペインを閉じる (S7 主体: 親+娘さん両方が使う動線)。
   // MOCK_SUBJECTS にも push して他画面 (admin 等) でも見えるようにする (in-memory mock)。
+  // 2026-06-07 科目永続化: real モードでは DB に insert して DB 採番 id で state に追加。
+  // これで科目とその科目に紐づけた教材がリロード後も残る (旧来は in-memory のみで消えていた)。
+  // mock モード or DB 失敗時は in-memory id でフォールバック (リロードで消える割り切り)。
   const handleSubjectAdded = useCallback(
-    (input: { name: string; teacherName: string; avatarLetter: string }) => {
-      const newSubject: Subject = {
-        id: `subj-manual-${Date.now()}`,
+    async (input: {
+      name: string;
+      teacherName: string;
+      avatarLetter: string;
+    }) => {
+      const buildLocal = (id: string): Subject => ({
+        id,
         name: input.name,
         teacher: {
           name: input.teacherName,
@@ -657,10 +708,33 @@ export function TutorWorkspace({
           avatarLetter: input.avatarLetter,
           subtitle: `${input.name}の先生`,
         },
-      };
-      setSubjects((prev) => [...prev, newSubject]);
-      // mock-data 側にも push (admin/materials/new など他経路から見える)
-      MOCK_SUBJECTS.push(newSubject);
+      });
+
+      let newSubject: Subject;
+      if (isSupabaseConfigured()) {
+        try {
+          const ownerId = await getCurrentUserId();
+          newSubject = await insertSubject(
+            {
+              name: input.name,
+              teacherName: input.teacherName,
+              avatarLetter: input.avatarLetter,
+            },
+            ownerId,
+          );
+        } catch (err) {
+          console.error("[科目] 保存失敗、in-memory にフォールバック:", err);
+          newSubject = buildLocal(`subj-manual-${Date.now()}`);
+        }
+      } else {
+        newSubject = buildLocal(`subj-manual-${Date.now()}`);
+        // mock-data 側にも push (admin/materials/new など他経路から見える)
+        MOCK_SUBJECTS.push(newSubject);
+      }
+
+      setSubjects((prev) =>
+        prev.some((s) => s.id === newSubject.id) ? prev : [...prev, newSubject],
+      );
       const reply: TutorMessage = {
         id: `t-subj-${Date.now()}`,
         role: "tutor",

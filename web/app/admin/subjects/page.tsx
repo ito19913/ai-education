@@ -8,22 +8,47 @@
  *   - バックアップ動線: 本ページ (/admin/subjects、URL バー直入力で到達可)
  *
  * 主動線と同じ SubjectSettingsPanel コンポーネントを再利用、useState で MOCK_SUBJECTS を
- * 動的管理。Phase 7 で Supabase クエリ + 永続化に置換予定。
+ * 動的管理。2026-06-07 科目永続化: real モードは DB から fetch+merge し、追加時に DB insert。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   SubjectSettingsPanel,
   type NewSubjectInput,
 } from "@/components/subjects/SubjectSettingsPanel";
 import { MOCK_SUBJECTS } from "@/lib/learn/mock-data";
 import type { Subject } from "@/lib/learn/types";
+import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
+import { getCurrentUserId } from "@/lib/materials/materials-repo";
+import {
+  fetchCustomSubjects,
+  insertSubject,
+} from "@/lib/subjects/subjects-repo";
 
 export default function AdminSubjectsPage() {
   const [subjects, setSubjects] = useState<Subject[]>(MOCK_SUBJECTS);
 
-  const handleAdd = (input: NewSubjectInput) => {
-    const newSubject: Subject = {
-      id: `subj-manual-${Date.now()}`,
+  // real モード: 起動時に DB のカスタム科目を5教科にマージ (id で dedupe)。
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+    fetchCustomSubjects()
+      .then((rows) => {
+        if (cancelled) return;
+        setSubjects((prev) => {
+          const ids = new Set(prev.map((s) => s.id));
+          const additions = rows.filter((s) => !ids.has(s.id));
+          return additions.length > 0 ? [...prev, ...additions] : prev;
+        });
+      })
+      .catch((err) => console.error("[科目] 一覧取得失敗:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleAdd = async (input: NewSubjectInput) => {
+    const buildLocal = (id: string): Subject => ({
+      id,
       name: input.name,
       teacher: {
         name: input.teacherName,
@@ -31,10 +56,33 @@ export default function AdminSubjectsPage() {
         avatarLetter: input.avatarLetter,
         subtitle: `${input.name}の先生`,
       },
-    };
-    setSubjects((prev) => [...prev, newSubject]);
-    // mock-data 側にも push (主動線 /tutor からも見えるように)
-    MOCK_SUBJECTS.push(newSubject);
+    });
+
+    let newSubject: Subject;
+    if (isSupabaseConfigured()) {
+      try {
+        const ownerId = await getCurrentUserId();
+        newSubject = await insertSubject(
+          {
+            name: input.name,
+            teacherName: input.teacherName,
+            avatarLetter: input.avatarLetter,
+          },
+          ownerId,
+        );
+      } catch (err) {
+        console.error("[科目] 保存失敗、in-memory にフォールバック:", err);
+        newSubject = buildLocal(`subj-manual-${Date.now()}`);
+      }
+    } else {
+      newSubject = buildLocal(`subj-manual-${Date.now()}`);
+      // mock-data 側にも push (主動線 /tutor からも見えるように)
+      MOCK_SUBJECTS.push(newSubject);
+    }
+
+    setSubjects((prev) =>
+      prev.some((s) => s.id === newSubject.id) ? prev : [...prev, newSubject],
+    );
   };
 
   return (
