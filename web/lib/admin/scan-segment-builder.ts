@@ -265,7 +265,15 @@ async function buildViaVision(
     const end = Math.min(start + VISION_CHUNK_PAGES - 1, cap);
     const imgs: string[] = [];
     for (let p = start; p <= end; p++) {
-      const img = await renderPageToJpegAt(doc, p, VISION_LONG_EDGE, VISION_QUALITY);
+      // 左上に「PDF-<紙番号>」を焼き込む。AI はこのラベルを読んで startPdfPage を返す
+      // (= 数え間違い・紙面番号との取り違えを防ぐ)。
+      const img = await renderPageToJpegAt(
+        doc,
+        p,
+        VISION_LONG_EDGE,
+        VISION_QUALITY,
+        `PDF-${p}`,
+      );
       if (img) imgs.push(img);
     }
     if (imgs.length === 0) continue;
@@ -305,8 +313,20 @@ async function buildViaVision(
 }
 
 /**
+ * ハイブリッド経路を使うか。**現在は false 固定で vision 経路に統一** (2026-06-07)。
+ *
+ * 理由: ハイブリッドは「目次(体系図)の印刷ページ番号 + オフセット較正」で PDF 紙番号を
+ * 出すが、目次から抽出した番号が「印刷番号」か「PDF番号」かは本によって異なり、見分け
+ * られない。実機で『中学英語…わかりやすく』では目次番号が実質 PDF 番号だったため、
+ * オフセット+8 が二重適用されて全まとまりが +8 ずれた (主語と動詞=PDF22 なのに 30)。
+ * vision 経路はページ画像を順に読んで PDF 紙番号で直接区切るため、この取り違えが起きない。
+ * ハイブリッド一式は将来の最適化用に残す (この flag を true にすれば復活)。
+ */
+const USE_HYBRID = false;
+
+/**
  * スキャン本 (文字レイヤー無し) から まとまり (ConceptSegment[]) を組み立てる。
- * 目次の体系図ノードが十分あればハイブリッド、無ければ/失敗すれば vision 経路。
+ * 現在は vision 経路に統一 (ページ画像を読んで PDF 紙番号で直接区切る = オフセット問題なし)。
  * 何も作れなければ [] (呼び出し側は今ページ要約フォールバックのまま)。
  */
 export async function buildScanSegments(
@@ -315,16 +335,18 @@ export async function buildScanSegments(
   subjectName: string,
 ): Promise<ConceptSegment[]> {
   const numPages = doc.numPages;
-  const usableTocCount = (material.extractedNodes ?? []).filter((n) =>
-    parsePageRange(n.pageRange),
-  ).length;
 
-  if (usableTocCount >= MIN_TOC_NODES_FOR_HYBRID) {
-    try {
-      const segs = await buildViaHybrid(doc, material, subjectName, numPages);
-      if (segs.length > 0) return segs;
-    } catch (err) {
-      console.error("[C-8] ハイブリッド経路に失敗、vision 経路へ:", err);
+  if (USE_HYBRID) {
+    const usableTocCount = (material.extractedNodes ?? []).filter((n) =>
+      parsePageRange(n.pageRange),
+    ).length;
+    if (usableTocCount >= MIN_TOC_NODES_FOR_HYBRID) {
+      try {
+        const segs = await buildViaHybrid(doc, material, subjectName, numPages);
+        if (segs.length > 0) return segs;
+      } catch (err) {
+        console.error("[C-8] ハイブリッド経路に失敗、vision 経路へ:", err);
+      }
     }
   }
 

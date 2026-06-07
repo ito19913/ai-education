@@ -282,23 +282,27 @@ export async function segmentScanByVision(
 - ★**学習内容でないページはまとまりに含めない**★: 表紙・扉・はじめに・目次・使い方・
   奥付・索引・著者紹介・広告 など。
 
-## ページ番号の扱い (★最重要★)
-- 渡された画像は PDF の **${input.startPdfPage} ページ目から ${endPdfPage} ページ目** の
-  連続スキャンです (1 枚目 = ${input.startPdfPage} ページ目)。
-- 各まとまりの開始/終了は、この **PDF 紙番号** (= 画像の通し番号、${input.startPdfPage}〜${endPdfPage})
-  で答えてください。紙面に印刷された番号ではなく、PDF の通し番号です。
+## ページ番号の扱い (★最重要・絶対に間違えない★)
+- 各ページ画像の**左上に赤いバッジで「PDF-<数字>」**が焼き込まれています (例: PDF-${input.startPdfPage})。
+  この赤バッジの数字が、そのページの **PDF 紙番号** です。今回の画像は
+  PDF-${input.startPdfPage} 〜 PDF-${endPdfPage} の連続ページです。
+- 各まとまりの startPdfPage / endPdfPage は、必ず**この左上の赤バッジの数字**で答えてください。
+- ❌ 紙面の隅 (たいてい下部) に印刷された「本のページ番号 (ノンブル)」は使わないこと。
+  赤バッジの番号とノンブルは一致しないことが多いです (PDF には表紙や白紙が含まれるため)。
+- 本のページ番号 (ノンブル) が読み取れたら printPageHint に入れてください (表示用、任意)。
 
 ## 出力フォーマット (JSON 配列のみ、前置き・コードブロック禁止)
 [
-  {"conceptName": "概念名 (短く)", "startPdfPage": ${input.startPdfPage}, "endPdfPage": ${input.startPdfPage + 1}, "printPageHint": "紙面の番号があれば(任意)"},
+  {"conceptName": "概念名 (短く)", "startPdfPage": ${input.startPdfPage}, "endPdfPage": ${input.startPdfPage + 1}, "printPageHint": "ノンブルがあれば(任意)"},
   ...
 ]`;
 
   const userPrompt = `教材: ${input.materialName} / 科目: ${input.subjectName} / 学年: ${input.gradeLevel}
 
-添付画像は PDF の ${input.startPdfPage}〜${endPdfPage} ページ目の連続スキャンです。
-話の変わり目で概念単位に区切り、各まとまりの startPdfPage / endPdfPage を PDF 紙番号
-(${input.startPdfPage}〜${endPdfPage}) で答えてください。JSON 配列のみ。`;
+添付画像は連続ページで、各ページ左上の赤バッジ「PDF-数字」が PDF 紙番号です
+(PDF-${input.startPdfPage} 〜 PDF-${endPdfPage})。
+話の変わり目で概念単位に区切り、各まとまりの startPdfPage / endPdfPage を
+**左上の赤バッジの数字**で答えてください。JSON 配列のみ。`;
 
   const content: Anthropic.ContentBlockParam[] = [
     ...images.map(

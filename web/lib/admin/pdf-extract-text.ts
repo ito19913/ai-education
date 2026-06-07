@@ -112,6 +112,13 @@ export async function renderPageToJpegAt(
   pageNum: number,
   longEdge: number,
   quality: number,
+  /**
+   * 指定すると左上に赤バッジでこの文字列を焼き込む (C-8 vision 区切り用)。
+   * スキャン本では AI が「PDF の何枚目か」を数えられず、紙面に印刷された番号を
+   * 返してしまう (印刷↔PDF のオフセットは非一定で換算不能)。そこで PDF 紙番号を
+   * こちらで焼き込み、AI には「このバッジの番号」を返させて正確なジャンプ先を得る。
+   */
+  label?: string,
 ): Promise<string | null> {
   try {
     const page = await doc.getPage(pageNum);
@@ -135,6 +142,23 @@ export async function renderPageToJpegAt(
 
     // v6 では canvas を渡すのが推奨 (canvasContext は後方互換)。
     await page.render({ canvas, viewport }).promise;
+
+    // PDF 紙番号のラベルを左上に焼き込む (vision 区切りの正確なジャンプ先用)。
+    if (label) {
+      const fontPx = Math.max(20, Math.round(canvas.width * 0.05));
+      ctx.font = `bold ${fontPx}px sans-serif`;
+      const padX = Math.round(fontPx * 0.45);
+      const padY = Math.round(fontPx * 0.3);
+      const tw = ctx.measureText(label).width;
+      const bw = Math.ceil(tw + padX * 2);
+      const bh = Math.ceil(fontPx + padY * 2);
+      ctx.fillStyle = "#dc2626"; // 赤バッジ (紙面の番号と区別しやすい)
+      ctx.fillRect(0, 0, bw, bh);
+      ctx.fillStyle = "#ffffff";
+      ctx.textBaseline = "top";
+      ctx.fillText(label, padX, padY);
+    }
+
     const dataUrl = canvas.toDataURL("image/jpeg", quality);
     page.cleanup();
     // canvas を解放 (大きな PDF を多数描画するときのメモリ対策)
