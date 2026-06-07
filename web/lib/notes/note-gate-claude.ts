@@ -232,3 +232,140 @@ ${input.explanation}
       (parsed.passed ? "いい説明だね！" : "もう少し自分の言葉で言ってみよう。"),
   };
 }
+
+// ============================================================================
+// reviewResume (レジュメ構想 R2/R3/R7: 子が書いたレジュメを 3 色添削)
+// ============================================================================
+//
+// レジュメ構想では「正しい要約」を AI が見せず (R3)、子が自分の言葉で書いたレジュメを
+// 葵が添削する (R2)。葵は**答えを書かず方向だけ示す** (R7): ◎合ってる / △抜け (何を、だが
+// 答えは書かない) / ✕違う (指摘のみ)。教材ページ画像を vision で直接読み、子の本文と
+// 突き合わせて採点する (別途 summarize は呼ばない = 1 呼び出しで安く)。
+// resolved = ✕ (明確な誤り) ゼロ かつ 重大な △ ゼロ で理解済み可 (R8、最終判断は本人)。
+
+export type ResumeReviewPoint = {
+  /** ok=◎合ってる / missing=△抜け / wrong=✕違う */
+  kind: "ok" | "missing" | "wrong";
+  /** 子に見せる短い指摘 (missing/wrong は答えを書かず方向だけ) */
+  text: string;
+};
+
+export type ResumeReviewResult = {
+  points: ResumeReviewPoint[];
+  /** ✕ ゼロ & 重大な △ ゼロ = 理解済みにしてよい (R8、最終決定は本人) */
+  resolved: boolean;
+  /** 1〜2 文の温かい総評 */
+  encouragement: string;
+};
+
+export type ResumeReviewInput = {
+  conceptName: string;
+  subjectName: string;
+  gradeLevel: string;
+  /** まとまり範囲のページ画像 (base64 JPEG、改行連結)。葵が正しさの基準にする */
+  pageImagesPacked?: string;
+  /** 子が自分の言葉で書いたレジュメ本文 */
+  childBody: string;
+  /** 周回数レベル (G-6/R 連動)。1 以上 = 2 周目以降はより正確さを求める */
+  formalLevel?: number;
+};
+
+export async function reviewResume(
+  input: ResumeReviewInput,
+): Promise<ResumeReviewResult> {
+  const images = input.pageImagesPacked
+    ? input.pageImagesPacked.split("\n").filter((s) => s.length > 0)
+    : [];
+
+  const strictText =
+    (input.formalLevel ?? 0) >= 1
+      ? "これは 2 周目以降。前回より正確さ・用語の使い方も少し見てあげて。"
+      : "これは初回。芯を捉えていれば表現が拙くても褒めて、致命的な誤り・大きな抜けだけ指摘して。";
+
+  const system = `あなたは葵 (あおい) 先生、AI-Education の教科の先生 (ティーチング担当)。
+子どもが、今読んだ教材の**1 つの概念 (まとまり)** を、教科書を閉じて**自分の言葉で要約 (レジュメ)** しました。
+あなたの仕事は、そのレジュメを**添削**することです。
+
+## 最重要ルール (レジュメ構想 R3/R7)
+- ★**答えを書いてはいけない**★。これは写経を防ぐための関所です。正しい文章を提示したり、
+  抜けている内容そのものを書いたりしない。**「何について触れると良いか」という"方向"だけ**示す。
+- 添付のページ画像 (教材本文) を正しさの基準にする。推測で盛らない。
+- 子の自尊心を守る。できている所をまず認める。
+
+## 3 色フィードバック (points 配列)
+- kind "ok" (◎合ってる): 正しく押さえられている点。必ず 1 つ以上、具体的に褒める。
+- kind "missing" (△抜け): 重要なのに触れられていない点。「○○についても触れると完璧」のように
+  **何を**かは言うが、**答えは書かない**。
+- kind "wrong" (✕違う): 事実として誤っている点。「ここは逆かも / もう一度確かめてみて」と
+  **指摘だけ**。正解は書かない。
+- 細かすぎる粗探しはしない。本質的な点に絞る (合計 2〜5 個程度)。
+
+## resolved (理解済みにしてよいか、R8)
+- ✕ (wrong) が 1 つも無く、かつ **重大な** △ (missing) も無い → resolved=true。
+- 些細な抜けだけなら resolved=true にしてよい (完璧主義で子を止めない)。
+- ${strictText}
+
+## 出力フォーマット (JSON のみ、前置き無し)
+{"points":[{"kind":"ok","text":"…"},{"kind":"missing","text":"…"}],"resolved":true,"encouragement":"1〜2文"}
+
+## プロジェクトの憲法 (PHILOSOPHY.md)
+${getPhilosophy()}`;
+
+  const contextText = `概念 (まとまり): ${input.conceptName} / 科目: ${input.subjectName} / 学年: ${input.gradeLevel}
+
+子が書いたレジュメ:
+${input.childBody}
+
+添付の教材ページを基準に、上のレジュメを 3 色で添削して JSON で返してください。答えは書かず、方向だけ示すこと。`;
+
+  const content: Anthropic.ContentBlockParam[] = [
+    ...images.map(
+      (b64): Anthropic.ImageBlockParam => ({
+        type: "image",
+        source: { type: "base64", media_type: "image/jpeg", data: b64 },
+        cache_control: { type: "ephemeral" },
+      }),
+    ),
+    { type: "text", text: contextText },
+  ];
+
+  const res = await getClient().messages.create({
+    model: "claude-opus-4-8",
+    max_tokens: 800,
+    system: [
+      { type: "text", text: system, cache_control: { type: "ephemeral" } },
+    ],
+    messages: [{ role: "user", content }],
+  });
+
+  const textBlock = res.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("Claude returned no text (reviewResume).");
+  }
+  const parsed = extractJson(textBlock.text) as Partial<ResumeReviewResult>;
+  const validKinds = new Set(["ok", "missing", "wrong"]);
+  const points: ResumeReviewPoint[] = Array.isArray(parsed.points)
+    ? parsed.points
+        .filter(
+          (p): p is ResumeReviewPoint =>
+            !!p &&
+            validKinds.has((p as ResumeReviewPoint).kind) &&
+            typeof (p as ResumeReviewPoint).text === "string" &&
+            (p as ResumeReviewPoint).text.trim().length > 0,
+        )
+        .map((p) => ({ kind: p.kind, text: p.text.trim() }))
+    : [];
+  // 安全側: wrong が無く missing も無ければ resolved。AI の resolved も尊重するが、
+  // wrong が 1 つでもあれば必ず false にする (誤りを残して理解済みにしない)。
+  const hasWrong = points.some((p) => p.kind === "wrong");
+  const resolved = !hasWrong && parsed.resolved !== false;
+  return {
+    points,
+    resolved,
+    encouragement:
+      (parsed.encouragement && String(parsed.encouragement).trim()) ||
+      (resolved
+        ? "いいレジュメだね！自分の言葉でよく書けてる。"
+        : "あと少し！直すともっと良くなるよ。"),
+  };
+}

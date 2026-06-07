@@ -55,7 +55,7 @@ import {
   respondViaAokiChat,
   type AokiChatMessage,
 } from "@/lib/admin/aoki-chat-claude";
-import { NoteGateDialog } from "@/components/notes/NoteGateDialog";
+import { ResumePane } from "@/components/notes/ResumePane";
 import { PageThumbnailRail } from "@/components/materials/PageThumbnailRail";
 import {
   ResizablePanelGroup,
@@ -288,6 +288,8 @@ export function MaterialReadPane({
   const [downloading, setDownloading] = useState(false);
   // 見開き (2ページ表示) ⇄ 単ページ。default = 見開き (ユーザー要望)。
   const [spread, setSpread] = useState(true);
+  // レジュメモード (R6): 「レジュメにする」で教材を単一ページにし、横に ResumePane を出す。
+  const [resumeMode, setResumeMode] = useState(false);
   // 左サムネレールの表示/非表示 (ito19 要望: 細く + 隠せるように)。default = 表示。
   const [railVisible, setRailVisible] = useState(true);
   // ガイド読書のブロックプラン {segmentId: GuidedBlock[]} (G-A 永続化、2026-06-07)。
@@ -308,12 +310,13 @@ export function MaterialReadPane({
   const viewerRef = useRef<HTMLDivElement>(null);
 
   // 今表示するページ番号 (見開きなら [page, page+1]、末尾なら片ページ)
+  // レジュメモード中は横にレジュメ pane を置くため単一ページに強制 (R6)。
   const pagesToShow = useMemo(() => {
-    if (!spread) return [page];
+    if (resumeMode || !spread) return [page];
     const arr = [page];
     if (page + 1 <= (numPages || page + 1)) arr.push(page + 1);
     return arr;
-  }, [spread, page, numPages]);
+  }, [resumeMode, spread, page, numPages]);
 
   // めくり幅 (見開きは2ページ進む)
   const step = spread ? 2 : 1;
@@ -561,8 +564,7 @@ export function MaterialReadPane({
     [numPages],
   );
 
-  // ----- まとめノート N9①: 能動ゲート起動 -----
-  const [gateOpen, setGateOpen] = useState(false);
+  // ----- レジュメにする: 起動準備 (まとまり範囲の画像を pack して ResumePane を開く) -----
   const [gatePacked, setGatePacked] = useState("");
   const [gateConcept, setGateConcept] = useState<AiExtractedNode | null>(null);
   const [gateSegment, setGateSegment] = useState<ConceptSegment | null>(null);
@@ -949,9 +951,9 @@ export function MaterialReadPane({
     [guidedBlocks, guidedBusy, sending, moveCursor],
   );
 
-  // M8: まとめる = まとまり (一単元) 全体を vision で渡して 1 概念の要約を作る。
-  // まとまりが無ければ従来通り今表示ページだけ (フォールバック)。
-  const openNoteGate = useCallback(async () => {
+  // R6/M8: 「レジュメにする」= まとまり (一単元) 全体を vision で渡せるよう画像を pack し、
+  // 教材を単一ページにして横に ResumePane を開く。まとまりが無ければ今表示ページで代用。
+  const openResume = useCallback(async () => {
     if (!loaded || preparingGate) return;
     setPreparingGate(true);
     try {
@@ -966,9 +968,11 @@ export function MaterialReadPane({
       setGateConcept(
         seg ? null : findConceptForPage(page, material.extractedNodes),
       );
-      setGateOpen(true);
+      // まとまり先頭へジャンプ (子はページ番号を意識しない、R6)。
+      if (seg) setPage(seg.startPdfPage);
+      setResumeMode(true);
     } catch (err) {
-      console.error("[読書] ノートゲート準備失敗:", err);
+      console.error("[読書] レジュメ準備失敗:", err);
     } finally {
       setPreparingGate(false);
     }
@@ -1313,6 +1317,42 @@ export function MaterialReadPane({
           minSize="18%"
           className="min-w-0"
         >
+        {resumeMode ? (
+          <ResumePane
+            conceptName={
+              gateSegment?.conceptName ?? gateConcept?.name ?? "この論点"
+            }
+            segment={gateSegment}
+            materialId={material.id}
+            materialName={material.name}
+            subjectId={material.subjectId}
+            subjectName={subject?.name ?? "教科"}
+            gradeLevel={material.gradeLevel ?? "中2"}
+            pageImagesPacked={gatePacked}
+            sourcePageRange={
+              gateSegment?.printPageHint ??
+              gateConcept?.pageRange ??
+              (page ? `p.${page}` : undefined)
+            }
+            existingEntry={
+              gateSegment
+                ? noteEntries?.find(
+                    (e) => e.sourceSegmentId === gateSegment.id && !e.deletedAt,
+                  )
+                : undefined
+            }
+            studyLevel={
+              gateSegment &&
+              noteEntries?.some(
+                (e) => e.sourceSegmentId === gateSegment.id && !e.deletedAt,
+              )
+                ? 1
+                : 0
+            }
+            onCommitted={(entry) => onNoteAdded?.(entry)}
+            onClose={() => setResumeMode(false)}
+          />
+        ) : (
         <div className="flex h-full min-h-0 flex-col bg-gradient-to-b from-sky-50/60 to-background">
           {/* 先生ヘッダー */}
           <div className="flex shrink-0 items-center gap-2 border-b border-border bg-background/80 px-3 py-2 backdrop-blur">
@@ -1373,10 +1413,10 @@ export function MaterialReadPane({
             )}
             <Button
               size="sm"
-              onClick={() => void openNoteGate()}
-              disabled={!loaded || preparingGate || guidedBusy}
+              onClick={() => void openResume()}
+              disabled={!loaded || preparingGate || guidedBusy || resumeMode}
               className="gap-1.5"
-              title="今のページと葵との対話から、自分のレジュメにするよ。"
+              title="教科書を閉じて、自分の言葉でレジュメにするよ。"
             >
               {preparingGate ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -1396,7 +1436,7 @@ export function MaterialReadPane({
           </div>
           {/* ガイド読書コントロール (G-A): まとまりを一区切りずつ歩いている間だけ表示。
               子は受け身で「次へ / もっと簡単に / もっと詳しく」+ 下の入力欄で質問。 */}
-          {guidedBlocks && !showUnitMenu && (
+          {guidedBlocks && !showUnitMenu && !resumeMode && (
             <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border bg-sky-50/60 px-3 py-1.5">
               {/* 前/次 = 読む所を「選ぶ」だけ (青枠が動く、まだ読まない)。順序を手動調整できる。 */}
               <Button
@@ -1621,43 +1661,9 @@ export function MaterialReadPane({
             </Button>
           </div>
         </div>
+        )}
         </ResizablePanel>
       </ResizablePanelGroup>
-
-      {/* まとめノート N9①: 能動ゲートダイアログ */}
-      <NoteGateDialog
-        open={gateOpen}
-        onOpenChange={setGateOpen}
-        mode="create"
-        materialId={material.id}
-        materialName={material.name}
-        subjectId={material.subjectId}
-        subjectName={subject?.name ?? "教科"}
-        gradeLevel={material.gradeLevel ?? "中2"}
-        pageNumber={page}
-        pageImagesPacked={gatePacked}
-        currentConcept={gateConcept}
-        segment={gateSegment}
-        dialogue={history}
-        existingForSegment={
-          gateSegment
-            ? noteEntries?.find(
-                (e) => e.sourceSegmentId === gateSegment.id && !e.deletedAt,
-              )
-            : undefined
-        }
-        studyLevel={
-          gateSegment &&
-          noteEntries?.some(
-            (e) => e.sourceSegmentId === gateSegment.id && !e.deletedAt,
-          )
-            ? 1
-            : 0
-        }
-        onCommitted={(entry) => {
-          onNoteAdded?.(entry);
-        }}
-      />
     </div>
   );
 }
