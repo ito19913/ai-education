@@ -1895,6 +1895,23 @@ ai_summary) / `components/notes/NoteGateDialog.tsx` (existingForSegment/studyLev
 
 ---
 
+### 2026-06-07: 科目永続化 + 読書ビュー UI + まとまり登録時生成 + スキャン本ページずれ修正
+
+実機 (ito19 さん) で見つかった課題を連続で対応 (この回のコミットはまだ：次セッションで一括予定)。
+
+- **科目 (subject) の永続化** (`★これまで未実装だった重大欠落★`)：新規科目を追加しても in-memory のみでリロードで消え、その科目に紐づけた教材も「迷子」になっていた。`subjects` テーブル (migration `20260607000000_init_subjects.sql`、本番適用済) + `lib/subjects/subjects-repo.ts` (fetchCustomSubjects/insertSubject/softDeleteSubject) を新設。ハードコード5教科はコード (MOCK_SUBJECTS) に残し、**カスタム科目のみ DB 保存 → 起動時に5教科へ id dedupe マージ**。`TutorWorkspace.handleSubjectAdded` と `/admin/subjects` を async 化して DB 保存。`Material.subjectId` は元から text なので教材側は変更不要。**実機の「法人税」科目+テキストは REST で復旧** (孤児教材を新科目 uuid に再リンク + 重複論理削除)。
+- **読書ビュー 3 ペインのリサイズ** (`MaterialReadPane`)：rail | viewer | chat を `ResizablePanelGroup` (react-resizable-panels v4) でドラッグ可変に。**注意: このライブラリは数値=px / 文字列=% (`defaultSize="15%"` のように % 文字列で指定)**。狭画面は `useIsMobile()` で縦スタック (rail 非表示)。
+- **サムネ縦スライダーのキーボード操作** (`PageThumbnailRail`)：スクロール領域に `tabIndex` + onKeyDown。↑↓/←→=±1、PageUp/Down=±5、Home/End=先頭/末尾。
+- **まとまりを「アップロード時」にバックグラウンド生成** (`TutorWorkspace.runSegmentation`)：従来はデジタル PDF のみだった登録時区切りを **C-8 スキャン本対応** に拡張 (`buildScanSegments` を呼ぶ)。これで「開いた時に待つ」のではなく事前生成される。on-demand フォールバックは安全網として継続。
+- **スキャン本まとまりの +N ページずれ修正 → vision 経路に統一** (`scan-segment-builder.ts` `USE_HYBRID=false`)：実機『中学英語…わかりやすく』で全まとまりが +8 ずれた。**真因 = ハイブリッドの「目次番号は印刷番号」前提が崩れ、目次から抽出した番号が実質 PDF 番号だったためオフセット較正 (+8) が二重適用**された (主語と動詞=実 PDF22 なのに 30 に。較正自体は正しく PDF22=印刷14 を検出)。本によって目次番号が印刷/PDF どちらか見分けられないため、**スキャン本は目次に依存しない vision 経路 (ページ画像を順に読み PDF 紙番号で直接区切る=オフセット問題なし) に固定**。ハイブリッド一式は flag で温存。
+
+**★改善候補 (未着手、ito19 さん要望で記録): まとまり生成をサーバー側バックグラウンドジョブ化★**
+現状の登録時まとまり生成 (および on-demand 生成) は **ブラウザのタブ内 (クライアント)** で動く。そのため (1) 生成完了までタブを開いたままにする必要があり、(2) 複数冊の一括事前登録や「アップロードだけして PC を閉じ、後で来たら全部できている」が今はできない。
+- **理想ワークフロー** (ito19 さん): 使う予定のテキストを事前に一括アップロード → 後で来た時には単元一覧もまとまりも完成済み。
+- **実現に必要なこと**: 区切り処理 (vision 経路、`buildScanSegments`/`segmentConceptsFromText`) を**サーバー側のジョブ**へ移す。候補 = Supabase Edge Function / キュー (登録時に enqueue → ワーカが PDF を Storage から取得して区切り → `concept_segments` を書き戻し → 完了で通知)。Vercel 関数の実行時間上限 (Hobby) と大判スキャンの vision コスト・所要時間に注意。**着手前に設計 grill 推奨** (どこで動かす / 進捗と完了通知 / 失敗再試行 / 体系図抽出も同様にジョブ化するか)。
+
+---
+
 ## ゆい→葵への申し送り（TutorHandoff）
 
 ARCHITECTURE 既存の「葵 → ゆい：`Issue.summary` 経由」の **逆方向**。
