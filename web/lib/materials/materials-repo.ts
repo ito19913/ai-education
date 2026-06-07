@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/client";
 import type {
   AiExtractedNode,
   ConceptSegment,
+  GuidedBlock,
   Material,
   MaterialLabel,
 } from "@/lib/learn/types";
@@ -31,6 +32,7 @@ type MaterialRow = {
   covered_node_ids: string[] | null;
   extracted_nodes: AiExtractedNode[] | null;
   concept_segments: ConceptSegment[] | null;
+  guided_plans: Record<string, GuidedBlock[]> | null;
   pdf_path: string | null;
   pdf_size: number | null;
   deleted_at: string | null;
@@ -49,6 +51,10 @@ function rowToMaterial(row: MaterialRow): Material {
     conceptSegments:
       row.concept_segments && row.concept_segments.length > 0
         ? row.concept_segments
+        : undefined,
+    guidedPlans:
+      row.guided_plans && Object.keys(row.guided_plans).length > 0
+        ? row.guided_plans
         : undefined,
     pdfPath: row.pdf_path ?? undefined,
     pdfSize: row.pdf_size ?? undefined,
@@ -137,6 +143,23 @@ export async function updateMaterialSegments(
   const { error } = await supabase
     .from("materials")
     .update({ concept_segments: segments })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * ガイド読書のブロックプラン {segmentId: GuidedBlock[]} を保存 (G-A 永続化、2026-06-07)。
+ * プラン生成完了時と、子が青枠 bbox を手で動かした時 (pointerUp) に呼ぶ。
+ * 全体を上書きするので、呼び出し側は現在の全プランを渡す。
+ */
+export async function updateMaterialGuidedPlans(
+  id: string,
+  guidedPlans: Record<string, GuidedBlock[]>,
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("materials")
+    .update({ guided_plans: guidedPlans })
     .eq("id", id);
   if (error) throw error;
 }

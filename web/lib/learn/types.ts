@@ -598,6 +598,16 @@ export type Material = {
    * 段階1-B 同様 materials.concept_segments (JSONB) に永続化。
    */
   conceptSegments?: ConceptSegment[];
+  /**
+   * AI 主導ガイド読書のブロックプラン (G-A、2026-06-07 永続化)。
+   * 概念 (ConceptSegment.id) → そのまとまりを「教える順序のブロック列」(GuidedBlock[])。
+   * 永続化の目的は 2 つ: ①高価な Opus vision のプラン生成を概念ごと 1 回で済ます
+   * ②子が手で直した青枠 (block.bbox) を次回も同じブロックに当てる (生成順依存の
+   *   block ID は作り直すとズレるため、プランごと固定して初めて調整値が意味を持つ)。
+   * 手動調整した bbox は該当ブロックの bbox に直接焼き込んで保存する。
+   * materials.guided_plans (JSONB) に永続化。無ければオンデマンド生成にフォールバック。
+   */
+  guidedPlans?: Record<string, GuidedBlock[]>;
 };
 
 /**

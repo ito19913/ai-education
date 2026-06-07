@@ -46,7 +46,10 @@ import { buildScanSegments } from "@/lib/admin/scan-segment-builder";
 import { buildGuidedReadingPlan } from "@/lib/admin/guided-reading-claude";
 import { getSessionPdf, setSessionPdf } from "@/lib/admin/session-pdf-store";
 import { downloadMaterialPdf } from "@/lib/materials/pdf-storage";
-import { updateMaterialSegments } from "@/lib/materials/materials-repo";
+import {
+  updateMaterialGuidedPlans,
+  updateMaterialSegments,
+} from "@/lib/materials/materials-repo";
 import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
 import {
   respondViaAokiChat,
@@ -155,9 +158,12 @@ type Bbox = { x: number; y: number; w: number; h: number };
 function EditableHighlight({
   bbox,
   onChange,
+  onCommit,
 }: {
   bbox: Bbox;
   onChange: (b: Bbox) => void;
+  /** ドラッグ終了 (指を離した) 時に 1 回。DB 永続化はここで行う (移動中は飛ばさない)。 */
+  onCommit?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<{
@@ -223,6 +229,7 @@ function EditableHighlight({
     if (!drag.current) return;
     drag.current = null;
     ref.current?.releasePointerCapture?.(e.pointerId);
+    onCommit?.();
   };
 
   const handlePos: Record<string, string> = {
@@ -283,11 +290,13 @@ export function MaterialReadPane({
   const [spread, setSpread] = useState(true);
   // 左サムネレールの表示/非表示 (ito19 要望: 細く + 隠せるように)。default = 表示。
   const [railVisible, setRailVisible] = useState(true);
-  // 青枠ハイライトの手動調整値 (key = `${segmentId}:${blockId}` → 正規化 bbox)。
-  // AI 推定の bbox がズレた時、子が直接ドラッグで動かす/広げる/狭めた結果をセッション内で覚える。
-  const [bboxOverrides, setBboxOverrides] = useState<
-    Record<string, { x: number; y: number; w: number; h: number }>
-  >({});
+  // ガイド読書のブロックプラン {segmentId: GuidedBlock[]} (G-A 永続化、2026-06-07)。
+  // DB (material.guidedPlans) を初期値にし、プラン生成・青枠の手動調整をここに反映して
+  // DB へ書き戻す。プランを固定保存することで、子が動かした青枠 (block.bbox) が
+  // 次回も同じブロックに当たる (生成順依存の block ID は作り直すとズレるため)。
+  const [guidedPlansMap, setGuidedPlansMap] = useState<
+    Record<string, GuidedBlock[]>
+  >(() => material.guidedPlans ?? {});
   // ズーム倍率。1 = エリアにフィット、>1 で拡大 (スクロール)。
   const [zoom, setZoom] = useState(1);
   // ページの縦横比 (width / height)。フィット計算に使う。
@@ -564,6 +573,8 @@ export function MaterialReadPane({
   // ----- AI 主導ガイド読書 (G-A、2026-06-06) -----
   // まとまりを「教える順序のブロック」に分け、葵が一区切りずつ解説する。
   const [guidedBlocks, setGuidedBlocks] = useState<GuidedBlock[] | null>(null);
+  // 青枠 bbox の手動調整を確定保存 (pointerUp) する時に最新ブロック列を読むための ref。
+  const guidedBlocksRef = useRef<GuidedBlock[] | null>(null);
   const [guidedIndex, setGuidedIndex] = useState(0);
   const [guidedSegment, setGuidedSegment] = useState<ConceptSegment | null>(null);
   // 難易度: 0=やさしい / 1=ふつう / 2=詳しい (G-6、初回はやさしい。周回数連動は G-C)。
@@ -704,8 +715,11 @@ export function MaterialReadPane({
             text: `「${seg.conceptName}」を一緒に見ていこう📖\n読みたい所を **「前 / 次」やページのタップ** で選んで(青い枠が動くよ)、**「ここを解説」**を押すと、わたしがそこを説明するね。むずかしかったら **やさしく**、聞きたいことはいつでも入力してOK。`,
           },
         ]);
-        // ブロックプラン (セッションキャッシュ優先)。
-        let blocks = sessionGuidedPlanCache.get(seg.id);
+        // ブロックプランの取得優先順: ①永続化済み (DB/local map) ②session キャッシュ
+        // ③無ければ Opus vision で生成。一度作れば概念ごと 1 回で済む (G-A 永続化)。
+        let blocks =
+          guidedPlansMap[seg.id] ?? sessionGuidedPlanCache.get(seg.id);
+        let generated = false;
         if (!blocks) {
           const pages = sampleRangePages(segmentPages(seg), GUIDED_MAX_PAGES);
           const packed = await packPages(pages);
@@ -719,7 +733,7 @@ export function MaterialReadPane({
                 pageNumbers: pages,
               })
             : [];
-          if (blocks.length > 0) sessionGuidedPlanCache.set(seg.id, blocks);
+          generated = blocks.length > 0;
         }
         // ブロック化できなければ、まとまり全体を 1 ブロック扱いにフォールバック。
         if (!blocks || blocks.length === 0) {
@@ -732,6 +746,21 @@ export function MaterialReadPane({
               supplementary: false,
             },
           ];
+          generated = true; // フォールバックも保存対象 (ロジック統一・以後再生成しない)
+        }
+        // 新規生成したプランは session キャッシュ + map に入れて DB へ永続化。
+        if (generated) {
+          const plan = blocks;
+          sessionGuidedPlanCache.set(seg.id, plan);
+          setGuidedPlansMap((prev) => {
+            const next = { ...prev, [seg.id]: plan };
+            if (isSupabaseConfigured()) {
+              updateMaterialGuidedPlans(material.id, next).catch((e) =>
+                console.error("[ガイド読書] プラン保存失敗:", e),
+              );
+            }
+            return next;
+          });
         }
         // 最初のブロックを「選択」状態にする (まだ読まない、G-2)。子が「ここを解説」で読む。
         setGuidedBlocks(blocks);
@@ -750,7 +779,17 @@ export function MaterialReadPane({
         setGuidedBusy(false);
       }
     },
-    [loaded, starting, sending, guidedBusy, packPages, material, subject, notedSegmentIds],
+    [
+      loaded,
+      starting,
+      sending,
+      guidedBusy,
+      packPages,
+      material,
+      subject,
+      notedSegmentIds,
+      guidedPlansMap,
+    ],
   );
 
   const startUnit = useCallback(
@@ -759,6 +798,43 @@ export function MaterialReadPane({
     },
     [startGuided],
   );
+
+  // guidedBlocks の最新値を ref へ同期 (commit 時に stale を避ける)。
+  useEffect(() => {
+    guidedBlocksRef.current = guidedBlocks;
+  }, [guidedBlocks]);
+
+  // 青枠ドラッグ中: 今のブロック (guidedIndex) の bbox をライブ更新 (見た目が即追従)。
+  // DB へは書かず、ローカル state (= プラン) だけ動かす。
+  const editGuidedBbox = useCallback(
+    (bbox: Bbox) => {
+      setGuidedBlocks((blocks) => {
+        if (!blocks || !blocks[guidedIndex]) return blocks;
+        const next = blocks.slice();
+        next[guidedIndex] = { ...next[guidedIndex], bbox };
+        return next;
+      });
+    },
+    [guidedIndex],
+  );
+
+  // 青枠ドラッグ終了 (pointerUp): 調整済みプランを session キャッシュ + map に焼き込み、
+  // DB へ 1 回だけ永続化する (移動中は飛ばさない、Q2)。失敗はログのみ。
+  const commitGuidedBbox = useCallback(() => {
+    const seg = guidedSegment;
+    const blocks = guidedBlocksRef.current;
+    if (!seg || !blocks) return;
+    sessionGuidedPlanCache.set(seg.id, blocks);
+    setGuidedPlansMap((prev) => {
+      const next = { ...prev, [seg.id]: blocks };
+      if (isSupabaseConfigured()) {
+        updateMaterialGuidedPlans(material.id, next).catch((e) =>
+          console.error("[ガイド読書] 青枠保存失敗:", e),
+        );
+      }
+      return next;
+    });
+  }, [guidedSegment, material.id]);
 
   // 選択カーソルを動かす (API なし・即時)。ハイライトと表示ページだけ動かし、まだ読まない。
   // → 子が「次/前/タップ」で読む所と順序を自由に選んでから「ここを解説」で読める。
@@ -1192,13 +1268,10 @@ export function MaterialReadPane({
               <div className="flex min-h-full w-full items-center justify-center gap-0">
                 {pagesToShow.map((pn, i) => {
                   // ガイド読書中: 今のブロックがこのページにあれば青枠を重ねる。
-                  // 枠は AI 推定 (bbox) だがズレるので、子が直接ドラッグで動かす/サイズ変更できる。
+                  // 枠は AI 推定 (block.bbox) だがズレるので、子が直接ドラッグで動かす/
+                  // サイズ変更できる。調整はそのまま block.bbox に焼き込み DB へ永続化。
                   const cur = guidedBlocks?.[guidedIndex];
-                  const overrideKey = cur
-                    ? `${guidedSegment?.id ?? ""}:${cur.id}`
-                    : "";
-                  const displayBbox =
-                    cur && (bboxOverrides[overrideKey] ?? cur.bbox);
+                  const displayBbox = cur?.bbox;
                   const showBox = !!cur && !!displayBbox && cur.pdfPage === pn;
                   return (
                     <div
@@ -1218,9 +1291,8 @@ export function MaterialReadPane({
                       {showBox && displayBbox && (
                         <EditableHighlight
                           bbox={displayBbox}
-                          onChange={(b) =>
-                            setBboxOverrides((m) => ({ ...m, [overrideKey]: b }))
-                          }
+                          onChange={editGuidedBbox}
+                          onCommit={commitGuidedBbox}
                         />
                       )}
                     </div>
