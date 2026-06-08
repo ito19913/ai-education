@@ -1045,6 +1045,7 @@ C61 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段�
 - **【✅ 「ヒントちょうだい」も実装済 (R4、`8902aed`)】**: 書く pane の「💡 ヒント」で葵が教材(vision)+概念+書いた本文を見て**答えは言わず糸口を1つ**返す。grill 確定どおり**押すごとに段階的に濃く** (hintLevel+既出ヒントを葵に渡す、答えは最後まで言わない)。`note-gate-claude.getResumeHint` (Opus、max_tokens 300) + ResumePane の水色ヒントボックス (まとまり切替でリセット、mock 付)。これで R4 (音声+ヒント) 完全実装。tsc/lint/build クリア。
 - **【✅ R10 Phase 3 = 冊のコピー も実装済 (`0f1006d`、R10 全 Phase 完結)】**: 冊タブ ⋯「この冊をコピー」(全冊) → 同科目に新冊 (is_default=false) を作り中身を新 id で全複製 (出典/本文/status/メモそのまま、コピー先は元と独立)。`resumes-repo.copyResume` + `handleCopyResume` + bookDialog copy モード (名前初期値「○○ のコピー」)。tsc/lint/build クリア。**★これで R10 (Phase1/2/3 + 科目修正) 完結。**
 - **【✅ ガイド読書バグ修正 (`1207837`)】**: 青枠を別ブロックへ大きく動かしても `guidedIndex` が変わらず「ここを解説」が前のブロックを読む不具合 (ito19 実機指摘) を修正。pointerUp 時に枠の中心が別ブロック(同ページ)の bbox 内なら**そのブロックを選択し直す** (元ブロックの枠は pre-drag 位置へ戻す)。小移動は従来どおり微調整保存。`EditableHighlight.onDragStart`+`preDragBboxRef`+`commitGuidedBbox`。**さらに見開きで「ページまたぎ移動」対応 (`8f77e26`)**: 選択判定を bbox 中心→指を離した画面座標 (dropClientX/Y) に変更し、各ページ canvas 矩形でヒットテスト→ドロップ先ページのブロックを選択 (反対ページへドラッグして離せる)。ito19「素晴らしい」。
+- **【✅ サムネをレール幅追従で拡大表示 (`12f3c35`)】**: ito19「一枚一枚のページが小さすぎる」。`PageThumbnailRail` が ResizeObserver でパネル幅測定 (debounce 150ms) → thumbWidth [56,400]px でその解像度再描画、レール `maxSize` 240→420px。広げるとサムネが大きく・くっきりになり細部が読める。
 - **【★次にやる候補】**: 2 周目 G-C で自分のレジュメ改稿 / 文字起こしを葵が整える「整える」/ 図クリップ。
 
 ← 以下は同日 Phase 1: **R10 レジュメ(冊)管理 Phase 1 + 出典→レジュメ往復 を実装・E2E 確認済・コミット済 (`74e46a7`)★**:
