@@ -312,6 +312,8 @@ export function RightPaneRouter({
       <NotesHomeView
         entries={noteEntries}
         materials={materials}
+        subjects={subjects}
+        initialSubjectId={selectedSubjectId ?? undefined}
         onOpenSource={onOpenNoteSource}
         onUpdateEntry={onNoteUpdated}
         onDeleteEntry={onNoteDeleted}

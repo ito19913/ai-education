@@ -86,6 +86,8 @@ type Props = {
   /** 体系図ノードから開いた時の初期ページ (印刷ページ番号≒物理ページの近傍、v1) */
   initialPage?: number;
   onBack: () => void;
+  /** R10: 出典→レジュメ 往復。この教材の科目のレジュメ一覧へ飛ぶ */
+  onOpenResume?: () => void;
   /** まとめノート N9①: 能動ゲート通過でエントリを刻んだ時に親へ通知 */
   onNoteAdded?: (entry: NoteEntry) => void;
   /** 既にノート化済みの まとまり ID 集合 (M7: 次の未まとめ単元の提示に使う) */
@@ -272,6 +274,7 @@ export function MaterialReadPane({
   subject,
   initialPage,
   onBack,
+  onOpenResume,
   onNoteAdded,
   notedSegmentIds,
   noteEntries,
@@ -1082,9 +1085,23 @@ export function MaterialReadPane({
         </Button>
         <BookOpen className="size-4 text-primary" />
         <span className="truncate text-sm font-medium">{material.name}</span>
-        <span className="ml-auto text-xs text-muted-foreground">
-          葵先生と一緒に読む
-        </span>
+        <div className="ml-auto flex items-center gap-3">
+          {onOpenResume && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onOpenResume}
+              className="gap-1.5"
+              title="この教科のレジュメ一覧を見る"
+            >
+              <NotebookPen className="size-4" />
+              <span>レジュメを見る</span>
+            </Button>
+          )}
+          <span className="text-xs text-muted-foreground">
+            葵先生と一緒に読む
+          </span>
+        </div>
       </div>
 
       {/* 本体: 広い画面=横3ペイン (ハンドルをドラッグで幅可変)、狭い画面=縦スタック */}

@@ -638,8 +638,29 @@ export type NoteEntry = {
   sourceSegmentId?: string;
   /** ノート体系図③の親 (概念階層、未指定 = root) */
   parentRef?: string;
+  /**
+   * 属する「冊」= Resume.id への参照 (R10 Phase 1、2026-06-08)。
+   * 未指定 = まだデフォルト冊へ未移行 (表示は subjectId で絞るので Phase 1 では問題ない)。
+   */
+  resumeId?: string;
   /** 子の自分メモ (N7: 本体は守り、子はメモで所有) */
   userNote?: string;
+  /** 論理削除日時 (ISO)。値あり = 非表示 */
+  deletedAt?: string;
+};
+
+/**
+ * レジュメ「冊」(R10 Phase 1、2026-06-08)。
+ * 1 科目 1 冊が原則。まとめた概念ピース (NoteEntry) が冊に溜まって体系になる。
+ */
+export type Resume = {
+  id: string;
+  /** どの科目の冊か (ハードコード科目 id もカスタム科目 uuid も入る) */
+  subjectId: string;
+  /** 冊名 (例: "英語レジュメ") */
+  name: string;
+  /** デフォルト冊か (「レジュメにする」が自動で付く先、Phase 2 で削除不可保護) */
+  isDefault: boolean;
   /** 論理削除日時 (ISO)。値あり = 非表示 */
   deletedAt?: string;
 };

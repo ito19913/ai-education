@@ -29,6 +29,7 @@ type NoteEntryRow = {
   source_page_range: string | null;
   source_segment_id: string | null;
   parent_ref: string | null;
+  resume_id: string | null;
   user_note: string | null;
   deleted_at: string | null;
 };
@@ -44,6 +45,7 @@ function rowToNoteEntry(row: NoteEntryRow): NoteEntry {
     sourcePageRange: row.source_page_range ?? undefined,
     sourceSegmentId: row.source_segment_id ?? undefined,
     parentRef: row.parent_ref ?? undefined,
+    resumeId: row.resume_id ?? undefined,
     userNote: row.user_note ?? undefined,
     deletedAt: row.deleted_at ?? undefined,
   };
@@ -73,6 +75,8 @@ export type NewNoteEntryInput = {
   sourcePageRange?: string;
   /** 刻んだ まとまり ConceptSegment.id (M1)。スライダーの緑チェック判定に使う。 */
   sourceSegmentId?: string;
+  /** 属する冊 Resume.id (R10 Phase 1)。ensureDefaultResume の結果を渡す。 */
+  resumeId?: string;
   parentRef?: string;
   /** まとめ時に取り込んだ子のメモ (N7、grill Q2) */
   userNote?: string;
@@ -99,6 +103,11 @@ export async function insertNoteEntry(
   };
   if (input.sourceSegmentId !== undefined) {
     row.source_segment_id = input.sourceSegmentId;
+  }
+  // resume_id 列はマイグレーション後にしか無い。未提供時はキーごと省いて、列が
+  // 無い環境 (migration 未適用) でも note 自体は保存できるようにする (R10 耐性)。
+  if (input.resumeId !== undefined) {
+    row.resume_id = input.resumeId;
   }
   const { data, error } = await supabase
     .from("note_entries")

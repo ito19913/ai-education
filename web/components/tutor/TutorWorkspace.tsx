@@ -362,6 +362,9 @@ export function TutorWorkspace({
       }
       if (next === "subject-history" && params?.subjectId)
         url.set("subjectId", params.subjectId);
+      // R10: 出典→レジュメ 往復。notes view に科目を渡して該当タブを初期選択する。
+      if (next === "notes" && params?.subjectId)
+        url.set("subjectId", params.subjectId);
       const q = url.toString();
       router.push(q ? `/tutor?${q}` : "/tutor");
     },
@@ -942,6 +945,9 @@ export function TutorWorkspace({
             initialPage={readInitialPage}
             onBack={() =>
               navigate("material-detail", { materialId: readMaterial.id })
+            }
+            onOpenResume={() =>
+              navigate("notes", { subjectId: readMaterial.subjectId })
             }
             onNoteAdded={handleNoteAdded}
             notedSegmentIds={

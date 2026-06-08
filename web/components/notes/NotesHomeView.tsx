@@ -27,13 +27,23 @@ import { MindMapPane } from "@/components/learn/MindMapPane";
 import { MarkdownText } from "@/components/chat/MarkdownText";
 import { NoteGateDialog } from "@/components/notes/NoteGateDialog";
 import { parsePageRange } from "@/lib/notes/concept-for-page";
-import type { KnowledgeNode, Material, NoteEntry } from "@/lib/learn/types";
+import { defaultResumeName } from "@/lib/notes/resumes-repo";
+import type {
+  KnowledgeNode,
+  Material,
+  NoteEntry,
+  Subject,
+} from "@/lib/learn/types";
 
 type NotePatch = { userNote?: string; status?: "understood" | "open" };
 
 type Props = {
   entries: NoteEntry[];
   materials: Material[];
+  /** 科目タブの表示名解決用 (R10 Phase 1) */
+  subjects: Subject[];
+  /** 初期選択する科目タブ (R10: 出典→レジュメ 往復でこの教科を開く) */
+  initialSubjectId?: string;
   /** 出典「読む」→ 読書ビューの該当ページへ */
   onOpenSource: (materialId: string, page: number) => void;
   /** 自分メモ / ステータス更新 */
@@ -45,6 +55,8 @@ type Props = {
 export function NotesHomeView({
   entries,
   materials,
+  subjects,
+  initialSubjectId,
   onOpenSource,
   onUpdateEntry,
   onDeleteEntry,
@@ -53,33 +65,74 @@ export function NotesHomeView({
   // N9②: 振り返り (open→理解済み 昇格) の review ダイアログ対象
   const [reviewEntry, setReviewEntry] = useState<NoteEntry | null>(null);
 
-  const understoodCount = entries.filter((e) => e.status === "understood").length;
-  const openCount = entries.filter((e) => e.status === "open").length;
+  // ----- R10 Phase 1: 科目タブ (N4 違反是正、全科目混在をやめて科目で閉じる) -----
+  // エントリのある科目だけをタブにする。表示名は subjects から解決 (無ければ「その他」)。
+  const subjectTabs = useMemo(() => {
+    const order: string[] = [];
+    const seen = new Set<string>();
+    for (const e of entries) {
+      if (!seen.has(e.subjectId)) {
+        seen.add(e.subjectId);
+        order.push(e.subjectId);
+      }
+    }
+    return order.map((id) => ({
+      id,
+      name: subjects.find((s) => s.id === id)?.name ?? "その他",
+    }));
+  }, [entries, subjects]);
+
+  // 選択中の科目の「上書き」。初期値 = 親から渡された科目 (出典→レジュメ 往復)、無ければ
+  // null (= 先頭タブを既定)。effect で同期せず描画時に有効値へ解決する (タブ構成が
+  // 変わって上書きが無効になっても自動で先頭に戻る)。
+  const [subjectOverride, setSubjectOverride] = useState<string | null>(
+    initialSubjectId ?? null,
+  );
+  const selectedSubjectId =
+    subjectOverride && subjectTabs.some((t) => t.id === subjectOverride)
+      ? subjectOverride
+      : (subjectTabs[0]?.id ?? null);
+
+  const selectedSubjectName =
+    subjectTabs.find((t) => t.id === selectedSubjectId)?.name ?? "その他";
+  // 冊名 (R10: 「科目名 + レジュメ」)。Phase 2 で複数冊セレクターをここに足す。
+  const bookName = defaultResumeName(selectedSubjectName);
+
+  // 選択科目のエントリだけに絞る (科目スコープ)。
+  const scopedEntries = useMemo(
+    () => entries.filter((e) => e.subjectId === selectedSubjectId),
+    [entries, selectedSubjectId],
+  );
+
+  const understoodCount = scopedEntries.filter(
+    (e) => e.status === "understood",
+  ).length;
+  const openCount = scopedEntries.filter((e) => e.status === "open").length;
 
   // open を上に並べる (振り返りを促す)
   const sortedEntries = useMemo(
     () =>
-      [...entries].sort((a, b) => {
+      [...scopedEntries].sort((a, b) => {
         if (a.status === b.status) return 0;
         return a.status === "open" ? -1 : 1;
       }),
-    [entries],
+    [scopedEntries],
   );
 
   // NoteEntry → MindMapPane 用 (flat) + status 色分け
   const mapNodes = useMemo<KnowledgeNode[]>(
     () =>
-      entries.map((e) => ({
+      scopedEntries.map((e) => ({
         id: e.id,
         name: e.conceptName,
         parentId: e.parentRef ?? null,
         description: e.aiSummary,
       })),
-    [entries],
+    [scopedEntries],
   );
   const statusById = useMemo<Record<string, "understood" | "open">>(
-    () => Object.fromEntries(entries.map((e) => [e.id, e.status])),
-    [entries],
+    () => Object.fromEntries(scopedEntries.map((e) => [e.id, e.status])),
+    [scopedEntries],
   );
 
   return (
@@ -87,10 +140,14 @@ export function NotesHomeView({
       {/* ヘッダー */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-background px-4 py-2">
         <NotebookPen className="size-5 text-primary" />
-        <span className="text-sm font-semibold">レジュメ</span>
-        <span className="text-xs text-muted-foreground">
-          理解済み {understoodCount}・振り返り {openCount}
+        <span className="text-sm font-semibold">
+          {subjectTabs.length === 0 ? "レジュメ" : bookName}
         </span>
+        {subjectTabs.length > 0 && (
+          <span className="text-xs text-muted-foreground">
+            理解済み {understoodCount}・振り返り {openCount}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1 rounded-md border border-border p-0.5">
           <button
             type="button"
@@ -118,6 +175,26 @@ export function NotesHomeView({
           </button>
         </div>
       </div>
+
+      {/* 科目タブ (R10 Phase 1): エントリのある科目だけ。選ぶとその科目の冊だけ表示 */}
+      {subjectTabs.length > 1 && (
+        <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-background/60 px-3 py-1.5">
+          {subjectTabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setSubjectOverride(t.id)}
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
+                t.id === selectedSubjectId
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 本体 */}
       <div className="min-h-0 flex-1 overflow-y-auto p-4">

@@ -35,6 +35,7 @@ import {
   updateNoteEntry,
   getCurrentUserId,
 } from "@/lib/notes/notes-repo";
+import { ensureDefaultResume } from "@/lib/notes/resumes-repo";
 import type { ConceptSegment, NoteEntry } from "@/lib/learn/types";
 
 type Props = {
@@ -211,6 +212,19 @@ export function ResumePane(props: Props) {
       try {
         if (isSupabaseConfigured()) {
           const ownerId = await getCurrentUserId();
+          // R10 Phase 1: 保存直前に科目のデフォルト冊を確保し (オンデマンド)、
+          // その resume_id にピースを紐づける。冊確保が失敗しても note 保存は続行。
+          let resumeId: string | undefined;
+          try {
+            const resume = await ensureDefaultResume(
+              subjectId,
+              subjectName,
+              ownerId,
+            );
+            resumeId = resume.id;
+          } catch (err) {
+            console.error("[レジュメ冊] デフォルト冊の確保失敗 (冊なしで保存):", err);
+          }
           const entry = await insertNoteEntry(
             {
               subjectId,
@@ -220,6 +234,7 @@ export function ResumePane(props: Props) {
               sourceMaterialId: materialId,
               sourcePageRange,
               sourceSegmentId: segment?.id,
+              resumeId,
             },
             ownerId,
           );
@@ -248,6 +263,7 @@ export function ResumePane(props: Props) {
       body,
       existingEntry,
       subjectId,
+      subjectName,
       conceptName,
       materialId,
       sourcePageRange,
