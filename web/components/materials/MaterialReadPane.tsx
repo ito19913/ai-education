@@ -170,8 +170,11 @@ function EditableHighlight({
 }: {
   bbox: Bbox;
   onChange: (b: Bbox) => void;
-  /** ドラッグ終了 (指を離した) 時に 1 回。DB 永続化はここで行う (移動中は飛ばさない)。 */
-  onCommit?: () => void;
+  /**
+   * ドラッグ終了 (指を離した) 時に 1 回。指を離した画面座標を渡す (見開きで反対ページへ
+   * またいだ時に、ドロップ先ページ/ブロックを親が特定するため)。DB 永続化もここ。
+   */
+  onCommit?: (dropClientX: number, dropClientY: number) => void;
   /** ドラッグ開始時に元 bbox を通知 (別ブロックへ動かした時の選択し直し判定用)。 */
   onDragStart?: (original: Bbox) => void;
 }) {
@@ -183,6 +186,8 @@ function EditableHighlight({
     start: Bbox;
     rw: number;
     rh: number;
+    lastX: number;
+    lastY: number;
   } | null>(null);
 
   // 押した対象の data-handle 属性で「移動 (move)」か「四隅リサイズ (nw/ne/sw/se)」かを判定。
@@ -202,6 +207,8 @@ function EditableHighlight({
       start: { ...bbox },
       rw: rect.width || 1,
       rh: rect.height || 1,
+      lastX: e.clientX,
+      lastY: e.clientY,
     };
     onDragStart?.({ ...bbox });
     box.setPointerCapture(e.pointerId);
@@ -211,6 +218,8 @@ function EditableHighlight({
     const d = drag.current;
     if (!d) return;
     e.preventDefault();
+    d.lastX = e.clientX;
+    d.lastY = e.clientY;
     const dx = (e.clientX - d.px) / d.rw;
     const dy = (e.clientY - d.py) / d.rh;
     let { x, y, w, h } = d.start;
@@ -237,10 +246,14 @@ function EditableHighlight({
   };
 
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!drag.current) return;
+    const d = drag.current;
+    if (!d) return;
     drag.current = null;
     ref.current?.releasePointerCapture?.(e.pointerId);
-    onCommit?.();
+    // pointercancel 等で座標が無い場合は最後に拾った move 座標を使う。
+    const dropX = Number.isFinite(e.clientX) ? e.clientX : d.lastX;
+    const dropY = Number.isFinite(e.clientY) ? e.clientY : d.lastY;
+    onCommit?.(dropX, dropY);
   };
 
   const handlePos: Record<string, string> = {
@@ -839,54 +852,92 @@ export function MaterialReadPane({
 
   // 青枠ドラッグ終了 (pointerUp): 調整済みプランを session キャッシュ + map に焼き込み、
   // DB へ 1 回だけ永続化する (移動中は飛ばさない、Q2)。失敗はログのみ。
-  const commitGuidedBbox = useCallback(() => {
-    const seg = guidedSegment;
-    const blocks = guidedBlocksRef.current;
-    const pre = preDragBboxRef.current;
-    preDragBboxRef.current = null;
-    if (!seg || !blocks) return;
+  const commitGuidedBbox = useCallback(
+    (dropX?: number, dropY?: number) => {
+      const seg = guidedSegment;
+      const blocks = guidedBlocksRef.current;
+      const pre = preDragBboxRef.current;
+      preDragBboxRef.current = null;
+      if (!seg || !blocks) return;
 
-    // ★別ブロックへ大きく動かした時は「選択し直し」とみなす (ito19 実機要望)。
-    // 動かした枠の中心が、別ブロック (同ページ) の bbox の中にあれば、そのブロックを
-    // 選択し直し、動かしていたブロックの枠は元 (pre) に戻す。微調整 (中心が他ブロックに
-    // 入らない小移動) はこれまで通り「微調整」として保存する。
-    const moved = blocks[guidedIndex];
-    if (moved?.bbox) {
-      const cx = moved.bbox.x + moved.bbox.w / 2;
-      const cy = moved.bbox.y + moved.bbox.h / 2;
-      let target = -1;
-      let bestArea = Number.POSITIVE_INFINITY;
-      blocks.forEach((b, i) => {
-        if (i === guidedIndex || b.pdfPage !== moved.pdfPage || !b.bbox) return;
-        const { x, y, w, h } = b.bbox;
-        if (cx >= x && cx <= x + w && cy >= y && cy <= y + h && w * h < bestArea) {
-          bestArea = w * h;
-          target = i;
+      // ★指を離した位置 (画面座標) からドロップ先ページ+ブロックを特定する。
+      // 見えている各ページ canvas の矩形でヒットテスト → 見開きで反対ページもまたげる。
+      if (dropX !== undefined && dropY !== undefined) {
+        let target = -1;
+        for (let i = 0; i < pagesToShow.length; i++) {
+          const cv = canvasRefs.current[i];
+          if (!cv) continue;
+          const r = cv.getBoundingClientRect();
+          if (
+            dropX < r.left ||
+            dropX > r.right ||
+            dropY < r.top ||
+            dropY > r.bottom ||
+            r.width === 0 ||
+            r.height === 0
+          ) {
+            continue;
+          }
+          const pn = pagesToShow[i];
+          const nx = (dropX - r.left) / r.width;
+          const ny = (dropY - r.top) / r.height;
+          // 点を含む最小ブロック優先、無ければそのページ内で中心が最も近いブロック。
+          let bestArea = Number.POSITIVE_INFINITY;
+          blocks.forEach((b, idx) => {
+            if (b.pdfPage !== pn || !b.bbox) return;
+            const { x, y, w, h } = b.bbox;
+            if (nx >= x && nx <= x + w && ny >= y && ny <= y + h && w * h < bestArea) {
+              bestArea = w * h;
+              target = idx;
+            }
+          });
+          if (target === -1) {
+            let bestDist = Number.POSITIVE_INFINITY;
+            blocks.forEach((b, idx) => {
+              if (b.pdfPage !== pn || !b.bbox) return;
+              const cx = b.bbox.x + b.bbox.w / 2;
+              const cy = b.bbox.y + b.bbox.h / 2;
+              const d = (nx - cx) ** 2 + (ny - cy) ** 2;
+              if (d < bestDist) {
+                bestDist = d;
+                target = idx;
+              }
+            });
+          }
+          break;
         }
-      });
-      if (target >= 0) {
-        // 元ブロックの枠を pre に戻し (移動を取り消し)、対象ブロックを選択。保存しない。
-        const reverted = blocks.slice();
-        if (pre) reverted[guidedIndex] = { ...reverted[guidedIndex], bbox: pre };
-        guidedBlocksRef.current = reverted;
-        setGuidedBlocks(reverted);
-        setGuidedIndex(target);
-        return;
+        // 別ブロック (同ページ or 反対ページ) へ動かした = 選択し直し。
+        // 元ブロックの枠は pre に戻し (移動を取り消し)、対象ブロックを選択。保存しない。
+        if (target >= 0 && target !== guidedIndex) {
+          const reverted = blocks.slice();
+          if (pre) reverted[guidedIndex] = { ...reverted[guidedIndex], bbox: pre };
+          guidedBlocksRef.current = reverted;
+          setGuidedBlocks(reverted);
+          setGuidedIndex(target);
+          const tp = reverted[target]?.pdfPage;
+          if (tp) {
+            setPage((cur) =>
+              tp === cur || (spread && tp === cur + 1) ? cur : tp,
+            );
+          }
+          return;
+        }
       }
-    }
 
-    // 微調整: そのまま session キャッシュ + map に焼き込み、DB へ 1 回だけ永続化。
-    sessionGuidedPlanCache.set(seg.id, blocks);
-    setGuidedPlansMap((prev) => {
-      const next = { ...prev, [seg.id]: blocks };
-      if (isSupabaseConfigured()) {
-        updateMaterialGuidedPlans(material.id, next).catch((e) =>
-          console.error("[ガイド読書] 青枠保存失敗:", e),
-        );
-      }
-      return next;
-    });
-  }, [guidedSegment, material.id, guidedIndex]);
+      // 同じブロック内の微調整: session キャッシュ + map に焼き込み、DB へ 1 回だけ永続化。
+      sessionGuidedPlanCache.set(seg.id, blocks);
+      setGuidedPlansMap((prev) => {
+        const next = { ...prev, [seg.id]: blocks };
+        if (isSupabaseConfigured()) {
+          updateMaterialGuidedPlans(material.id, next).catch((e) =>
+            console.error("[ガイド読書] 青枠保存失敗:", e),
+          );
+        }
+        return next;
+      });
+    },
+    [guidedSegment, material.id, guidedIndex, pagesToShow, spread],
+  );
 
   // 選択カーソルを動かす (API なし・即時)。ハイライトと表示ページだけ動かし、まだ読まない。
   // → 子が「次/前/タップ」で読む所と順序を自由に選んでから「ここを解説」で読める。
