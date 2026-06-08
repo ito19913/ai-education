@@ -3103,6 +3103,61 @@ lib/learn/
 
 ---
 
+## 教材詳細・一覧の再構成 + 出版社/著者/表紙サムネ (2026-06-08 後段、★実装・実機確認・push 済★)
+
+ito19 さんの実機フィードバックで教材まわりを「読むための源」中心に作り直した
+(origin/main `91e68ba`、本日後段 2 コミット `cd35171`/`91e68ba`、tsc/lint/build クリア、
+migration 2 本本番適用 + REST 検証済)。grill は AskUserQuestion で 1 問ずつ確定。
+
+### 教材詳細 (MaterialDetailView) — 4 カード構成に
+新 (上から):
+1. **メタ**: 教材名 / 出版社 / 著者 + [編集][一緒に読む] を最上部に集約 (編集を最下部から移動)
+2. **このテキストで設定されている課題** (独立カード): open な Issue を `material.coveredNodeIds`
+   で逆引き (Issue は KnowledgeNode 紐付け)。論点名添え + 「課題を見る」。空状態の斜体は解除。
+3. **学習スケジュール組み込み状況** (据え置き)
+4. **まとまり一覧**: 体系図ノード(目次抽出 AiExtractedNode) → **ConceptSegment (まとまり) に統一**。
+   読書ビューの「まとまり一覧」と同ソース (前付け除外 + PDF 紙番号順)。各行「読む」→ `&unit=1` 着地。
+- **撤去**: 体系の地図 (マップ表示=MindMapPane、体系図は**レジュメ体系図** NotesHomeView へ集約) /
+  評価コメントカード (重い Opus `generateMaterialReviewViaClaude` ごと) / 教材ごと葵 chat カード
+  (`respondViaAokiChat` ごと)。「体系図とまとまりは別物?」の指摘 → まとまりに一本化で重複解消。
+
+### 出版社・著者 (新フィールド)
+- migration `20260608010000_add_material_publisher_author.sql` (本番適用済) = `materials` に
+  `publisher` / `author` text 列。
+- `Material`/`MaterialDraft` に publisher/author。`detect-meta-claude` が表紙・奥付から
+  出版社・著者も拾ってプリセット (Step1 に入力欄、Step4 で Material へ、TutorWorkspace insert で渡す)。
+- `MaterialEditDialog` に出版社・著者入力欄。
+- ★**潜在バグ是正**: `handleMaterialUpdated` がメタ編集を DB 永続化していなかった
+  (in-memory のみ→リロードで消える) → `updateMaterialMeta` を配線 (publisher/author/名前/種別/学年/科目)。
+
+### 表紙サムネ
+- migration `20260608020000_add_material_cover_thumb.sql` (本番適用済) = `materials.cover_thumb`
+  text (JPEG data URL)。
+- `renderCoverThumb(doc)` = PDF 1 ページ目を長辺 360px・品質 0.7 で描画 → data URL (~20-30KB)。
+- **生成タイミング = PDF を読んだ時に 1 回**: 登録時 (`genCoverThumb`) + 読書ビューを開いた時
+  (`onCoverThumb` effect、既ロード doc から描画=**追加 DL なし**)。`handleCoverThumb` が state+DB 保存。
+  既存教材は一度「一緒に読む」で開けばサムネが付く。
+- 教材一覧 (`MaterialsListPane`) = **本棚風グリッド** (`auto-fill minmax(150px)`、表紙 aspect 3:4 主役)。
+  空の学年バッジ修正 (gradeLevel 無しはバッジを出さない)。
+
+### 読書ビュー: まとまり選択で「一旦止まる」
+- 旧: まとまりを選ぶと即ガイド読書 (ページジャンプ + 「一緒に見ていこう」+ ブロックプラン生成)。
+- 新: `selectUnit` で「**選択した段階**」で停止 (ページ先頭へ + 「○○を選んだよ…『ここから読む』を
+  押してね」)。子が **「ここから読む」(`beginGuided`→`startGuided`)** で初めてガイド読書開始
+  (`pendingSegment` state)。
+- 詳細「読む」(`&unit=1`) も同じ着地: `selectUnitOnLoad` + 1 回限り auto-select effect で
+  該当まとまりを選択段階で開く。
+
+### カリキュラム削除 (`cd35171`)
+英語 体系図マトリックス (C66 仮実装) はページごと削除 (`app/curriculum`, `CurriculumMatrixView`,
+`curriculum-mock`, TutorChat の入口ボタン + 不要な Link import)。
+
+### 次の候補
+2 周目 G-C 改稿 / 文字起こし「整える」/ 図クリップ / N9③戻り提案・N9④スケジュール配分 /
+(任意) ゆい chat の open 振り返りナッジが実機で重複表示される件の調査。
+
+---
+
 ## 設計の核（一行で）
 
 > ログインしたら **ゆい先生（純粋コーチ）** の **司令室（左ペイン chat + 右ペイン動的展開）** に着く。**朝の振り返り** で昨日 / 学校 / 気分 / 疑問 / 今日の計画を語り、**「何が分からないか分からない」を言語化する「掘り起こし」** で課題を発見、**葵先生（科目）への申し送りドキュメント (TutorHandoff)** を介して **IssueChat（課題ごとの個別 chat）** に展開、対話で潰す。**長期 + 週次ゴールのコーチング契約** が学習リズムを支え、**日次 / 週次 / 月次の振り返り** が自走に近づける。**「教えない、引き出す。環境（時間・場・儀式）は決めてあげる、対話の中身はコーチング」**。
