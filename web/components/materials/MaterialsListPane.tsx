@@ -11,15 +11,11 @@
  * 本 component はゆいメニュー「教材」ボタン (TutorChat.tsx) → 「教材一覧」発話 →
  * tutor-mock 分岐 → open-materials → 本ペイン展開、の動線で表示される。
  *
- * - 科目別 grouping の縦リスト (subjects 順、教材 0 件の科目はスキップ)
+ * - 科目別 grouping (subjects 順、教材 0 件の科目はスキップ)
+ * - 各科目内は本棚風グリッド (表紙サムネを主役にしたカード、2026-06-08 ito19 さん意見)
  * - 各教材クリックで `/tutor?view=material-detail&id=xxx` 遷移 → MaterialDetailView
- *   (体系図フローチャート + 評価コメント + 葵 chat、C32/C40/C41/C43 で組み上げ済)
+ *   (メタ + 課題 + 学習スケジュール + まとまり一覧)
  * - 末尾「+ 新規教材を追加」リンク (dashed border、SubjectPickerCard C29 / MaterialPickerCard C36 と同じパターン)
- *
- * 残課題 (本セッション中は対応せず、後続 commit で):
- * - D: 各教材に「スケジュール組み込み状況」表示
- * - E: 各教材から「スケジュール画面」遷移リンク
- * - F: 各教材に「編集」ボタン
  */
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -64,7 +60,7 @@ export function MaterialsListPane({ materials, subjects }: Props) {
             <div className="flex-1">
               <h1 className="text-lg font-semibold">教材</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                登録済の教材 {totalMaterials} 件。クリックで体系図・評価コメント・先生 chat に飛べるよ。
+                登録済の教材 {totalMaterials} 件。クリックで詳細・まとまり・一緒に読むに飛べるよ。
               </p>
             </div>
           </header>
@@ -97,34 +93,52 @@ export function MaterialsListPane({ materials, subjects }: Props) {
                     </span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="flex flex-col gap-2">
-                  {list.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() =>
-                        router.push(
-                          `/tutor?view=material-detail&id=${encodeURIComponent(m.id)}`,
-                        )
-                      }
-                      className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2.5 text-left text-sm transition-colors hover:border-primary hover:bg-primary/5"
-                    >
-                      <Book className="size-4 shrink-0 text-muted-foreground" />
-                      <div className="flex-1 min-w-0">
-                        <div className="truncate font-medium text-foreground">
-                          {m.name}
+                {/* 本棚風グリッド (2026-06-08 ito19 さん意見「見やすく」):
+                    表紙を大きく主役にしたカードを並べる。1 セル ~150px の auto-fill。 */}
+                <CardContent>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
+                    {list.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() =>
+                          router.push(
+                            `/tutor?view=material-detail&id=${encodeURIComponent(m.id)}`,
+                          )
+                        }
+                        className="group flex flex-col gap-2 rounded-lg border border-border bg-card p-2 text-left transition-colors hover:border-primary hover:bg-primary/5"
+                        title={m.name}
+                      >
+                        {m.coverThumb ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={m.coverThumb}
+                            alt=""
+                            className="aspect-[3/4] w-full rounded-md border border-border bg-muted object-cover shadow-sm"
+                          />
+                        ) : (
+                          <div className="flex aspect-[3/4] w-full items-center justify-center rounded-md border border-border bg-muted shadow-sm">
+                            <Book className="size-8 text-muted-foreground/50" />
+                          </div>
+                        )}
+                        <div className="flex flex-1 flex-col gap-1">
+                          <div className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
+                            {m.name}
+                          </div>
+                          <div className="mt-auto flex flex-wrap items-center gap-1">
+                            <Badge variant="outline" className="text-[9px]">
+                              {m.label}
+                            </Badge>
+                            {m.gradeLevel && (
+                              <Badge variant="outline" className="text-[9px]">
+                                {m.gradeLevel}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
-                        <div className="mt-0.5 flex items-center gap-1.5">
-                          <Badge variant="outline" className="text-[9px]">
-                            {m.label}
-                          </Badge>
-                          <Badge variant="outline" className="text-[9px]">
-                            {m.gradeLevel}
-                          </Badge>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+                      </button>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             ))

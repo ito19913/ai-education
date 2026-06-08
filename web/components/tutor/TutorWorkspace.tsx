@@ -31,12 +31,15 @@ import {
   insertMaterial,
   updateMaterialPdfPath,
   updateMaterialSegments,
+  updateMaterialMeta,
+  updateMaterialCoverThumb,
   softDeleteMaterial,
   getCurrentUserId,
 } from "@/lib/materials/materials-repo";
 import {
   extractFullPageTexts,
   loadPdfDocument,
+  renderCoverThumb,
 } from "@/lib/admin/pdf-extract-text";
 import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
 import { buildScanSegments } from "@/lib/admin/scan-segment-builder";
@@ -248,6 +251,9 @@ export function TutorWorkspace({
     const n = raw ? Number.parseInt(raw, 10) : NaN;
     return Number.isNaN(n) || n < 1 ? undefined : n;
   })();
+  // 教材詳細の「読む」(まとまりごと) から来た時 (&unit=1): 該当まとまりを
+  // 「選択した段階」で開く (いきなりガイド読書を始めない、2026-06-08)。
+  const readSelectUnit = searchParams.get("unit") === "1";
   // /tutor?ending=1: /learn の「学習を終了」から来た時、ゆいを ending モードで起動
   const endingMode = searchParams.get("ending") === "1";
 
@@ -461,9 +467,38 @@ export function TutorWorkspace({
       setMaterials((prev) =>
         prev.map((m) => (m.id === id ? { ...m, ...patch } : m)),
       );
+      // real モード: メタ編集 (名前/出版社/著者/種別/学年/科目) を DB に永続化。
+      // これまで in-memory のみでリロードすると編集が消えていた (潜在バグ) のを是正。
+      if (isSupabaseConfigured()) {
+        void updateMaterialMeta(id, {
+          name: patch.name,
+          subjectId: patch.subjectId,
+          label: patch.label,
+          publisher: patch.publisher,
+          author: patch.author,
+          gradeLevel: patch.gradeLevel,
+        }).catch((err) =>
+          console.error("[教材] メタ編集の永続化に失敗:", err),
+        );
+      }
     },
     [],
   );
+
+  // ----- 表紙サムネ (2026-06-08): PDF を読んだ時に生成された data URL を反映 + 永続化 -----
+  // 登録時 / 読書ビューを開いた時に 1 回だけ生成し、materials state + DB に保存する。
+  const handleCoverThumb = useCallback((id: string, dataUrl: string) => {
+    setMaterials((prev) =>
+      prev.map((m) =>
+        m.id === id && !m.coverThumb ? { ...m, coverThumb: dataUrl } : m,
+      ),
+    );
+    if (isSupabaseConfigured()) {
+      void updateMaterialCoverThumb(id, dataUrl).catch((err) =>
+        console.error("[教材] 表紙サムネの永続化に失敗:", err),
+      );
+    }
+  }, []);
 
   // ----- 教材削除 (C46 F、ito19 さん意見): in-memory 削除 + ゆい発話 + 一覧に戻す -----
   const handleMaterialDeleted = useCallback(
@@ -818,6 +853,36 @@ export function TutorWorkspace({
         })();
       };
 
+      // 表紙サムネ (2026-06-08): 登録時に PDF 1 ページ目を小さく描画して一覧用に保存。
+      // 重い区切り処理とは独立した軽い 1 ページ描画。失敗しても動線は止めない。
+      const genCoverThumb = (m: Material, persist: boolean) => {
+        if (!file) return;
+        void (async () => {
+          try {
+            const loadedPdf = await loadPdfDocument(file);
+            try {
+              const thumb = await renderCoverThumb(loadedPdf.doc);
+              if (thumb) {
+                // mock では state 反映のみ、real では DB 保存も (handleCoverThumb 内で分岐)。
+                if (persist) handleCoverThumb(m.id, thumb);
+                else
+                  setMaterials((prev) =>
+                    prev.map((x) =>
+                      x.id === m.id && !x.coverThumb
+                        ? { ...x, coverThumb: thumb }
+                        : x,
+                    ),
+                  );
+              }
+            } finally {
+              void loadedPdf.destroy();
+            }
+          } catch (err) {
+            console.error("[教材] 表紙サムネ生成失敗 (動線は止めない):", err);
+          }
+        })();
+      };
+
       // 一覧/詳細/体系図への反映 + ゆいの「葵が読んだよ」発話 + 詳細へ遷移 (共通)。
       const announceAndShow = (m: Material) => {
         setMaterials((prev) => [...prev, m]);
@@ -837,6 +902,7 @@ export function TutorWorkspace({
       if (!isSupabaseConfigured()) {
         announceAndShow(material);
         runSegmentation(material, false);
+        genCoverThumb(material, false);
         return;
       }
 
@@ -849,6 +915,8 @@ export function TutorWorkspace({
               subjectId: material.subjectId,
               name: material.name,
               label: material.label,
+              publisher: material.publisher,
+              author: material.author,
               gradeLevel: material.gradeLevel,
               coveredNodeIds: material.coveredNodeIds,
               extractedNodes: material.extractedNodes,
@@ -858,6 +926,8 @@ export function TutorWorkspace({
           announceAndShow(saved);
           // まとまり区切りを裏で実行 (DB 保存あり)。PDF アップロードと並走してよい。
           runSegmentation(saved, true);
+          // 表紙サムネを裏で生成 + DB 保存 (一覧で即表示できるように)。
+          genCoverThumb(saved, true);
 
           // PDF を裏でアップロード (await しない)。完了で pdf_path を記録 + 完了通知。
           if (file) {
@@ -902,7 +972,7 @@ export function TutorWorkspace({
         }
       })();
     },
-    [navigate, subjects],
+    [navigate, subjects, handleCoverThumb],
   );
 
   // ----- C30 2026-05-25 grill 2: 科目追加完了時の処理 -----
@@ -1149,6 +1219,8 @@ export function TutorWorkspace({
               subjects.find((s) => s.id === readMaterial.subjectId) ?? null
             }
             initialPage={readInitialPage}
+            selectUnitOnLoad={readSelectUnit}
+            onCoverThumb={handleCoverThumb}
             onBack={() =>
               navigate("material-detail", { materialId: readMaterial.id })
             }

@@ -571,6 +571,16 @@ export type Material = {
   subjectId: string;
   name: string;
   label: MaterialLabel;
+  /** 出版社（2026-06-08、AI メタ検知 or 手入力、任意） */
+  publisher?: string;
+  /** 著者（2026-06-08、AI メタ検知 or 手入力、任意） */
+  author?: string;
+  /**
+   * 表紙サムネ（PDF 1 ページ目の小さな JPEG data URL、2026-06-08）。
+   * PDF を読んだ時（登録時 / 読書ビューを開いた時）に 1 回生成して DB 保存。
+   * 教材一覧で <img> 表示。未生成 = undefined（アイコン表示にフォールバック）。
+   */
+  coverThumb?: string;
   /** 学年（'中1' | '中2' | '中3' | '高1' ... など、任意） */
   gradeLevel?: string;
   /** この教材が扱う体系図ノードの ID 群（教材ビュー表示用） */
@@ -1494,6 +1504,10 @@ export type MaterialDraft = {
   name: string;
   subjectId: string;
   label: MaterialLabel;
+  /** 出版社（2026-06-08、AI メタ検知 or 手入力） */
+  publisher?: string;
+  /** 著者（2026-06-08、AI メタ検知 or 手入力） */
+  author?: string;
   gradeLevel: string;
   fileName: string | null;
   fileSize: number | null;

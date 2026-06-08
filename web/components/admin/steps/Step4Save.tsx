@@ -37,6 +37,8 @@ export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
       subjectId: draft.subjectId,
       name: draft.name,
       label: draft.label,
+      publisher: draft.publisher?.trim() ? draft.publisher.trim() : undefined,
+      author: draft.author?.trim() ? draft.author.trim() : undefined,
       gradeLevel: draft.gradeLevel,
       coveredNodeIds: extracted
         .map((n) => n.matchedNodeId)

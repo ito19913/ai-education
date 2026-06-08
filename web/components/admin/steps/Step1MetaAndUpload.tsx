@@ -143,6 +143,9 @@ export function Step1MetaAndUpload({
         // 教材名・学年は AI が確信を持てなければ空欄にする (grill 確定 5: 決め打ちしない)。
         name: result.name ?? "",
         gradeLevel: result.gradeLevel ?? "",
+        // 出版社・著者も拾えた分だけプリセット (拾えなければ空欄、手入力に落ちる)。
+        publisher: result.publisher ?? "",
+        author: result.author ?? "",
         // 科目 (必須) と種別 (3 択は必ず選べる) は、null のときデフォルト/既存を維持。
         ...(result.subjectId ? { subjectId: result.subjectId } : {}),
         ...(result.label ? { label: result.label as MaterialLabel } : {}),
@@ -150,6 +153,8 @@ export function Step1MetaAndUpload({
 
       const filled = [
         result.name ? "教材名" : null,
+        result.publisher ? "出版社" : null,
+        result.author ? "著者" : null,
         result.subjectId ? "科目" : null,
         result.label ? "種別" : null,
         result.gradeLevel ? "学年" : null,
@@ -284,6 +289,28 @@ export function Step1MetaAndUpload({
               onChange={(e) => onChange({ ...draft, name: e.target.value })}
               placeholder="例: 中2 英語 教科書 (光村図書)"
             />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="material-publisher">出版社</Label>
+              <Input
+                id="material-publisher"
+                value={draft.publisher ?? ""}
+                onChange={(e) =>
+                  onChange({ ...draft, publisher: e.target.value })
+                }
+                placeholder="例: 光村図書 / TAC出版"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="material-author">著者</Label>
+              <Input
+                id="material-author"
+                value={draft.author ?? ""}
+                onChange={(e) => onChange({ ...draft, author: e.target.value })}
+                placeholder="例: 山田太郎 / ○○編集部"
+              />
+            </div>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="flex flex-col gap-2">

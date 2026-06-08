@@ -28,6 +28,9 @@ type MaterialRow = {
   subject_id: string;
   name: string;
   label: string;
+  publisher: string | null;
+  author: string | null;
+  cover_thumb: string | null;
   grade_level: string | null;
   covered_node_ids: string[] | null;
   extracted_nodes: AiExtractedNode[] | null;
@@ -45,6 +48,9 @@ function rowToMaterial(row: MaterialRow): Material {
     subjectId: row.subject_id,
     name: row.name,
     label: row.label as MaterialLabel,
+    publisher: row.publisher ?? undefined,
+    author: row.author ?? undefined,
+    coverThumb: row.cover_thumb ?? undefined,
     gradeLevel: row.grade_level ?? undefined,
     coveredNodeIds: row.covered_node_ids ?? [],
     extractedNodes: row.extracted_nodes ?? undefined,
@@ -92,6 +98,8 @@ export type NewMaterialInput = {
   subjectId: string;
   name: string;
   label: MaterialLabel;
+  publisher?: string;
+  author?: string;
   gradeLevel?: string;
   coveredNodeIds: string[];
   extractedNodes?: AiExtractedNode[];
@@ -110,6 +118,8 @@ export async function insertMaterial(
       subject_id: input.subjectId,
       name: input.name,
       label: input.label,
+      publisher: input.publisher?.trim() ? input.publisher.trim() : null,
+      author: input.author?.trim() ? input.author.trim() : null,
       grade_level: input.gradeLevel ?? null,
       covered_node_ids: input.coveredNodeIds,
       extracted_nodes: input.extractedNodes ?? [],
@@ -164,6 +174,19 @@ export async function updateMaterialGuidedPlans(
   if (error) throw error;
 }
 
+/** 表紙サムネ (data URL) を保存 (PDF を読んだ時に 1 回、2026-06-08)。 */
+export async function updateMaterialCoverThumb(
+  id: string,
+  coverThumb: string,
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("materials")
+    .update({ cover_thumb: coverThumb })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 /** 論理削除 (deleted_at = now())。PDF 実体の削除は呼び出し側で別途行う。 */
 export async function softDeleteMaterial(id: string): Promise<void> {
   const supabase = createClient();
@@ -177,13 +200,22 @@ export async function softDeleteMaterial(id: string): Promise<void> {
 /** 教材メタの部分更新 (編集ダイアログ用)。 */
 export async function updateMaterialMeta(
   id: string,
-  patch: Partial<Pick<Material, "name" | "subjectId" | "label" | "gradeLevel">>,
+  patch: Partial<
+    Pick<
+      Material,
+      "name" | "subjectId" | "label" | "publisher" | "author" | "gradeLevel"
+    >
+  >,
 ): Promise<void> {
   const supabase = createClient();
   const row: Record<string, unknown> = {};
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.subjectId !== undefined) row.subject_id = patch.subjectId;
   if (patch.label !== undefined) row.label = patch.label;
+  if (patch.publisher !== undefined)
+    row.publisher = patch.publisher?.trim() ? patch.publisher.trim() : null;
+  if (patch.author !== undefined)
+    row.author = patch.author?.trim() ? patch.author.trim() : null;
   if (patch.gradeLevel !== undefined) row.grade_level = patch.gradeLevel;
   if (Object.keys(row).length === 0) return;
   const { error } = await supabase.from("materials").update(row).eq("id", id);

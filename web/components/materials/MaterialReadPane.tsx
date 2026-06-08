@@ -38,6 +38,7 @@ import {
   loadPdfDocument,
   renderPageToCanvas,
   renderPageToJpeg,
+  renderCoverThumb,
   extractFullPageTexts,
   type LoadedPdf,
 } from "@/lib/admin/pdf-extract-text";
@@ -86,6 +87,17 @@ type Props = {
   subject: Subject | null;
   /** 体系図ノードから開いた時の初期ページ (印刷ページ番号≒物理ページの近傍、v1) */
   initialPage?: number;
+  /**
+   * 教材詳細の「読む」(まとまりごと) から来た時 true (2026-06-08)。
+   * initialPage に該当する まとまり を「選択した段階」(一旦止まる) で開く。
+   * ガイド読書 (青枠+解説) は子が「ここから読む」を押すまで自動開始しない。
+   */
+  selectUnitOnLoad?: boolean;
+  /**
+   * 表紙サムネ未生成の教材を開いた時、PDF 1 ページ目を描画した data URL を親へ渡す
+   * (2026-06-08)。親が materials state + DB に保存し、教材一覧で表示する。
+   */
+  onCoverThumb?: (materialId: string, dataUrl: string) => void;
   onBack: () => void;
   /** R10: 出典→レジュメ 往復。この教材の科目のレジュメ一覧へ飛ぶ */
   onOpenResume?: () => void;
@@ -295,6 +307,8 @@ export function MaterialReadPane({
   material,
   subject,
   initialPage,
+  selectUnitOnLoad,
+  onCoverThumb,
   onBack,
   onOpenResume,
   onNoteAdded,
@@ -609,6 +623,12 @@ export function MaterialReadPane({
   // 難易度: 0=やさしい / 1=ふつう / 2=詳しい (G-6、初回はやさしい。周回数連動は G-C)。
   const [guidedLevel, setGuidedLevel] = useState(0);
   const [guidedBusy, setGuidedBusy] = useState(false);
+  // 「まとまりを選択した段階」(2026-06-08 ito19 さん意見): まとまりを選ぶ/読むを押すと
+  // いきなりガイド読書を始めず、その まとまり を選択した状態で一旦止まる。
+  // 子が「ここから読む」を押して初めて startGuided (青枠+解説) が走る。
+  const [pendingSegment, setPendingSegment] = useState<ConceptSegment | null>(
+    null,
+  );
 
   // 指定ページ群を JPEG 化して改行連結 1 文字列にする (vision 用、共通)。
   const packPages = useCallback(
@@ -821,12 +841,71 @@ export function MaterialReadPane({
     ],
   );
 
-  const startUnit = useCallback(
+  // まとまりを「選択した段階」で開く (一旦止まる)。ページは先頭へ。ガイド読書は始めない。
+  // 別まとまりを選び直した時のために、進行中のガイド状態はリセットする。
+  const selectUnit = useCallback(
     (seg: ConceptSegment) => {
-      void startGuided(seg);
+      if (!loaded) return;
+      setShowUnitMenu(false);
+      setGuidedSegment(null);
+      setGuidedBlocks(null);
+      setGuidedIndex(0);
+      setPendingSegment(seg);
+      setPage(seg.startPdfPage);
+      setHistory((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: `「${seg.conceptName}」を選んだよ📖\nこの本の ${seg.startPdfPage}〜${seg.endPdfPage}ページ。準備ができたら **「ここから読む」** を押してね。先に自分でめくって眺めてもOKだよ。`,
+        },
+      ]);
     },
-    [startGuided],
+    [loaded],
   );
+
+  // 「ここから読む」: 選択中の まとまり でガイド読書 (青枠+解説) を開始する。
+  const beginGuided = useCallback(() => {
+    const seg = pendingSegment;
+    if (!seg) return;
+    setPendingSegment(null);
+    void startGuided(seg);
+  }, [pendingSegment, startGuided]);
+
+  // 教材詳細の「読む」(まとまりごと) から来た時 (selectUnitOnLoad): initialPage に
+  // 該当する まとまり を「選択した段階」で開く。まとまりは登録時バックグラウンド or
+  // オンデマンドで遅れて出来るので、出来てから 1 回だけ実行する。
+  const didAutoSelectRef = useRef(false);
+  useEffect(() => {
+    if (!selectUnitOnLoad || didAutoSelectRef.current) return;
+    if (!loaded || contentSegments.length === 0) return;
+    const p = initialPage ?? -1;
+    const target =
+      contentSegments.find((s) => s.startPdfPage === p) ??
+      contentSegments.find((s) => p >= s.startPdfPage && p <= s.endPdfPage);
+    if (!target) return;
+    didAutoSelectRef.current = true;
+    // 詳細「読む」から来た時の 1 回限りの選択 (まとまり準備が整い次第)。意図的な set。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    selectUnit(target);
+  }, [selectUnitOnLoad, loaded, contentSegments, initialPage, selectUnit]);
+
+  // 表紙サムネ未生成の教材を開いた時、PDF が読み込めたら 1 ページ目を小さく描画して
+  // 親へ渡す (親が DB 保存 → 教材一覧で表示)。既に PDF はメモリにあるので追加 DL なし。1 回だけ。
+  const didCoverThumbRef = useRef(false);
+  useEffect(() => {
+    if (didCoverThumbRef.current) return;
+    if (!loaded || !onCoverThumb || material.coverThumb) return;
+    didCoverThumbRef.current = true;
+    const doc = loaded.doc;
+    void (async () => {
+      try {
+        const thumb = await renderCoverThumb(doc);
+        if (thumb) onCoverThumb(material.id, thumb);
+      } catch (err) {
+        console.error("[読書] 表紙サムネ生成失敗:", err);
+      }
+    })();
+  }, [loaded, onCoverThumb, material.coverThumb, material.id]);
 
   // guidedBlocks の最新値を ref へ同期 (commit 時に stale を避ける)。
   useEffect(() => {
@@ -1577,6 +1656,29 @@ export function MaterialReadPane({
               </span>
             )}
           </div>
+          {/* 「選択した段階」(2026-06-08): まとまりを選んで一旦止まっている時だけ表示。
+              子が「ここから読む」を押して初めてガイド読書 (青枠+解説) が始まる。 */}
+          {pendingSegment && !guidedBlocks && !showUnitMenu && (
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-sky-50/60 px-3 py-1.5">
+              <Button
+                size="sm"
+                onClick={beginGuided}
+                disabled={!loaded || starting || sending || guidedBusy}
+                className="gap-1.5"
+                title="このまとまりを葵先生と一緒に読み始めるよ。"
+              >
+                {guidedBusy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Play className="size-4" />
+                )}
+                <span>ここから読む</span>
+              </Button>
+              <span className="text-[11px] text-muted-foreground">
+                準備ができたら押してね（先にめくって眺めてもOK）
+              </span>
+            </div>
+          )}
           {/* ガイド読書コントロール (G-A): まとまりを一区切りずつ歩いている間だけ表示。
               子は受け身で「次へ / もっと簡単に / もっと詳しく」+ 下の入力欄で質問。 */}
           {guidedBlocks && !showUnitMenu && (
@@ -1663,7 +1765,7 @@ export function MaterialReadPane({
                   <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-2 text-sm text-card-foreground shadow-sm">
                     この本はこんな「まとまり」に分けたよ📚
                     <br />
-                    どこから勉強する? 押すと、そのページを開いて一緒に始めるよ。
+                    どこから勉強する? 押すと、そのまとまりを開くよ（始める準備）。
                   </div>
                 </div>
                 <ul className="flex flex-col gap-1.5">
@@ -1673,7 +1775,7 @@ export function MaterialReadPane({
                       <li key={seg.id}>
                         <button
                           type="button"
-                          onClick={() => startUnit(seg)}
+                          onClick={() => selectUnit(seg)}
                           disabled={starting || sending}
                           className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm shadow-sm transition-colors hover:border-primary/50 hover:bg-primary/5 disabled:opacity-60"
                         >

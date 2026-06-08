@@ -3,45 +3,30 @@
 /**
  * MaterialDetailView - 教材詳細ページ。
  *
- * 2026-05-25 grill 1 (教材アップロード設計) C32 ガワ実装。
+ * 2026-06-08 ito19 さん意見で再構成。教材は「読むための源」と位置づけ、4 カード構成:
+ * - メタ: 教材名 / 出版社 / 著者 + 編集 + 「一緒に読む」(最上部に集約)
+ * - このテキストで設定されている課題 (Issue を coveredNodeIds 経由で逆引き、独立カード)
+ * - 学習スケジュール組み込み状況
+ * - まとまり一覧 (ConceptSegment、読書ビューと同じソース。「読む」で各単元へ)
  *
- * - 確定 5: 教材アップ後の動線は計画と疎結合 → 教材詳細ページで体系図/評価/葵 chat 完結
- * - 確定 11: 葵の教材出力 = 体系図 (テキスト忠実) + 評価コメント (葵の見解) 2 レイヤ
- * - 確定 12: 教材ごとに葵 chat 独立スレッド (本ページに集約)
- * - 確定 13: アップ完了動線 = ゆいから「葵が読んだよ、見る?」→ 本ページ展開
- *
- * 現状はガワのみ:
- * - 体系図プレビューは coveredNodeIds → KnowledgeNode のシンプルリスト
- * - 評価コメントは葵生成 mock テキスト (Phase 6 で Claude Opus 出力に置換)
- * - 葵 chat 入力欄は placeholder 表示のみ (Phase 6 で本物の chat スレッド実装)
+ * 撤去したもの (2026-06-08): 体系の地図 (マップ表示はレジュメ体系図へ集約) /
+ * 評価コメントカード / 教材ごと葵 chat カード。
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  generateMaterialReviewViaClaude,
-  type MaterialReviewOutput,
-} from "@/lib/admin/review-claude";
-import {
-  respondViaAokiChat,
-  type AokiChatMessage,
-} from "@/lib/admin/aoki-chat-claude";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { SubjectTeacherAvatar } from "@/components/ui/subject-teacher-avatar";
-import { MindMapPane } from "@/components/learn/MindMapPane";
 import { MaterialEditDialog } from "@/components/learn/MaterialEditDialog";
 import {
   ArrowRight,
   BookText,
   CalendarClock,
   ChevronLeft,
-  MessageCircle,
+  ListChecks,
   Pencil,
-  Send,
-  Sparkles,
 } from "lucide-react";
 import {
   MOCK_GENERATED_TASKS,
@@ -49,83 +34,69 @@ import {
   MOCK_SCHEDULE_TODAY,
   MOCK_SCHEDULE_UPCOMING,
 } from "@/lib/learn/mock-data";
-import type { KnowledgeNode, Material, Subject } from "@/lib/learn/types";
+import type {
+  Issue,
+  KnowledgeNode,
+  Material,
+  Subject,
+} from "@/lib/learn/types";
 
 /**
- * 体系図リスト/マップ表示に使うノード型。
- * 段階1-A: 教材固有体系図 (extractedNodes) はページ範囲を持つので KnowledgeNode を拡張。
+ * 「学習内容でない区切り」(表紙・前付け・目次・使い方・奥付・索引など) かを名前で判定。
+ * MaterialReadPane の同名ヘルパーと同じ判定 (まとまり一覧から前付けを除く)。
  */
-type DisplayNode = KnowledgeNode & {
-  /** 例 "p.42-58"。共有 MOCK_TREE 由来のノードは持たない */
-  pageRange?: string;
-};
+function isFrontMatterName(name: string): boolean {
+  return /表紙|扉|前付|まえがき|はじめに|序文|目次|もくじ|使い方|凡例|奥付|索引|さくいん|著者|広告|後付|あとがき/.test(
+    name,
+  );
+}
 
 type Props = {
   material: Material;
   subject: Subject | null;
   nodes: KnowledgeNode[];
+  /** 全 Issue (課題)。この教材の coveredNodeIds に紐づく open 課題をメタ欄に表示する */
+  issues: Issue[];
   /** C46 F (ito19 さん意見): MaterialEditDialog の onSave 経由で呼ばれる */
   onMaterialUpdated: (id: string, patch: Partial<Material>) => void;
   /** C46 F (ito19 さん意見): MaterialEditDialog の onDelete 経由で呼ばれる */
   onMaterialDeleted: (id: string) => void;
 };
 
-/**
- * 評価コメント (葵) のセッション内キャッシュ (materialId → 結果)。
- * generateMaterialReviewViaClaude は Opus 4.8 で 10〜40 秒かかる。教材詳細を開く
- * たびに毎回走ると体感が重く API も占有するため、同セッションでは 1 教材 1 回だけにする。
- */
-const sessionReviewCache = new Map<string, MaterialReviewOutput>();
-
 export function MaterialDetailView({
   material,
   subject,
   nodes,
+  issues,
   onMaterialUpdated,
   onMaterialDeleted,
 }: Props) {
   const router = useRouter();
   // C46 F: 教材編集・削除 dialog の open state
   const [editOpen, setEditOpen] = useState(false);
-  // C48 2026-05-26 (ito19 さん意見): 体系図 リスト ⇄ マップ 切替モード
-  // default = "list" (テキスト忠実、grill 1 確定 10 整合)、マップは MindMapPane 表示
-  const [systemMapMode, setSystemMapMode] = useState<"list" | "map">("list");
-  // C52 2026-05-26 (ito19 さん意見「ノードリスト → 葵 chat 遷移」):
-  // ノードクリックで「そのノードについて葵に聞く」focus + chat エリアに scroll
-  // ガワ実装: 選択ノードを placeholder / ヘッダに反映、本物 thread 設計は Phase 6
-  // (grill 1 確定 12「教材ごと独立 chat スレッド」を「ノードごと thread」 or
-  //  「教材 thread 内のノードフォーカス」のどちらにするかは Phase 6 grill)
-  const [selectedChatNode, setSelectedChatNode] = useState<KnowledgeNode | null>(
-    null,
-  );
-  const chatCardRef = useRef<HTMLDivElement>(null);
-  const handleSelectNodeForChat = (node: KnowledgeNode) => {
-    setSelectedChatNode(node);
-    // ChatCard までスムーズスクロール
-    requestAnimationFrame(() => {
-      chatCardRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
-  };
 
-  // 段階1-A: 教材固有の体系図 (extractedNodes、目次から抽出した実単元 + ページ範囲) が
-  // あればそれを表示。なければ従来の共有 MOCK_TREE (coveredNodeIds) を表示 (後方互換)。
-  const coveredNodes = useMemo<DisplayNode[]>(() => {
-    if (material.extractedNodes && material.extractedNodes.length > 0) {
-      return material.extractedNodes.map((n) => ({
-        id: n.tempId,
-        name: n.name,
-        parentId: n.parentRef,
-        description: n.description,
-        pageRange: n.pageRange,
+  // この教材の「まとまり (一単元=1概念、ConceptSegment)」一覧。
+  // 2026-06-08 ito19 さん意見「体系図(目次ノード)とまとまりは別物→まとまりに統一」。
+  // 読書ビューの「まとまり一覧」と同じソース: 前付け等を除き、PDF 紙番号順に並べる。
+  const contentSegments = useMemo(() => {
+    const segs = material.conceptSegments ?? [];
+    return segs
+      .filter((s) => !isFrontMatterName(s.conceptName))
+      .sort((a, b) => a.startPdfPage - b.startPdfPage);
+  }, [material.conceptSegments]);
+
+  // この教材に「現在設定されている課題」(open な Issue)。
+  // Issue は KnowledgeNode (共有体系図) に紐づくので、教材の coveredNodeIds で逆引きする。
+  // ノード名も添えて「どの論点の課題か」が分かるようにする。
+  const materialIssues = useMemo(() => {
+    const nodeIdSet = new Set(material.coveredNodeIds);
+    return issues
+      .filter((i) => i.status === "open" && nodeIdSet.has(i.nodeId))
+      .map((i) => ({
+        issue: i,
+        nodeName: nodes.find((n) => n.id === i.nodeId)?.name ?? null,
       }));
-    }
-    return material.coveredNodeIds
-      .map((nodeId) => nodes.find((n) => n.id === nodeId))
-      .filter((n): n is KnowledgeNode => n !== undefined);
-  }, [material.extractedNodes, material.coveredNodeIds, nodes]);
+  }, [issues, material.coveredNodeIds, nodes]);
 
   // D + E 2026-05-26 (ito19 さん意見 α 案): スケジュール組み込み状況
   // - active LearningPlan を materialIds で逆引き
@@ -211,101 +182,6 @@ export function MaterialDetailView({
       }[scheduleInfo.signal]
     : null;
 
-  // 評価コメント (B3 2026-06-04): NEXT_PUBLIC_USE_CLAUDE_API=true なら Claude
-  // Opus 4.8 が葵先生として生成、失敗時 / flag off は下記 mock fallback。
-  // 教材切替 (material.id 変化) ごとに再フェッチする。Phase 7 永続化時に
-  // MaterialReview を DB 保存して 1 回だけ呼ぶ設計に切替予定。
-  const mockReview = useMemo<MaterialReviewOutput>(
-    () => ({
-      coverage: `${material.name} は、${subject?.name ?? "この教科"}の${material.gradeLevel} 範囲を網羅していて、体系の骨格を掴むのに使えそう。`,
-      difficulty:
-        "難易度は標準的。基礎の解説が丁寧で、演習問題も着実にこなせる量。",
-      fit: "今の学習段階にちょうど合っていると思う。最初の通読は焦らず、まずは骨格を掴むことを優先しよう。",
-      notes: [
-        "演習問題を解く時は、答えを見る前に必ず「自分の言葉で説明」してみよう。",
-        "わからない用語に出会ったら、その場で「どうしてこの言葉が出てきたのか」を考えよう。",
-        "1 回転目は完璧を目指さず、全体像を掴むことに集中。2 回転目から細部に入ろう。",
-      ],
-    }),
-    [material.name, material.gradeLevel, subject?.name],
-  );
-  const [aoiReview, setAoiReview] = useState<MaterialReviewOutput>(mockReview);
-
-  // B1 葵 chat (C75 2026-06-04 本実装): 教材ごと in-memory スレッド
-  const [aokiChatHistory, setAokiChatHistory] = useState<AokiChatMessage[]>([]);
-  const [aokiChatDraft, setAokiChatDraft] = useState("");
-  const [aokiChatSending, setAokiChatSending] = useState(false);
-
-  // 教材切替時に chat をクリア (= 別教材は別スレッド、確定 12)
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAokiChatHistory([]);
-    setAokiChatDraft("");
-  }, [material.id]);
-
-  const handleAokiChatSend = async () => {
-    const userMessage = aokiChatDraft.trim();
-    if (userMessage.length === 0 || aokiChatSending) return;
-    setAokiChatSending(true);
-    const newUserMsg: AokiChatMessage = { role: "user", text: userMessage };
-    const newHistory = [...aokiChatHistory, newUserMsg];
-    setAokiChatHistory(newHistory);
-    setAokiChatDraft("");
-    try {
-      const aiText = await respondViaAokiChat({
-        materialName: material.name,
-        subjectName: subject?.name ?? "教科",
-        gradeLevel: material.gradeLevel ?? "中2",
-        focusNodeName: selectedChatNode?.name ?? null,
-        history: aokiChatHistory,
-        userMessage,
-      });
-      setAokiChatHistory([...newHistory, { role: "assistant", text: aiText }]);
-    } catch (err) {
-      console.error("[B1] aoki-chat failed:", err);
-      setAokiChatHistory([
-        ...newHistory,
-        {
-          role: "assistant",
-          text: "ごめん、ちょっと今うまく考えがまとまらない…もう一度送ってもらえる?",
-        },
-      ]);
-    } finally {
-      setAokiChatSending(false);
-    }
-  };
-
-  useEffect(() => {
-    // 同セッションで生成済みなら即それを表示 (Opus の重い再生成を避ける)。
-    const cached = sessionReviewCache.get(material.id);
-    if (cached) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAoiReview(cached);
-      return;
-    }
-    setAoiReview(mockReview);
-    const useClaude = process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true";
-    if (!useClaude) return;
-    let cancelled = false;
-    generateMaterialReviewViaClaude({
-      materialName: material.name,
-      subjectName: subject?.name ?? "教科",
-      gradeLevel: material.gradeLevel ?? "中2",
-      label: material.label,
-    })
-      .then((res) => {
-        sessionReviewCache.set(material.id, res);
-        if (!cancelled) setAoiReview(res);
-      })
-      .catch((err) => {
-        console.error("[B3] review-claude failed, mock 維持:", err);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [material.id]);
-
   return (
     // 二層パターン: flex 子の min-height: auto 規則で overflow が効かない問題を回避。
     // 外側 = h-full 固定 / 内側 = min-h-0 flex-1 overflow-y-auto で確実なスクロール領域。
@@ -328,77 +204,151 @@ export function MaterialDetailView({
             </Button>
           </div>
 
-          {/* 教材メタ */}
+          {/* 教材メタ (2026-06-08 ito19 さん意見: メタ編集を最上部へ集約。
+              教材名・出版社・著者 + この教材に設定されている課題 (Issue) を表示) */}
       <Card>
-        <CardContent className="flex items-start gap-3 pt-5">
-          {subject ? (
-            <SubjectTeacherAvatar
-              subjectId={subject.id}
-              size={48}
-              fallbackLetter={subject.teacher?.avatarLetter}
-              className="shrink-0"
-            />
-          ) : (
-            <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-muted">
-              <BookText className="size-6 text-muted-foreground" />
+        <CardContent className="flex flex-col gap-4 pt-5">
+          {/* タイトル行 + アクション */}
+          <div className="flex items-start gap-3">
+            {subject ? (
+              <SubjectTeacherAvatar
+                subjectId={subject.id}
+                size={48}
+                fallbackLetter={subject.teacher?.avatarLetter}
+                className="shrink-0"
+              />
+            ) : (
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-muted">
+                <BookText className="size-6 text-muted-foreground" />
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg font-semibold">{material.name}</h1>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{material.label}</Badge>
+                <Badge variant="outline">{material.gradeLevel}</Badge>
+                <span className="text-xs text-muted-foreground">
+                  {subject?.teacher?.displayName ?? "担当先生未設定"} 担当
+                </span>
+              </div>
             </div>
-          )}
-          <div className="flex-1">
-            <h1 className="text-lg font-semibold">{material.name}</h1>
-            <div className="mt-1 flex items-center gap-2">
-              <Badge variant="secondary">{material.label}</Badge>
-              <Badge variant="outline">{material.gradeLevel}</Badge>
-              <span className="text-xs text-muted-foreground">
-                {subject?.teacher?.displayName ?? "担当先生未設定"} 担当
+            <div className="flex shrink-0 items-center gap-2">
+              {/* C46 F + 2026-06-08: メタ編集 / 削除をここ (最上部) に移動 */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditOpen(true)}
+                className="gap-1.5"
+              >
+                <Pencil className="size-3.5" />
+                <span>編集</span>
+              </Button>
+              {/* 段階1-C: PDF を一緒にめくって読む読書ビューへ */}
+              <Button
+                onClick={() =>
+                  router.push(`/tutor?view=material-read&id=${material.id}`)
+                }
+                className="gap-1.5"
+              >
+                <BookText className="size-4" />
+                <span>一緒に読む</span>
+              </Button>
+            </div>
+          </div>
+
+          {/* メタ情報: 出版社 / 著者 */}
+          <div className="grid grid-cols-1 gap-x-8 gap-y-2 border-t pt-3 text-sm sm:grid-cols-2">
+            <div className="flex items-baseline gap-3">
+              <span className="w-14 shrink-0 text-xs text-muted-foreground">
+                出版社
+              </span>
+              <span
+                className={cn(
+                  material.publisher
+                    ? "text-foreground"
+                    : "text-muted-foreground",
+                )}
+              >
+                {material.publisher || "未設定"}
+              </span>
+            </div>
+            <div className="flex items-baseline gap-3">
+              <span className="w-14 shrink-0 text-xs text-muted-foreground">
+                著者
+              </span>
+              <span
+                className={cn(
+                  material.author
+                    ? "text-foreground"
+                    : "text-muted-foreground",
+                )}
+              >
+                {material.author || "未設定"}
               </span>
             </div>
           </div>
-          {/* 段階1-C: PDF を一緒にめくって読む読書ビューへ */}
-          <Button
-            onClick={() =>
-              router.push(`/tutor?view=material-read&id=${material.id}`)
-            }
-            className="shrink-0 gap-1.5"
-          >
-            <BookText className="size-4" />
-            <span>一緒に読む</span>
-          </Button>
+
         </CardContent>
       </Card>
 
-      {/* 葵の評価コメント (確定 11) */}
+      {/* このテキストで設定されている課題 (Issue、ito19 さん意見、2026-06-08 独立カード化) */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-sm">
-            <Sparkles className="size-4 text-amber-500" />
-            <span>{subject?.teacher?.displayName ?? "葵先生"}が読んでみての評価</span>
+            <ListChecks className="size-4 text-primary" />
+            <span>このテキストで設定されている課題</span>
+            {materialIssues.length > 0 && (
+              <Badge variant="secondary" className="ml-0.5">
+                {materialIssues.length}
+              </Badge>
+            )}
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3 text-sm">
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">範囲</div>
-            <p className="text-foreground">{aoiReview.coverage}</p>
-          </div>
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">難易度</div>
-            <p className="text-foreground">{aoiReview.difficulty}</p>
-          </div>
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">あなたへのフィット</div>
-            <p className="text-foreground">{aoiReview.fit}</p>
-          </div>
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">使い方のヒント</div>
-            <ul className="ml-4 list-disc space-y-1 text-foreground">
-              {aoiReview.notes.map((note, i) => (
-                <li key={i}>{note}</li>
-              ))}
-            </ul>
-          </div>
-          <p className="text-[11px] italic text-muted-foreground">
-            ※ 現状は mock 表示。Phase 6 で本物の {subject?.teacher?.displayName ?? "葵先生"}{" "}
-            (Claude Opus) が教材を読んで体系図 + 評価コメントを生成します。
-          </p>
+        <CardContent>
+          {materialIssues.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              この教材から立った課題はまだありません。
+            </p>
+          ) : (
+            <>
+              <ul className="flex flex-col gap-1.5">
+                {materialIssues.slice(0, 5).map(({ issue, nodeName }) => (
+                  <li
+                    key={issue.id}
+                    className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 text-sm"
+                  >
+                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-500" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium text-foreground">
+                        {issue.title}
+                      </div>
+                      {nodeName && (
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {nodeName}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-2 flex items-center justify-between">
+                {materialIssues.length > 5 && (
+                  <span className="text-[11px] text-muted-foreground">
+                    …他 {materialIssues.length - 5} 件
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push("/tutor?view=issues")}
+                  className="ml-auto h-auto gap-1 px-2 py-1 text-xs"
+                >
+                  <span>課題を見る</span>
+                  <ArrowRight className="size-3.5" />
+                </Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -531,261 +481,82 @@ export function MaterialDetailView({
       </Card>
 
       {/*
-        体系図 (リスト ⇄ マップ 切替、C48 ito19 さん意見):
-        旧 (C43): 体系図フローチャート Card (MindMapPane) と 体系図ノードリスト Card の
-        2 枚を縦に並べて両方表示していた → 縦に冗長 + マップ常時表示で重い
-        新 (C48): 1 Card に統合、ヘッダー右側のトグル (リスト / マップ) で切替
-        デフォルト = リスト (確定 10 テキスト忠実、軽量、最初のスキャン用途)
-        マップ = MindMapPane (React Flow 階層図、グラフ的理解用途)
+        まとまり一覧 (2026-06-08 ito19 さん意見「体系図(目次ノード)とまとまりは別物→まとまりに統一」):
+        旧: 目次から抽出した体系図ノード (AiExtractedNode) を一覧していた。
+        新: 葵が本文を読んで区切った「まとまり (ConceptSegment、1概念=1単元)」を一覧する。
+        読書ビューの「まとまり一覧」と同じソース。各行から「読む」でその単元を一緒に読む。
+        体系の地図 (マップ) はレジュメ体系図 (NotesHomeView) に集約済。
       */}
       <Card className="overflow-hidden">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center justify-between gap-2 text-sm">
-            <div className="flex items-center gap-2">
-              <BookText className="size-4 text-primary" />
-              <span>体系図 ({coveredNodes.length} ノード)</span>
-            </div>
-            <div className="flex items-center gap-0 rounded-md border border-border bg-muted/40 p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={() => setSystemMapMode("list")}
-                className={cn(
-                  "rounded px-2 py-0.5 transition-colors",
-                  systemMapMode === "list"
-                    ? "bg-card font-medium text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                リスト
-              </button>
-              <button
-                type="button"
-                onClick={() => setSystemMapMode("map")}
-                className={cn(
-                  "rounded px-2 py-0.5 transition-colors",
-                  systemMapMode === "map"
-                    ? "bg-card font-medium text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                マップ
-              </button>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className={systemMapMode === "map" ? "h-[700px] p-0" : ""}>
-          {systemMapMode === "map" ? (
-            // currentNodeId は教材詳細で「今ここ」概念が無いため coveredNodes[0]?.id を仮指定
-            // (ハイライト用、ノードクリックは no-op、将来「ノードごと chat」入口にできる)
-            <MindMapPane
-              nodes={coveredNodes}
-              currentNodeId={coveredNodes[0]?.id ?? ""}
-              onSelectNode={() => {}}
-              viewTitle={material.name}
-              visibleNodeCount={coveredNodes.length}
-            />
-          ) : coveredNodes.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              この教材にはまだノードが紐付いていません。
-            </p>
-          ) : (
-            // C52: ノードリスト = 葵 chat 入口一覧。各行 button 化 + クリックで
-            // 「そのノードについて葵に聞く」chat エリアに scroll + 選択 state 保持。
-            // hover で border-primary + 右側 MessageCircle icon (chat 連想)
-            <ul className="flex flex-col gap-1">
-              {coveredNodes.slice(0, 20).map((node) => {
-                const isSelected = selectedChatNode?.id === node.id;
-                // 段階1-C: pageRange の開始ページが取れれば「読む」ジャンプを出す
-                const startMatch = node.pageRange?.match(/p\.?\s*(\d+)/i);
-                const readPage = startMatch
-                  ? Number.parseInt(startMatch[1], 10)
-                  : null;
-                return (
-                  <li key={node.id} className="flex items-stretch gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleSelectNodeForChat(node)}
-                      className={cn(
-                        "group flex flex-1 items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                        isSelected
-                          ? "border-primary bg-primary/5"
-                          : "border-border bg-card hover:border-primary hover:bg-primary/5",
-                      )}
-                      title={`「${node.name}」について ${subject?.teacher?.displayName ?? "葵先生"} に聞く`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-2">
-                          <span className="font-medium">{node.name}</span>
-                          {node.pageRange && node.pageRange !== "p.?-?" && (
-                            <span className="shrink-0 text-[11px] font-normal text-primary/70">
-                              {node.pageRange}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-muted-foreground line-clamp-1">
-                          {node.description}
-                        </div>
-                      </div>
-                      <MessageCircle
-                        className={cn(
-                          "size-4 shrink-0 transition-colors",
-                          isSelected
-                            ? "text-primary"
-                            : "text-muted-foreground/40 group-hover:text-primary",
-                        )}
-                      />
-                    </button>
-                    {readPage !== null && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          router.push(
-                            `/tutor?view=material-read&id=${material.id}&page=${readPage}`,
-                          )
-                        }
-                        className="h-auto shrink-0 gap-1 px-2"
-                        title={`「${node.name}」のページを一緒に読む`}
-                      >
-                        <BookText className="size-4" />
-                        <span className="text-xs">読む</span>
-                      </Button>
-                    )}
-                  </li>
-                );
-              })}
-              {coveredNodes.length > 20 && (
-                <li className="text-xs text-muted-foreground">
-                  …他 {coveredNodes.length - 20} 件
-                </li>
-              )}
-              <li className="mt-1 text-[11px] italic text-muted-foreground">
-                💬 ノードをクリックすると、そのノードについて
-                {subject?.teacher?.displayName ?? "葵先生"} に聞ける chat に飛びます
-              </li>
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 葵 chat 入力欄 (確定 12: 教材ごと独立スレッド、B1 C75 2026-06-04 本実装)
-          - chat 履歴は本コンポーネント内 useState 管理 (in-memory、リロードで消える)
-          - Phase 7 永続化で Supabase に保存予定 (教材ごとスレッド) */}
-      <Card ref={chatCardRef}>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center justify-between gap-2 text-sm">
-            <div className="flex items-center gap-2">
-              <MessageCircle className="size-4 text-primary" />
-              <span>
-                {selectedChatNode ? (
-                  <>
-                    「<span className="text-primary">{selectedChatNode.name}</span>」について
-                    {subject?.teacher?.displayName ?? "葵先生"}に聞く
-                  </>
-                ) : (
-                  <>{subject?.teacher?.displayName ?? "葵先生"}にこの教材について聞く</>
-                )}
-              </span>
-            </div>
-            {selectedChatNode && (
-              <button
-                type="button"
-                onClick={() => setSelectedChatNode(null)}
-                className="text-[11px] text-muted-foreground hover:text-foreground"
-              >
-                教材全体に戻す
-              </button>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {/* 過去の対話履歴 */}
-          {aokiChatHistory.length > 0 && (
-            <ul className="flex flex-col gap-2 rounded-md border border-border bg-muted/30 p-3 max-h-[400px] overflow-y-auto">
-              {aokiChatHistory.map((m, i) => (
-                <li
-                  key={i}
-                  className={cn(
-                    "rounded-md px-3 py-2 text-sm whitespace-pre-wrap",
-                    m.role === "user"
-                      ? "ml-8 bg-primary/10 text-foreground"
-                      : "mr-8 bg-card border border-border text-foreground",
-                  )}
-                >
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
-                    {m.role === "user" ? "あなた" : subject?.teacher?.displayName ?? "葵先生"}
-                  </div>
-                  {m.text}
-                </li>
-              ))}
-              {aokiChatSending && (
-                <li className="mr-8 rounded-md border border-dashed border-border bg-card px-3 py-2 text-sm italic text-muted-foreground">
-                  {subject?.teacher?.displayName ?? "葵先生"}が考えてるよ…
-                </li>
-              )}
-            </ul>
-          )}
-          <Textarea
-            value={aokiChatDraft}
-            onChange={(e) => setAokiChatDraft(e.target.value)}
-            placeholder={
-              selectedChatNode
-                ? `例: 「${selectedChatNode.name}って何?」「${selectedChatNode.name}の例文を見せて」`
-                : `例: 「この教材の第3章ってどんな内容?」「この問題集と前の教科書の違いは?」`
-            }
-            rows={3}
-            disabled={aokiChatSending}
-            className="resize-none"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                handleAokiChatSend();
-              }
-            }}
-          />
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] italic text-muted-foreground">
-              ※ chat 履歴は in-memory、リロードで消えます (Phase 7 で永続化)
-              {" / "}Ctrl+Enter で送信
-            </p>
-            <Button
-              size="sm"
-              disabled={
-                aokiChatSending || aokiChatDraft.trim().length === 0
-              }
-              onClick={handleAokiChatSend}
-              className="gap-1.5"
-            >
-              <Send className="size-3.5" />
-              <span>{aokiChatSending ? "送信中…" : "送信"}</span>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 教材の管理 (C46 F、ito19 さん意見): 編集 + 削除 dialog の起点
-          誤操作防止のため削除は dialog 内に置く (MaterialEditDialog の設計を踏襲) */}
-      <Card>
-        <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-sm">
-            <Pencil className="size-4 text-muted-foreground" />
-            <span>教材の管理</span>
+            <BookText className="size-4 text-primary" />
+            <span>まとまり ({contentSegments.length} 個)</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setEditOpen(true)}
-            className="gap-1.5"
-          >
-            <Pencil className="size-3.5" />
-            <span>メタ情報を編集 / 削除</span>
-          </Button>
-          <p className="mt-2 text-[11px] italic text-muted-foreground">
-            ※ 編集できるのは名前・種別・学年。PDF 差し替えは新規登録扱い (体系図が変わるため)。
-            削除は編集ダイアログ内の「ゴミ箱」から (誤操作防止)。
-          </p>
+          {contentSegments.length === 0 ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-muted-foreground">
+                まだ「まとまり」が作られていません。教材を登録するとバックグラウンドで本文を読んで単元に区切ります。「一緒に読む」を開くと、その場でも作れます。
+              </p>
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    router.push(`/tutor?view=material-read&id=${material.id}`)
+                  }
+                  className="gap-1.5"
+                >
+                  <BookText className="size-4" />
+                  <span>一緒に読む</span>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-1.5">
+              {contentSegments.map((seg) => (
+                <li key={seg.id} className="flex items-stretch gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push(
+                        `/tutor?view=material-read&id=${material.id}&page=${seg.startPdfPage}&unit=1`,
+                      )
+                    }
+                    className="group flex flex-1 items-center gap-3 rounded-md border border-border bg-card px-3 py-2 text-left text-sm transition-colors hover:border-primary hover:bg-primary/5"
+                    title={`「${seg.conceptName}」を一緒に読む`}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-medium">
+                      {seg.conceptName}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      p.{seg.startPdfPage}–{seg.endPdfPage}
+                    </span>
+                  </button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      router.push(
+                        `/tutor?view=material-read&id=${material.id}&page=${seg.startPdfPage}&unit=1`,
+                      )
+                    }
+                    className="h-auto shrink-0 gap-1 px-2"
+                    title="このまとまりを一緒に読む"
+                  >
+                    <BookText className="size-4" />
+                    <span className="text-xs">読む</span>
+                  </Button>
+                </li>
+              ))}
+              <li className="mt-1 text-[11px] italic text-muted-foreground">
+                📖 押すと、そのまとまりのページを開いて
+                {subject?.teacher?.displayName ?? "葵先生"}と一緒に読めます
+              </li>
+            </ul>
+          )}
         </CardContent>
       </Card>
 

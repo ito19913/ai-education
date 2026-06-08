@@ -48,13 +48,18 @@ export function MaterialEditDialog({
   onDelete,
 }: Props) {
   const [name, setName] = useState("");
+  const [publisher, setPublisher] = useState("");
+  const [author, setAuthor] = useState("");
   const [label, setLabel] = useState<MaterialLabel>("テキスト");
   const [gradeLevel, setGradeLevel] = useState("中2");
 
-  // 開いた時に編集対象の値で初期化
+  // 開いた時に編集対象の値で初期化 (dialog を開く度に props の最新値へ同期する意図的な set)
   useEffect(() => {
     if (material) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(material.name);
+      setPublisher(material.publisher ?? "");
+      setAuthor(material.author ?? "");
       setLabel(material.label);
       setGradeLevel(material.gradeLevel ?? "中2");
     }
@@ -63,7 +68,7 @@ export function MaterialEditDialog({
   if (!material) return null;
 
   const handleSave = () => {
-    onSave(material.id, { name, label, gradeLevel });
+    onSave(material.id, { name, publisher, author, label, gradeLevel });
     onOpenChange(false);
   };
 
@@ -90,6 +95,26 @@ export function MaterialEditDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-publisher">出版社</Label>
+              <Input
+                id="edit-publisher"
+                value={publisher}
+                onChange={(e) => setPublisher(e.target.value)}
+                placeholder="例: 光村図書"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-author">著者</Label>
+              <Input
+                id="edit-author"
+                value={author}
+                onChange={(e) => setAuthor(e.target.value)}
+                placeholder="例: 山田太郎"
+              />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">

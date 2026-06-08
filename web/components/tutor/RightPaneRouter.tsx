@@ -300,6 +300,7 @@ export function RightPaneRouter({
         material={material}
         subject={subject}
         nodes={nodes}
+        issues={issues}
         onMaterialUpdated={onMaterialUpdated}
         onMaterialDeleted={onMaterialDeleted}
       />

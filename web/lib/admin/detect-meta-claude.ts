@@ -34,6 +34,8 @@ const SYSTEM_PROMPT = `あなたは葵 (あおい) 先生、AI-Education プロ�
 - 種別のような固定 3 択は「最も近いもの」を選んでよい (例: 参考書 → テキスト)
 - 学年のように、大学受験用で複数学年にまたがる等「1 つに決められない」場合は null にする
 - 教材名は表紙の本のタイトルを優先する。奥付から出版社が分かれば末尾に「(出版社名)」を添える。一般名 (「中2 英語 教科書」等) に変換しない
+- 出版社 (publisher) は奥付・表紙・背表紙の発行元から判定する。会社名のみ (例「光村図書」「TAC出版」)。分からなければ null
+- 著者 (author) は表紙・奥付の著者名・編者名から判定する (例「山田太郎」「○○編集部」)。分からなければ null
 
 出力は指定された JSON のみ。説明文・前置き・コードブロックは禁止。`;
 
@@ -69,6 +71,8 @@ export type DetectMetaInput = {
 
 export type DetectMetaOutput = {
   name: string | null;
+  publisher: string | null;
+  author: string | null;
   subjectId: string | null;
   label: string | null;
   gradeLevel: string | null;
@@ -76,6 +80,8 @@ export type DetectMetaOutput = {
 
 const EMPTY: DetectMetaOutput = {
   name: null,
+  publisher: null,
+  author: null,
   subjectId: null,
   label: null,
   gradeLevel: null,
@@ -117,6 +123,8 @@ ${subjectList}
 ## 出力スキーマ (この JSON のみ)
 {
   "name": "教材名 (表紙タイトル + 分かれば(出版社)) または null",
+  "publisher": "出版社名 または null",
+  "author": "著者名・編者名 または null",
   "subjectId": "上記 id のいずれか または null",
   "label": "上記 種別のいずれか または null",
   "gradeLevel": "上記 学年のいずれか または null"
@@ -162,6 +170,8 @@ ${subjectList}
 
   const parsed = JSON.parse(text.slice(start, end + 1)) as Partial<{
     name: unknown;
+    publisher: unknown;
+    author: unknown;
     subjectId: unknown;
     label: unknown;
     gradeLevel: unknown;
@@ -171,6 +181,15 @@ ${subjectList}
   const name =
     typeof parsed.name === "string" && parsed.name.trim().length > 0
       ? parsed.name.trim()
+      : null;
+  // 出版社・著者は自由記述 (選択肢無し)。空文字だけ null に落とす。
+  const publisher =
+    typeof parsed.publisher === "string" && parsed.publisher.trim().length > 0
+      ? parsed.publisher.trim()
+      : null;
+  const author =
+    typeof parsed.author === "string" && parsed.author.trim().length > 0
+      ? parsed.author.trim()
       : null;
   const subjectId =
     typeof parsed.subjectId === "string" &&
@@ -187,5 +206,5 @@ ${subjectList}
       ? parsed.gradeLevel
       : null;
 
-  return { name, subjectId, label, gradeLevel };
+  return { name, publisher, author, subjectId, label, gradeLevel };
 }

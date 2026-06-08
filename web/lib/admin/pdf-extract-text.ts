@@ -172,6 +172,19 @@ export async function renderPageToJpegAt(
   }
 }
 
+/**
+ * 表紙 (1 ページ目) を教材一覧サムネ用の小さな data URL (JPEG) にする (2026-06-08)。
+ * <img src> にそのまま使える形 (data:image/jpeg;base64,...) で返す。失敗時 null。
+ */
+export async function renderCoverThumb(
+  doc: PDFDocumentProxy,
+): Promise<string | null> {
+  // 本棚グリッドで表紙が主役なので、やや高解像度 (長辺 360px) でクリスプに。
+  // それでも ~20-30KB の小さな JPEG なので data URL で DB 保存して問題ない。
+  const b64 = await renderPageToJpegAt(doc, 1, 360, 0.7);
+  return b64 ? `data:image/jpeg;base64,${b64}` : null;
+}
+
 /** ページを JPEG に描画して base64 (prefix 無し) を返す (既定の高解像度)。失敗時 null。 */
 export async function renderPageToJpeg(
   doc: PDFDocumentProxy,
