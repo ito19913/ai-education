@@ -2026,6 +2026,37 @@ grill で残り設計を確定 ((a) 科目タブ / (b) ensure・backfill はオ�
   ケースを実機確認。これは登録時の subjectId が `subj-english` のため (タブ機能は正しく分類)。
   別科目/別冊へ移したいケースは Phase 2「別冊への振り分け」で扱う。
 
+#### 実装 (2026-06-08、✅ Phase 2 を実機 E2E 確認済、migration 不要)
+
+grill で設計確定 ((1) 振り分けは同一科目内のみ / (2) 冊 UI = 科目タブの下に冊タブ /
+(3) 冊削除時は中のピースをデフォルト冊へ移してから論理削除 / (4) 振り分けはカードのメニュー /
+(5) 新規冊は手入力 (自動名「○○レジュメN」を初期値) / (6) 科目付け間違い修正は別件に後回し)。
+
+- **`resumes-repo.ts` 追加**: `insertResume` (作成した Resume を返す=新冊への移動/選択用) /
+  `renameResume` / `setDefaultResume` (対象を先に true→同科目の他を false で「デフォルト0」を作らない) /
+  `softDeleteResume` (★中のピースをデフォルト冊へ移してから論理削除、子の本文を失わせない) /
+  `moveEntryToResume` (note_entries.resume_id 更新)。
+- **`TutorWorkspace`**: `resumes` state を起動時 `fetchResumes` で load。冊管理ハンドラ
+  (handleAddResume/Rename/SetDefault/Delete + handleMoveEntryToResume) を全て楽観更新 (先に state、裏で DB)。
+  削除ハンドラは「その科目のデフォルト冊」を state から特定し、ピースを state でも移してから softDelete。
+- **`NotesHomeView` 冊タブ**: 科目タブの下に選択科目の冊を横並びタブ (デフォルト冊に ★、override+
+  描画時解決で選択)。各冊の「⋯」(base-ui は `render={<button/>}`) に 名前を変える / デフォルトにする /
+  この冊を削除。末尾に「＋冊を追加」。表示は **選択冊の resume_id でスコープ** (デフォルト冊は
+  resume_id 未設定の移行漏れピースも拾う安全網)。冊が無い時 (mock 等) は Phase 1 の科目スコープに自動
+  フォールバック。冊の追加/リネームは Dialog、削除は確認 Dialog (「中の N 個はデフォルト冊に移ります」)。
+- **エントリカードの「⋯」メニュー**: 別のレジュメに移す (同科目の他の冊 + 「新しい冊を作って移す」) / 削除。
+  「新しい冊を作って移す」は `onAddResume` の返り値 (作成 Resume) を待って `moveEntryToResume`。
+- **学習中の冊セレクター (R5、ito19 実機指摘「学習中にどの冊に入れるか」)**: `ResumePane` 上部に
+  「入れる冊：▼○○レジュメ」(新規作成時かつ冊 1 つ以上で表示、2 周目は冊を変えない)。普段はデフォルト
+  冊のまま、別冊に入れたい時だけその場で選択→確定で直接その冊へ (後から移す手間が消える)。セレクター内に
+  「＋新しい冊を作る」も。`resumes`/`onAddResume` を TutorWorkspace→MaterialReadPane→ResumePane で配線。
+  commit 時は選択冊 (effectiveTargetId) を使い、未選択 (冊ゼロ=初回) のみ ensureDefaultResume。
+- **UI 微調整 (ito19 フィードバック)**: 冊セレクター/移動メニューのドロップダウンを `min-w-[200px]` +
+  項目 `whitespace-nowrap` で冊名を 1 行表示 (折り返し解消)。
+- **✅ E2E**: 法人税で 2 冊 (法人税レジュメ ★ / 法人税レジュメ2) 作成・学習中セレクターで入れ先選択・
+  別冊振り分け・デフォルト変更・削除でデフォルト送り・リロード後 DB 永続 を確認。全 tsc/lint(既知 wasm
+  13)/build クリア。**★次=R10 Phase 3 (冊のコピー) / 科目付け間違い修正 / 「ヒントちょうだい」等**。
+
 ---
 
 ## ゆい→葵への申し送り（TutorHandoff）
