@@ -58,6 +58,7 @@ import {
   moveEntryToResume,
   moveEntryToSubject,
   ensureDefaultResume,
+  copyResume,
 } from "@/lib/notes/resumes-repo";
 import {
   fetchCustomSubjects,
@@ -637,6 +638,48 @@ export function TutorWorkspace({
           console.error("[レジュメ冊] 振り分け失敗:", err),
         );
       }
+    },
+    [],
+  );
+
+  /** 冊をコピー (Phase 3)。新しい冊 + 複製ピースを state に反映。 */
+  const handleCopyResume = useCallback(
+    async (sourceResumeId: string, sourceSubjectId: string, newName: string) => {
+      if (isSupabaseConfigured()) {
+        try {
+          const ownerId = await getCurrentUserId();
+          const { resume, entries } = await copyResume(
+            sourceResumeId,
+            sourceSubjectId,
+            newName,
+            ownerId,
+          );
+          setResumes((prev) => [...prev, resume]);
+          if (entries.length > 0) {
+            setNoteEntries((prev) => [...prev, ...entries]);
+          }
+          return;
+        } catch (err) {
+          console.error("[レジュメ冊] コピー失敗:", err);
+          return;
+        }
+      }
+      // mock: ローカルで冊 + ピースを複製。
+      const newId = `resume-local-${Date.now()}`;
+      setResumes((prev) => [
+        ...prev,
+        { id: newId, subjectId: sourceSubjectId, name: newName, isDefault: false },
+      ]);
+      setNoteEntries((prev) => [
+        ...prev,
+        ...prev
+          .filter((e) => e.resumeId === sourceResumeId)
+          .map((e, i) => ({
+            ...e,
+            id: `note-local-${Date.now()}-${i}`,
+            resumeId: newId,
+          })),
+      ]);
     },
     [],
   );
@@ -1225,6 +1268,7 @@ export function TutorWorkspace({
             onDeleteResume={handleDeleteResume}
             onMoveEntryToResume={handleMoveEntryToResume}
             onMoveEntryToSubject={handleMoveEntryToSubject}
+            onCopyResume={handleCopyResume}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

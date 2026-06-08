@@ -2072,8 +2072,20 @@ Phase 2 grill Q6 で別件に切り出した「NotebookLM が英語タブに居�
 - 配線: onMoveEntryToSubject を TutorWorkspace→RightPaneRouter→NotesHomeView→NoteEntryCard。
 - 全 tsc/lint/build クリア。**★これで Phase 1 で見つかった NotebookLM 英語タブ問題が UI から直せる**。
 
-**★R10 残り**: Phase 3 (冊のコピー) / 「ヒントちょうだい」/ 2 周目 G-C で自分のレジュメ改稿 /
-文字起こしを葵が整える「整える」/ 図クリップ。
+#### 実装 (2026-06-08、✅ Phase 3 = 冊のコピー、R10 全 Phase 完結)
+
+冊タブの「⋯」に「この冊をコピー」(デフォルト冊含む全冊)。grill 済み仕様どおり中身ごと複製。
+
+- **`resumes-repo.copyResume(sourceResumeId, sourceSubjectId, newName, ownerId)`**: 同科目に新冊
+  (is_default=false) を作り、元冊のピース (deleted_at null) を**新 id で一括複製**して新冊へ
+  (出典 source_material_id / source_segment_id / 本文 / status / user_note / parent_ref そのまま)。
+  作成冊 + 複製エントリ ({resume, entries}) を返す。
+- **`TutorWorkspace.handleCopyResume`**: 新冊を resumes state、複製ピースを noteEntries state に追加。
+  mock はローカルで冊 + 該当 resume_id のピースを複製。
+- **`NotesHomeView`**: 冊タブ ⋯ に「この冊をコピー」→ bookDialog mode "copy" (名前初期値「○○ のコピー」)
+  → submitBookDialog が onCopyResume。コピー先は元と独立 (片方を編集しても他方は不変)。
+- 配線 onCopyResume を TutorWorkspace→RightPaneRouter→NotesHomeView。全 tsc/lint/build クリア。
+  **ito19 実機確認済「いい感じ」。★これで R10 レジュメ(冊)管理は Phase 1/2/3 + 科目修正 すべて完結。**
 
 #### 「ヒントちょうだい」 (R4、2026-06-08、✅ 実装済)
 

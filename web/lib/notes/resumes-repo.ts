@@ -18,7 +18,7 @@
  */
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentUserId } from "@/lib/materials/materials-repo";
-import type { Resume } from "@/lib/learn/types";
+import type { NoteEntry, Resume } from "@/lib/learn/types";
 
 export { getCurrentUserId };
 
@@ -218,6 +218,82 @@ export async function moveEntryToResume(
     .update({ resume_id: resumeId })
     .eq("id", entryId);
   if (error) throw error;
+}
+
+/**
+ * 冊をコピーする (Phase 3)。同科目に新しい冊 (is_default=false) を作り、元の冊の
+ * 全ピース (deleted_at null) を新 id で複製して新冊へ入れる。出典等はそのまま。
+ * 作成した冊と複製エントリを返す (state 反映用)。
+ */
+export async function copyResume(
+  sourceResumeId: string,
+  sourceSubjectId: string,
+  newName: string,
+  ownerId: string,
+): Promise<{ resume: Resume; entries: NoteEntry[] }> {
+  const supabase = createClient();
+
+  // ① 新しい冊を作成
+  const { data: createdResume, error: insResErr } = await supabase
+    .from("resumes")
+    .insert({
+      owner_id: ownerId,
+      subject_id: sourceSubjectId,
+      name: newName,
+      is_default: false,
+    })
+    .select("*")
+    .single();
+  if (insResErr) throw insResErr;
+  const resume = rowToResume(createdResume as ResumeRow);
+
+  // ② 元の冊のピースを取得
+  const { data: srcRows, error: selErr } = await supabase
+    .from("note_entries")
+    .select("*")
+    .eq("resume_id", sourceResumeId)
+    .is("deleted_at", null);
+  if (selErr) throw selErr;
+
+  const sources = (srcRows ?? []) as Record<string, unknown>[];
+  if (sources.length === 0) return { resume, entries: [] };
+
+  // ③ 複製行を作成 (id/created_at は DB 採番、resume_id だけ新冊に差し替え)
+  const dupRows = sources.map((r) => ({
+    owner_id: ownerId,
+    subject_id: r.subject_id,
+    concept_name: r.concept_name,
+    ai_summary: r.ai_summary,
+    status: r.status,
+    source_material_id: r.source_material_id ?? null,
+    source_page_range: r.source_page_range ?? null,
+    source_segment_id: r.source_segment_id ?? null,
+    parent_ref: r.parent_ref ?? null,
+    user_note: r.user_note ?? null,
+    resume_id: resume.id,
+  }));
+  const { data: insRows, error: insErr } = await supabase
+    .from("note_entries")
+    .insert(dupRows)
+    .select("*");
+  if (insErr) throw insErr;
+
+  const entries: NoteEntry[] = (insRows as Record<string, unknown>[]).map(
+    (row) => ({
+      id: row.id as string,
+      subjectId: row.subject_id as string,
+      conceptName: row.concept_name as string,
+      aiSummary: row.ai_summary as string,
+      status: row.status === "open" ? "open" : "understood",
+      sourceMaterialId: (row.source_material_id as string) ?? undefined,
+      sourcePageRange: (row.source_page_range as string) ?? undefined,
+      sourceSegmentId: (row.source_segment_id as string) ?? undefined,
+      parentRef: (row.parent_ref as string) ?? undefined,
+      resumeId: (row.resume_id as string) ?? undefined,
+      userNote: (row.user_note as string) ?? undefined,
+    }),
+  );
+  return { resume, entries };
 }
 
 /**

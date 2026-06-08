@@ -44,6 +44,7 @@ import {
   Star,
   FolderInput,
   GraduationCap,
+  Copy,
 } from "lucide-react";
 import { MindMapPane } from "@/components/learn/MindMapPane";
 import { MarkdownText } from "@/components/chat/MarkdownText";
@@ -87,6 +88,12 @@ type Props = {
   onMoveEntryToResume: (entryId: string, resumeId: string) => void;
   /** R10: 科目付け間違いの修正 (別科目のデフォルト冊へ移す) */
   onMoveEntryToSubject: (entryId: string, subjectId: string) => void;
+  /** R10 Phase 3: 冊をコピー (同科目に中身ごと複製) */
+  onCopyResume: (
+    sourceResumeId: string,
+    sourceSubjectId: string,
+    newName: string,
+  ) => void;
 };
 
 export function NotesHomeView({
@@ -104,6 +111,7 @@ export function NotesHomeView({
   onDeleteResume,
   onMoveEntryToResume,
   onMoveEntryToSubject,
+  onCopyResume,
 }: Props) {
   const [mode, setMode] = useState<"list" | "map">("list");
   // N9②: 振り返り (open→理解済み 昇格) の review ダイアログ対象
@@ -112,6 +120,7 @@ export function NotesHomeView({
   const [bookDialog, setBookDialog] = useState<
     | { mode: "add"; value: string; moveEntryId?: string }
     | { mode: "rename"; value: string; targetId: string }
+    | { mode: "copy"; value: string; sourceId: string }
     | null
   >(null);
   const [deleteTarget, setDeleteTarget] = useState<Resume | null>(null);
@@ -228,6 +237,17 @@ export function NotesHomeView({
     const name = bookDialog.value.trim();
     if (bookDialog.mode === "rename") {
       if (name) onRenameResume(bookDialog.targetId, name);
+      setBookDialog(null);
+      return;
+    }
+    if (bookDialog.mode === "copy") {
+      if (selectedSubjectId) {
+        onCopyResume(
+          bookDialog.sourceId,
+          selectedSubjectId,
+          name || `${selectedSubjectName}レジュメのコピー`,
+        );
+      }
       setBookDialog(null);
       return;
     }
@@ -373,6 +393,18 @@ export function NotesHomeView({
                       <PencilLine className="size-4" />
                       名前を変える
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        setBookDialog({
+                          mode: "copy",
+                          value: `${r.name} のコピー`,
+                          sourceId: r.id,
+                        })
+                      }
+                    >
+                      <Copy className="size-4" />
+                      この冊をコピー
+                    </DropdownMenuItem>
                     {!r.isDefault && (
                       <DropdownMenuItem
                         onClick={() =>
@@ -496,14 +528,20 @@ export function NotesHomeView({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {bookDialog?.mode === "rename" ? "冊の名前を変える" : "新しい冊を作る"}
+              {bookDialog?.mode === "rename"
+                ? "冊の名前を変える"
+                : bookDialog?.mode === "copy"
+                  ? "この冊をコピー"
+                  : "新しい冊を作る"}
             </DialogTitle>
             <DialogDescription>
               {bookDialog?.mode === "rename"
                 ? "この冊の名前を変えられるよ。"
-                : bookDialog?.moveEntryId
-                  ? "新しい冊を作って、このレジュメをそこに移すよ。"
-                  : "分野で分けたい時に新しい冊を作れるよ（例：英文法だけ）。"}
+                : bookDialog?.mode === "copy"
+                  ? "中身ごと複製した新しい冊を作るよ。名前を付けてね。"
+                  : bookDialog?.moveEntryId
+                    ? "新しい冊を作って、このレジュメをそこに移すよ。"
+                    : "分野で分けたい時に新しい冊を作れるよ（例：英文法だけ）。"}
             </DialogDescription>
           </DialogHeader>
           <Input
@@ -524,7 +562,11 @@ export function NotesHomeView({
               やめる
             </Button>
             <Button onClick={() => void submitBookDialog()}>
-              {bookDialog?.mode === "rename" ? "変える" : "作る"}
+              {bookDialog?.mode === "rename"
+                ? "変える"
+                : bookDialog?.mode === "copy"
+                  ? "コピー"
+                  : "作る"}
             </Button>
           </DialogFooter>
         </DialogContent>

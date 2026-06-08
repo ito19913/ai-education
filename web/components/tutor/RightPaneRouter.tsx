@@ -119,6 +119,12 @@ type Props = {
   onMoveEntryToResume: (entryId: string, resumeId: string) => void;
   /** R10: 科目付け間違いの修正 (別科目のデフォルト冊へ移す) */
   onMoveEntryToSubject: (entryId: string, subjectId: string) => void;
+  /** R10 Phase 3: 冊をコピー (同科目に中身ごと複製) */
+  onCopyResume: (
+    sourceResumeId: string,
+    sourceSubjectId: string,
+    newName: string,
+  ) => void;
 };
 
 export function RightPaneRouter({
@@ -158,6 +164,7 @@ export function RightPaneRouter({
   onDeleteResume,
   onMoveEntryToResume,
   onMoveEntryToSubject,
+  onCopyResume,
 }: Props) {
   if (view === "default") {
     return <DefaultPane />;
@@ -346,6 +353,7 @@ export function RightPaneRouter({
         onDeleteResume={onDeleteResume}
         onMoveEntryToResume={onMoveEntryToResume}
         onMoveEntryToSubject={onMoveEntryToSubject}
+        onCopyResume={onCopyResume}
       />
     );
   }
