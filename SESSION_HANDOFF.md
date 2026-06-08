@@ -1041,7 +1041,8 @@ C61 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段�
 - **学習中の「入れる冊」セレクター (R5、ito19 実機指摘「学習中にどっちの冊に入れる?」)**: `ResumePane` 上部に「入れる冊：▼○○レジュメ」(新規作成時かつ冊1つ以上で表示、2周目は変えない)。普段デフォルト・別冊はその場選択・「＋新しい冊を作る」可。`resumes`/`onAddResume` を TutorWorkspace→MaterialReadPane→ResumePane で配線。commit 時は選択冊を使い未選択 (初回) のみ ensureDefaultResume。
 - **UI 微調整**: ドロップダウン `min-w-[200px]`+`whitespace-nowrap` で冊名 1 行 (折り返し解消)。
 - migration **不要** (Phase 1 のテーブルで足りる)。全 tsc/lint(既知 wasm 13)/build クリア。**ito19 実機確認済「OK」**。
-- **【★次にやる候補】**: R10 Phase 3 (冊のコピー) / 科目付け間違い修正 (NotebookLM 救済、別科目へ移す小機能) / 「ヒントちょうだい」(答えは言わず糸口) / 2 周目 G-C で自分のレジュメ改稿 / 文字起こしを葵が整える「整える」/ 図クリップ。
+- **【✅ 科目付け間違いの修正「科目を直す」も実装済 (`d834192`)】**: Phase 2 grill Q6 で別件に切り出した NotebookLM 救済。カードの ⋯ に「科目を直す」→ 現在以外の全科目から選ぶと、その科目のデフォルト冊へ着地 (subject_id+resume_id 更新、出典そのまま)。`resumes-repo.moveEntryToSubject` + `handleMoveEntryToSubject` (ensureDefaultResume で着地冊確保)。tsc/lint/build クリア。
+- **【★次にやる候補】**: R10 Phase 3 (冊のコピー) / 「ヒントちょうだい」(答えは言わず糸口) / 2 周目 G-C で自分のレジュメ改稿 / 文字起こしを葵が整える「整える」/ 図クリップ。
 
 ← 以下は同日 Phase 1: **R10 レジュメ(冊)管理 Phase 1 + 出典→レジュメ往復 を実装・E2E 確認済・コミット済 (`74e46a7`)★**:
 
