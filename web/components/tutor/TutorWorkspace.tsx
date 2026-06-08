@@ -56,6 +56,8 @@ import {
   setDefaultResume,
   softDeleteResume,
   moveEntryToResume,
+  moveEntryToSubject,
+  ensureDefaultResume,
 } from "@/lib/notes/resumes-repo";
 import {
   fetchCustomSubjects,
@@ -639,6 +641,50 @@ export function TutorWorkspace({
     [],
   );
 
+  /**
+   * 科目付け間違いの修正: ピースを別の科目へ移す。移動先科目のデフォルト冊に着地させる
+   * (ensureDefaultResume で確保)。subjectId + resumeId を更新、出典はそのまま。
+   */
+  const handleMoveEntryToSubject = useCallback(
+    async (entryId: string, targetSubjectId: string) => {
+      const targetName =
+        subjects.find((s) => s.id === targetSubjectId)?.name ?? "教科";
+      if (isSupabaseConfigured()) {
+        try {
+          const ownerId = await getCurrentUserId();
+          const resume = await ensureDefaultResume(
+            targetSubjectId,
+            targetName,
+            ownerId,
+          );
+          // 新規作成されたデフォルト冊なら resumes state に反映 (dedupe)。
+          setResumes((prev) =>
+            prev.some((r) => r.id === resume.id) ? prev : [...prev, resume],
+          );
+          await moveEntryToSubject(entryId, targetSubjectId, resume.id);
+          setNoteEntries((prev) =>
+            prev.map((e) =>
+              e.id === entryId
+                ? { ...e, subjectId: targetSubjectId, resumeId: resume.id }
+                : e,
+            ),
+          );
+          return;
+        } catch (err) {
+          console.error("[レジュメ] 科目修正失敗:", err);
+          return;
+        }
+      }
+      // mock: subjectId のみ更新 (冊レコードは無い)。
+      setNoteEntries((prev) =>
+        prev.map((e) =>
+          e.id === entryId ? { ...e, subjectId: targetSubjectId } : e,
+        ),
+      );
+    },
+    [subjects],
+  );
+
   // ----- まとめノート N9② Q3: 定期振り返り = ハブで open を 1 件だけ小出し -----
   // open エントリがあれば、セッション 1 回だけゆいが「もう一回見てみる?」と提案する
   // (壁にしない・1 件だけ、N2)。「ノートを見る」quickReply で open-notes へ。
@@ -1178,6 +1224,7 @@ export function TutorWorkspace({
             onSetDefaultResume={handleSetDefaultResume}
             onDeleteResume={handleDeleteResume}
             onMoveEntryToResume={handleMoveEntryToResume}
+            onMoveEntryToSubject={handleMoveEntryToSubject}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

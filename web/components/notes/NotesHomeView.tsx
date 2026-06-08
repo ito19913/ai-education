@@ -43,6 +43,7 @@ import {
   MoreVertical,
   Star,
   FolderInput,
+  GraduationCap,
 } from "lucide-react";
 import { MindMapPane } from "@/components/learn/MindMapPane";
 import { MarkdownText } from "@/components/chat/MarkdownText";
@@ -84,6 +85,8 @@ type Props = {
   onDeleteResume: (id: string, subjectId: string) => void;
   /** R10 Phase 2: ピースを別冊へ振り分け (同一科目内) */
   onMoveEntryToResume: (entryId: string, resumeId: string) => void;
+  /** R10: 科目付け間違いの修正 (別科目のデフォルト冊へ移す) */
+  onMoveEntryToSubject: (entryId: string, subjectId: string) => void;
 };
 
 export function NotesHomeView({
@@ -100,6 +103,7 @@ export function NotesHomeView({
   onSetDefaultResume,
   onDeleteResume,
   onMoveEntryToResume,
+  onMoveEntryToSubject,
 }: Props) {
   const [mode, setMode] = useState<"list" | "map">("list");
   // N9②: 振り返り (open→理解済み 昇格) の review ダイアログ対象
@@ -448,12 +452,20 @@ export function NotesHomeView({
                     : []
                 }
                 showMove={hasBooks}
+                // R10: 科目を直す = 現在以外の全科目 (付け間違いの修正、移動先は
+                // エントリの無い科目でも選べるよう subjects 全体から)。
+                otherSubjects={subjects
+                  .filter((s) => s.id !== e.subjectId)
+                  .map((s) => ({ id: s.id, name: s.name }))}
                 onOpenSource={onOpenSource}
                 onUpdateEntry={onUpdateEntry}
                 onDeleteEntry={onDeleteEntry}
                 onStartReview={() => setReviewEntry(e)}
                 onMoveTo={(resumeId) => onMoveEntryToResume(e.id, resumeId)}
                 onMoveToNew={() => openAddBook(e.id)}
+                onMoveToSubject={(subjectId) =>
+                  onMoveEntryToSubject(e.id, subjectId)
+                }
               />
             ))}
           </ul>
@@ -553,12 +565,14 @@ function NoteEntryCard({
   materialName,
   moveTargets,
   showMove,
+  otherSubjects,
   onOpenSource,
   onUpdateEntry,
   onDeleteEntry,
   onStartReview,
   onMoveTo,
   onMoveToNew,
+  onMoveToSubject,
 }: {
   entry: NoteEntry;
   materialName: string | null;
@@ -566,6 +580,8 @@ function NoteEntryCard({
   moveTargets: Resume[];
   /** R10 Phase 2: 振り分けメニューを出すか (hasBooks) */
   showMove: boolean;
+  /** R10: 科目を直す移動先 (現在以外の全科目) */
+  otherSubjects: { id: string; name: string }[];
   onOpenSource: (materialId: string, page: number) => void;
   onUpdateEntry: (id: string, patch: NotePatch) => void;
   onDeleteEntry: (id: string) => void;
@@ -574,6 +590,8 @@ function NoteEntryCard({
   onMoveTo: (resumeId: string) => void;
   /** R10 Phase 2: 新しい冊を作って移す */
   onMoveToNew: () => void;
+  /** R10: 別の科目へ移す (付け間違いの修正) */
+  onMoveToSubject: (subjectId: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [memo, setMemo] = useState(entry.userNote ?? "");
@@ -649,6 +667,24 @@ function NoteEntryCard({
                     <Plus className="size-4 shrink-0" />
                     新しい冊を作って移す
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              {otherSubjects.length > 0 && (
+                <>
+                  <DropdownMenuLabel className="flex items-center gap-1.5">
+                    <GraduationCap className="size-3.5" />
+                    科目を直す
+                  </DropdownMenuLabel>
+                  {otherSubjects.map((s) => (
+                    <DropdownMenuItem
+                      key={s.id}
+                      onClick={() => onMoveToSubject(s.id)}
+                      className="whitespace-nowrap"
+                    >
+                      {s.name}へ移す
+                    </DropdownMenuItem>
+                  ))}
                   <DropdownMenuSeparator />
                 </>
               )}

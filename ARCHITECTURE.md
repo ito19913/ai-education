@@ -2055,7 +2055,25 @@ grill で設計確定 ((1) 振り分けは同一科目内のみ / (2) 冊 UI = �
   項目 `whitespace-nowrap` で冊名を 1 行表示 (折り返し解消)。
 - **✅ E2E**: 法人税で 2 冊 (法人税レジュメ ★ / 法人税レジュメ2) 作成・学習中セレクターで入れ先選択・
   別冊振り分け・デフォルト変更・削除でデフォルト送り・リロード後 DB 永続 を確認。全 tsc/lint(既知 wasm
-  13)/build クリア。**★次=R10 Phase 3 (冊のコピー) / 科目付け間違い修正 / 「ヒントちょうだい」等**。
+  13)/build クリア。
+
+#### 科目付け間違いの修正「科目を直す」 (2026-06-08、✅ 実装済)
+
+Phase 2 grill Q6 で別件に切り出した「NotebookLM が英語タブに居る」科目付け間違いの救済。grill 確定:
+着地は**移動先科目のデフォルト冊に自動**(別冊選びは不要、R5 整合)。
+
+- **`resumes-repo.moveEntryToSubject(entryId, subjectId, resumeId)`**: note_entries の subject_id +
+  resume_id を更新 (出典 source_material_id 等はそのまま)。
+- **`TutorWorkspace.handleMoveEntryToSubject`**: 移動先科目名を解決→`ensureDefaultResume` でデフォルト冊を
+  確保 (新規なら resumes state へ dedupe 追加)→`moveEntryToSubject`→noteEntries state も subjectId+resumeId
+  更新。mock は subjectId のみ更新。
+- **`NotesHomeView` カードの「⋯」メニュー**に「科目を直す」セクション: **現在以外の全科目** (subjects 全体、
+  エントリの無い科目も選べる) を「○○へ移す」で列挙。選ぶとその科目のデフォルト冊へ着地。
+- 配線: onMoveEntryToSubject を TutorWorkspace→RightPaneRouter→NotesHomeView→NoteEntryCard。
+- 全 tsc/lint/build クリア。**★これで Phase 1 で見つかった NotebookLM 英語タブ問題が UI から直せる**。
+
+**★R10 残り**: Phase 3 (冊のコピー) / 「ヒントちょうだい」/ 2 周目 G-C で自分のレジュメ改稿 /
+文字起こしを葵が整える「整える」/ 図クリップ。
 
 ---
 

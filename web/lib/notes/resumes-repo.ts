@@ -219,3 +219,21 @@ export async function moveEntryToResume(
     .eq("id", entryId);
   if (error) throw error;
 }
+
+/**
+ * 科目付け間違いの修正: ピースを別の科目へ移す (subject_id + resume_id を更新)。
+ * 着地先は移動先科目のデフォルト冊 (呼び出し側で ensureDefaultResume 済みの id を渡す)。
+ * 出典 (source_material_id 等) はそのまま。
+ */
+export async function moveEntryToSubject(
+  entryId: string,
+  subjectId: string,
+  resumeId: string,
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("note_entries")
+    .update({ subject_id: subjectId, resume_id: resumeId })
+    .eq("id", entryId);
+  if (error) throw error;
+}
