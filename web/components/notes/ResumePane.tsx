@@ -28,6 +28,7 @@ import {
   ChevronDown,
   Star,
   Plus,
+  Lightbulb,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -38,7 +39,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
-import { reviewResume } from "@/lib/notes/note-gate-claude";
+import { reviewResume, getResumeHint } from "@/lib/notes/note-gate-claude";
 import type { ResumeReviewResult } from "@/lib/notes/note-gate-claude";
 import {
   insertNoteEntry,
@@ -102,6 +103,9 @@ export function ResumePane(props: Props) {
   const [result, setResult] = useState<ResumeReviewResult | null>(null);
   const [outcome, setOutcome] = useState<Outcome>("understood");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // R4「ヒントちょうだい」: 押すごとに段階的に濃く (答えは言わない、小出し)。
+  const [hints, setHints] = useState<string[]>([]);
+  const [hintLoading, setHintLoading] = useState(false);
   // 直前の添削が「仕上げる(強制・関所)」起点か「葵に見てもらう(任意の途中チェック)」起点か。
   // 仕上げる → 結果に応じて確定へ誘導。任意 → 書き続けに戻す。
   const [finalizeRequested, setFinalizeRequested] = useState(false);
@@ -152,7 +156,44 @@ export function ResumePane(props: Props) {
     setResult(null);
     setErrorMsg(null);
     setFinalizeRequested(false);
+    setHints([]);
   }, [segKey, existingEntry]);
+
+  // ----- R4: ヒントちょうだい (押すごとに段階的に濃く、答えは言わない) -----
+  const handleHint = useCallback(async () => {
+    setHintLoading(true);
+    setErrorMsg(null);
+    try {
+      const level = hints.length + 1;
+      if (!useClaude) {
+        const mockHints = [
+          "まず「これは何と何を分けている話?」と考えてみよう（mock）",
+          "教材の太字のところに注目してみて（mock）",
+          "「〜のときは〜になる」の形で書き出してみよう（mock）",
+        ];
+        setHints((prev) => [
+          ...prev,
+          mockHints[Math.min(level - 1, mockHints.length - 1)],
+        ]);
+        return;
+      }
+      const hint = await getResumeHint({
+        conceptName,
+        subjectName,
+        gradeLevel,
+        pageImagesPacked,
+        childBody: body,
+        hintLevel: level,
+        previousHints: hints,
+      });
+      setHints((prev) => [...prev, hint]);
+    } catch (err) {
+      console.error("[レジュメ] ヒント取得失敗:", err);
+      setErrorMsg("ヒントが出せませんでした。もう一度試してね。");
+    } finally {
+      setHintLoading(false);
+    }
+  }, [hints, conceptName, subjectName, gradeLevel, pageImagesPacked, body]);
 
   // ----- 葵に添削してもらう (3 色) -----
   // finalize=true: 「このまとまりを仕上げる」(関所・強制)。false: 任意の途中チェック。
@@ -426,28 +467,53 @@ export function ResumePane(props: Props) {
                 <label className="text-sm font-medium">
                   教科書を閉じて、自分の言葉でまとめてみよう
                 </label>
-                {micSupported && (
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {/* R4: 詰まったら糸口だけ小出し (答えは言わない) */}
                   <Button
                     type="button"
                     size="sm"
-                    variant={listening ? "default" : "outline"}
-                    onClick={toggleMic}
-                    disabled={stage === "reviewing" || stage === "committing"}
-                    className="shrink-0 gap-1.5"
-                    title={
-                      listening
-                        ? "タップで停止"
-                        : "タップで音声入力。話した内容がレジュメに入るよ"
+                    variant="outline"
+                    onClick={() => void handleHint()}
+                    disabled={
+                      hintLoading ||
+                      stage === "reviewing" ||
+                      stage === "committing"
                     }
+                    className="gap-1.5"
+                    title="詰まったら葵が糸口を出すよ（答えは言わない）"
                   >
-                    {listening ? (
-                      <MicOff className="size-4" />
+                    {hintLoading ? (
+                      <Loader2 className="size-4 animate-spin" />
                     ) : (
-                      <Mic className="size-4" />
+                      <Lightbulb className="size-4" />
                     )}
-                    <span>{listening ? "停止" : "話す"}</span>
+                    <span>ヒント</span>
                   </Button>
-                )}
+                  {micSupported && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={listening ? "default" : "outline"}
+                      onClick={toggleMic}
+                      disabled={
+                        stage === "reviewing" || stage === "committing"
+                      }
+                      className="gap-1.5"
+                      title={
+                        listening
+                          ? "タップで停止"
+                          : "タップで音声入力。話した内容がレジュメに入るよ"
+                      }
+                    >
+                      {listening ? (
+                        <MicOff className="size-4" />
+                      ) : (
+                        <Mic className="size-4" />
+                      )}
+                      <span>{listening ? "停止" : "話す"}</span>
+                    </Button>
+                  )}
+                </div>
               </div>
               <p className="text-xs text-muted-foreground">
                 さっき分かったことを「つまりこういうこと」と要約して。
@@ -474,6 +540,27 @@ export function ResumePane(props: Props) {
                 <p className="text-sm text-destructive">{errorMsg}</p>
               )}
             </div>
+
+            {/* R4: 葵のヒント (小出し、答えは言わない) */}
+            {hints.length > 0 && (
+              <div className="flex flex-col gap-1.5 rounded-md border border-sky-200 bg-sky-50/60 p-2.5">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-sky-700">
+                  <Lightbulb className="size-3.5" />
+                  葵先生のヒント
+                </div>
+                {hints.map((h, i) => (
+                  <div key={i} className="flex items-start gap-2 text-sm text-sky-900">
+                    <span className="mt-0.5 shrink-0 font-medium text-sky-500">
+                      {i + 1}.
+                    </span>
+                    <span>{h}</span>
+                  </div>
+                ))}
+                <p className="text-[11px] text-sky-600">
+                  まだ詰まってたら、もう一回「ヒント」を押すともう少し教えるよ。
+                </p>
+              </div>
+            )}
 
             {/* 3 色フィードバック (添削後は書き続けても参照できるよう、result があれば表示) */}
             {result && (

@@ -369,3 +369,99 @@ ${input.childBody}
         : "あと少し！直すともっと良くなるよ。"),
   };
 }
+
+// ============================================================================
+// getResumeHint (R4「詰まったらヒントちょうだい」、2026-06-08)
+// ============================================================================
+
+export type ResumeHintInput = {
+  conceptName: string;
+  subjectName: string;
+  gradeLevel: string;
+  /** まとまり範囲のページ画像 (base64 JPEG、改行連結)。葵がヒントの根拠にする */
+  pageImagesPacked?: string;
+  /** 子が今書いている途中のレジュメ本文 (空のこともある) */
+  childBody: string;
+  /**
+   * ヒントの段階 (1 から)。押すごとに +1。回を重ねるほど少し具体的にするが、
+   * ★答えそのものは最後まで言わない★。
+   */
+  hintLevel: number;
+  /** これまでに出したヒント (同じことを繰り返さないため) */
+  previousHints?: string[];
+};
+
+/**
+ * 詰まった子に「答えは言わず糸口だけ」を 1 つ返す (R4、小出し)。
+ * hintLevel が上がるほど少しずつ具体的にするが、答え (正しい要約そのもの) は言わない。
+ */
+export async function getResumeHint(input: ResumeHintInput): Promise<string> {
+  const images = input.pageImagesPacked
+    ? input.pageImagesPacked.split("\n").filter((s) => s.length > 0)
+    : [];
+
+  const level = Math.max(1, input.hintLevel);
+  const depthText =
+    level <= 1
+      ? "まずは**考える方向**か、**問いかけ**を 1 つだけ。例『この概念、何と何を比べてる?』"
+      : level === 2
+        ? "前より**少し具体的に**。どの部分・どの言葉に注目すると良いかを 1 つ。"
+        : "かなり具体的に近づけてよい (どこを見れば答えが分かるか) が、★答えの文そのものは絶対に書かない★。";
+
+  const prevText =
+    input.previousHints && input.previousHints.length > 0
+      ? `\n\nこれまでに出したヒント (繰り返さない):\n${input.previousHints
+          .map((h, i) => `${i + 1}. ${h}`)
+          .join("\n")}`
+      : "";
+
+  const system = `あなたは葵 (あおい) 先生、AI-Education の教科の先生 (ティーチング担当)。
+子どもが、今読んだ教材の**1 つの概念 (まとまり)** を自分の言葉でレジュメにまとめようとして、
+**詰まっています**。あなたの仕事は「ヒント」を出すこと。
+
+## 最重要ルール (レジュメ構想 R3/R4)
+- ★**答えを言ってはいけない**★。正しい要約そのものや、穴埋めの答えを書かない。
+  あくまで**子が自分で気づくための糸口**を出す。これは写経を防ぐ関所。
+- 添付のページ画像 (教材本文) を根拠にする。推測で盛らない。
+- **短く、1 つだけ**。問いかけ・着眼点・たとえ、のどれかで。長く説明しない。
+- 中学生に話すように、やさしく温かく。1〜2 文。
+
+## 今回のヒントの濃さ
+${depthText}
+
+## 出力
+ヒントの文だけを返す (JSON 不要、前置き・「ヒント:」等のラベルも不要)。`;
+
+  const contextText = `概念 (まとまり): ${input.conceptName} / 科目: ${input.subjectName} / 学年: ${input.gradeLevel}
+
+子が今書いている途中のレジュメ (空かもしれない):
+${input.childBody || "(まだ何も書けていない)"}${prevText}
+
+添付の教材ページを根拠に、答えは言わず、糸口を 1 つだけ短く返してください。`;
+
+  const content: Anthropic.ContentBlockParam[] = [
+    ...images.map(
+      (b64): Anthropic.ImageBlockParam => ({
+        type: "image",
+        source: { type: "base64", media_type: "image/jpeg", data: b64 },
+        cache_control: { type: "ephemeral" },
+      }),
+    ),
+    { type: "text", text: contextText },
+  ];
+
+  const res = await getClient().messages.create({
+    model: "claude-opus-4-8",
+    max_tokens: 300,
+    system: [
+      { type: "text", text: system, cache_control: { type: "ephemeral" } },
+    ],
+    messages: [{ role: "user", content }],
+  });
+
+  const textBlock = res.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("Claude returned no text (getResumeHint).");
+  }
+  return textBlock.text.trim();
+}
