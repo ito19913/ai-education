@@ -191,9 +191,9 @@ export function TodayTaskDashboard({
                     <span>ゆいと振り返る</span>
                   </Button>
                 </Link>
-                <Link href="/learn">
+                <Link href="/tutor">
                   <Button size="sm" variant="outline" className="h-7 px-3 text-[11px]">
-                    学習画面に戻る
+                    司令室に戻る
                   </Button>
                 </Link>
               </div>
@@ -248,10 +248,10 @@ export function TodayTaskDashboard({
               })}
             </p>
           </div>
-          <Link href="/learn">
+          <Link href="/tutor">
             <Button variant="outline" size="sm" className="gap-2">
               <Home className="size-4" />
-              <span>学習画面へ</span>
+              <span>司令室へ</span>
             </Button>
           </Link>
         </div>

@@ -69,12 +69,9 @@ export function TodayScheduleCard({
           {targets.map((item) => {
             const tone = TASK_TYPE_TONE[item.type];
             const isIssue = item.type === "issue";
-            const fallbackHref =
-              isIssue
-                ? `/tutor?view=issue&id=${encodeURIComponent(item.sourceId)}`
-                : item.nodeId
-                  ? `/learn?node=${encodeURIComponent(item.nodeId)}`
-                  : "/learn";
+            const fallbackHref = isIssue
+              ? `/tutor?view=issue&id=${encodeURIComponent(item.sourceId)}`
+              : "/tutor?view=materials";
 
             const inner = (
               <div className="flex w-full items-start gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-left transition-colors hover:border-primary hover:bg-primary/5">

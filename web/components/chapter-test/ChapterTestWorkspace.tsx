@@ -120,8 +120,8 @@ export function ChapterTestWorkspace({
           <p className="text-sm text-muted-foreground">
             「{currentNode.name}」には診断用の問題がまだ用意されていません。
           </p>
-          <Link href="/learn">
-            <Button>学習画面に戻る</Button>
+          <Link href="/tutor">
+            <Button>司令室に戻る</Button>
           </Link>
         </div>
       </div>
@@ -200,10 +200,10 @@ export function ChapterTestWorkspace({
                 <RefreshCw className="size-4" />
                 <span>もう一回</span>
               </Button>
-              <Link href="/learn">
+              <Link href="/tutor">
                 <Button className="gap-2">
                   <Home className="size-4" />
-                  <span>学習画面に戻る</span>
+                  <span>司令室に戻る</span>
                 </Button>
               </Link>
             </div>

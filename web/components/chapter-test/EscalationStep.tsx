@@ -44,10 +44,10 @@ export function EscalationStep({ currentNode, parentNode, onEscalate }: Props) {
           </Card>
 
           <div className="flex justify-center">
-            <Link href="/learn">
+            <Link href="/tutor">
               <Button size="lg" className="gap-2">
                 <Home className="size-4" />
-                <span>学習画面に戻って最初から</span>
+                <span>司令室に戻る</span>
               </Button>
             </Link>
           </div>
@@ -90,10 +90,10 @@ export function EscalationStep({ currentNode, parentNode, onEscalate }: Props) {
             <ArrowUp className="size-4" />
             <span>「{parentNode.name}」で診断する</span>
           </Button>
-          <Link href="/learn">
+          <Link href="/tutor">
             <Button size="lg" variant="outline" className="gap-2">
               <Home className="size-4" />
-              <span>一旦学習に戻る</span>
+              <span>一旦司令室に戻る</span>
             </Button>
           </Link>
         </div>

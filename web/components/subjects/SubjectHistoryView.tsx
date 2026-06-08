@@ -211,7 +211,7 @@ function HistoryItemCard({ item }: { item: SubjectHistoryItem }) {
 
   const jumpHref =
     item.kind === "node-chat"
-      ? `/learn?node=${encodeURIComponent(item.message.nodeId)}`
+      ? "/tutor"
       : `/tutor?view=issue&id=${encodeURIComponent(item.issue.id)}`;
   const jumpLabel =
     item.kind === "node-chat" ? "このノードを開く" : "この課題を開く";

@@ -108,10 +108,10 @@ export function PhilosophyView({ content }: { content: string }) {
               本ツールが何のためにあるか — 学習を始める前に確認する場所
             </p>
           </div>
-          <Link href="/learn">
+          <Link href="/tutor">
             <Button variant="outline" size="sm" className="gap-2">
               <Home className="size-4" />
-              <span>学習画面に戻る</span>
+              <span>司令室に戻る</span>
             </Button>
           </Link>
         </div>

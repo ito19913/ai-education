@@ -93,9 +93,9 @@ export function TestSummary({
             <RefreshCw className="size-4" />
             <span>もう一回</span>
           </Button>
-          <Link href="/learn">
+          <Link href="/tutor">
             <Button className="gap-2">
-              <span>学習画面に戻る</span>
+              <span>司令室に戻る</span>
             </Button>
           </Link>
         </div>

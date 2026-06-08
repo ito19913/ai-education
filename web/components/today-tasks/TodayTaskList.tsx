@@ -110,7 +110,7 @@ export function TodayTaskList({
         ))}
 
         {sorted.length > 0 && (
-          <Link href="/learn?startDay=1" className="mt-2">
+          <Link href="/tutor?view=materials" className="mt-2">
             <Button
               size="lg"
               className="w-full justify-center gap-2 font-semibold"
@@ -140,15 +140,13 @@ function TaskRow({
   const isDone = item.status === "done";
   const tone = TASK_TYPE_TONE[item.type];
 
-  // クリック遷移先（Phase 3）:
+  // クリック遷移先:
   //   - issue: /tutor?view=issue&id=xxx（ゆい先生司令室の右ペインで開く）
-  //   - それ以外: /learn?node=xxx
+  //   - それ以外: /tutor?view=materials（学習は教材の「一緒に読む」へ集約、旧 /learn 廃止）
   const href =
     item.type === "issue"
       ? `/tutor?view=issue&id=${encodeURIComponent(item.sourceId)}`
-      : item.nodeId
-        ? `/learn?node=${encodeURIComponent(item.nodeId)}`
-        : "/learn";
+      : "/tutor?view=materials";
 
   const handleClick = (e: React.MouseEvent) => {
     // /tutor 内（onSelectIssueItem 提供時）なら router.push を親に委ねる

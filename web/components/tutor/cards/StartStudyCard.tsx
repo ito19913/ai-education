@@ -16,9 +16,8 @@ type Props = {
 };
 
 export function StartStudyCard({ card }: Props) {
-  const href = card.withReconstruction
-    ? `/learn?node=${encodeURIComponent(card.entryNodeId)}&startDay=1`
-    : `/learn?node=${encodeURIComponent(card.entryNodeId)}`;
+  // 旧 /learn は廃止。学習は教材の「一緒に読む」へ集約 → 教材一覧へ誘導。
+  const href = "/tutor?view=materials";
 
   return (
     <Card className="my-2 border-primary/40 bg-primary/5 p-3">

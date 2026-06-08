@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BookOpenCheck, GraduationCap } from "lucide-react";
+import { BookOpenCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TutorChat } from "./TutorChat";
 import { RightPaneRouter } from "./RightPaneRouter";
@@ -1137,17 +1137,7 @@ export function TutorWorkspace({
             AI-Education
           </span>
         </Link>
-        <Link href="/learn" title="学習画面へ">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5"
-            aria-label="学習画面へ"
-          >
-            <GraduationCap className="size-3.5" />
-            <span>学習画面</span>
-          </Button>
-        </Link>
+        {/* ★2026-06-08: 旧「学習画面へ」(/learn) ボタンは廃止 (学習は教材の「一緒に読む」へ集約) */}
       </header>
 
       {view === "material-read" ? (

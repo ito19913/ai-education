@@ -2163,8 +2163,7 @@ TutorHandoff ドキュメント作成 (mock では chat 内のカード)
 | `/tutor` 帰宅モード | **平日 16:00 以降の初回アクセスで自動起動**、第 1 部 学校レポート → 第 2 部 スケジュール確定 | Phase 4 |
 | `/tutor?ending=1` | **学習終了振り返り (ending) モードでゆい起動**（`/learn` の「学習を終了」ボタンから） | ✓ Phase 3 中盤 |
 | `/today-tasks` | 今日のタスク ダッシュボード（バックアップ動線、`/tutor?view=today-tasks` と同 `TodayTaskDashboard` コンポーネント）。P5-Q7 で `/schedule` からリネーム | Phase 5 (旧 Phase 1 `/schedule`) |
-| `/learn` | 学習画面（4 ペイン: サイドバー / 体系図 / 対話 / ノート + 課題）。`/tutor` 右ペインには収まらないため別ルート | ✓ |
-| `/learn?node=xxx&startDay=1` | 担任からのハンドオフで体系図 復元テスト → 学習 | ✓ |
+| `/learn` | **★2026-06-08 廃止 → `/tutor` へリダイレクト**。旧 4 ペイン学習画面 (体系図 / 対話 / ノート + 課題)。学習はレジュメ構想の**読書ビュー (教材の「一緒に読む」→ まとまり → レジュメ)** に集約。`app/learn/page.tsx` は `redirect("/tutor")` のみ。`components/learn/` のコードは残置 (MindMapPane 等が レジュメ体系図 / 教材詳細 で共有のため)。入口リンク (「学習画面へ」ボタン / タスクの開始 / 各画面の戻る) は撤去・`/tutor`(?view=materials) へ付け替え済 | ⊘ 廃止 (リダイレクト) |
 | `/issues` | 課題一覧（バックアップ動線、`/tutor?view=issues` と同コンポーネント） | ✓ |
 | `/history` | 学習履歴（バックアップ動線、`/tutor?view=history` と同コンポーネント） | ✓ |
 | `/philosophy` | AI-Education の憲法（PHILOSOPHY.md レンダー）| ✓ |

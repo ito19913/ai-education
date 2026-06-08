@@ -89,9 +89,9 @@ export function Step4Save({ draft, extracted, onBack, onComplete }: Props) {
               <span>教材一覧に戻る</span>
             </Button>
           </Link>
-          <Link href="/learn">
+          <Link href="/tutor">
             <Button className="gap-2">
-              <span>学習画面で確認</span>
+              <span>司令室へ</span>
             </Button>
           </Link>
         </div>

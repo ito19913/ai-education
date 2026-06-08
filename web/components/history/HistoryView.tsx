@@ -178,7 +178,7 @@ export function HistoryView({ sessions, nodes, subjects, embedded = false }: Pro
                       {Array.from(new Set(s.visitedNodeIds)).map((id) => (
                         <Link
                           key={id}
-                          href={`/learn?node=${encodeURIComponent(id)}`}
+                          href="/tutor"
                           className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-card-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary"
                         >
                           <MessageSquare className="size-3" />
@@ -274,10 +274,10 @@ export function HistoryView({ sessions, nodes, subjects, embedded = false }: Pro
               これまでの学習セッションの記録 ({sorted.length} 件)
             </p>
           </div>
-          <Link href="/learn">
+          <Link href="/tutor">
             <Button variant="outline" size="sm" className="gap-2">
               <Home className="size-4" />
-              <span>学習画面に戻る</span>
+              <span>司令室に戻る</span>
             </Button>
           </Link>
         </div>

@@ -109,7 +109,7 @@ export function TaskSourcesPanel({
                   あと {daysUntil(e.examDate)} 日
                 </Badge>
               }
-              href={`/learn`}
+              href="/tutor?view=materials"
               hrefLabel="範囲を見る"
             />
           ))
@@ -150,7 +150,7 @@ export function TaskSourcesPanel({
                   あと {daysUntil(h.dueDate)} 日
                 </Badge>
               }
-              href={`/learn`}
+              href="/tutor?view=materials"
               hrefLabel="始める"
             />
           ))
@@ -184,11 +184,7 @@ export function TaskSourcesPanel({
                   })}
                 </>
               }
-              href={
-                l.nodeIds && l.nodeIds.length > 0
-                  ? `/learn?node=${encodeURIComponent(l.nodeIds[0])}`
-                  : `/learn`
-              }
+              href="/tutor?view=materials"
               hrefLabel="復習する"
             />
           ))

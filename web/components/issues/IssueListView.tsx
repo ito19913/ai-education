@@ -197,10 +197,10 @@ export function IssueListView({
               )}
             </p>
           </div>
-          <Link href="/learn">
+          <Link href="/tutor">
             <Button variant="outline" size="sm" className="gap-2">
               <Home className="size-4" />
-              <span>学習画面に戻る</span>
+              <span>司令室に戻る</span>
             </Button>
           </Link>
         </div>
@@ -331,7 +331,7 @@ function IssueCard({
 
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
           <Link
-            href={`/learn?node=${encodeURIComponent(issue.nodeId)}`}
+            href="/tutor"
             className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-muted-foreground transition-colors hover:border-primary hover:text-primary"
           >
             <MessageSquare className="size-3" />
