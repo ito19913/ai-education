@@ -22,6 +22,7 @@ import type {
   LearningSession,
   LessonReview,
   NoteEntry,
+  Resume,
   RightPaneView,
   ScheduleItem,
   Subject,
@@ -95,6 +96,8 @@ type Props = {
   materials: Material[];
   /** まとめノート N9①: ノートエントリ一覧 (NotesHomeView 用) */
   noteEntries: NoteEntry[];
+  /** R10 Phase 2: レジュメ冊一覧 (NotesHomeView の冊タブ用) */
+  resumes: Resume[];
   /** ノート自分メモ / ステータス更新 */
   onNoteUpdated: (
     id: string,
@@ -104,6 +107,16 @@ type Props = {
   onNoteDeleted: (id: string) => void;
   /** ノートの出典「読む」→ 読書ビューの該当ページへ */
   onOpenNoteSource: (materialId: string, page: number) => void;
+  /** R10 Phase 2: 冊を追加 (同科目)。作成した Resume を返す (新冊への移動/選択用) */
+  onAddResume: (subjectId: string, name: string) => Promise<Resume | null>;
+  /** R10 Phase 2: 冊名のリネーム */
+  onRenameResume: (id: string, name: string) => void;
+  /** R10 Phase 2: デフォルト冊を変更 */
+  onSetDefaultResume: (id: string, subjectId: string) => void;
+  /** R10 Phase 2: 冊を削除 (中身はデフォルト冊へ) */
+  onDeleteResume: (id: string, subjectId: string) => void;
+  /** R10 Phase 2: ピースを別冊へ振り分け (同一科目内) */
+  onMoveEntryToResume: (entryId: string, resumeId: string) => void;
 };
 
 export function RightPaneRouter({
@@ -133,9 +146,15 @@ export function RightPaneRouter({
   onSubjectAdded,
   materials,
   noteEntries,
+  resumes,
   onNoteUpdated,
   onNoteDeleted,
   onOpenNoteSource,
+  onAddResume,
+  onRenameResume,
+  onSetDefaultResume,
+  onDeleteResume,
+  onMoveEntryToResume,
 }: Props) {
   if (view === "default") {
     return <DefaultPane />;
@@ -313,10 +332,16 @@ export function RightPaneRouter({
         entries={noteEntries}
         materials={materials}
         subjects={subjects}
+        resumes={resumes}
         initialSubjectId={selectedSubjectId ?? undefined}
         onOpenSource={onOpenNoteSource}
         onUpdateEntry={onNoteUpdated}
         onDeleteEntry={onNoteDeleted}
+        onAddResume={onAddResume}
+        onRenameResume={onRenameResume}
+        onSetDefaultResume={onSetDefaultResume}
+        onDeleteResume={onDeleteResume}
+        onMoveEntryToResume={onMoveEntryToResume}
       />
     );
   }

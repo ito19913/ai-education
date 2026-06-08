@@ -50,6 +50,14 @@ import {
   softDeleteNoteEntry,
 } from "@/lib/notes/notes-repo";
 import {
+  fetchResumes,
+  insertResume,
+  renameResume,
+  setDefaultResume,
+  softDeleteResume,
+  moveEntryToResume,
+} from "@/lib/notes/resumes-repo";
+import {
   fetchCustomSubjects,
   insertSubject,
 } from "@/lib/subjects/subjects-repo";
@@ -81,6 +89,7 @@ import type {
   LessonReview,
   Material,
   NoteEntry,
+  Resume,
   RightPaneView,
   ScheduleItem,
   Subject,
@@ -198,6 +207,22 @@ export function TutorWorkspace({
         if (!cancelled) setNoteEntries(rows);
       })
       .catch((err) => console.error("[ノート] 一覧取得失敗:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // R10 Phase 2: レジュメ冊。real は起動時 DB fetch、mock は空 (1 科目 1 冊運用なら
+  // resume レコードなしでも Phase 1 同様に科目スコープ表示は成立する)。
+  const [resumes, setResumes] = useState<Resume[]>([]);
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+    fetchResumes()
+      .then((rows) => {
+        if (!cancelled) setResumes(rows);
+      })
+      .catch((err) => console.error("[レジュメ冊] 一覧取得失敗:", err));
     return () => {
       cancelled = true;
     };
@@ -511,6 +536,108 @@ export function TutorWorkspace({
       );
     }
   }, []);
+
+  // ----- R10 Phase 2: レジュメ冊 管理 + ピースの別冊振り分け -----
+  // すべて楽観更新 (先に state、裏で DB)。mock モードはローカル id で完結。
+
+  /** 冊を追加 (同科目)。is_default=false。作成した Resume を返す (新冊への移動/選択用)。 */
+  const handleAddResume = useCallback(
+    async (subjectId: string, name: string): Promise<Resume | null> => {
+      if (isSupabaseConfigured()) {
+        try {
+          const ownerId = await getCurrentUserId();
+          const created = await insertResume(subjectId, name, ownerId);
+          setResumes((prev) => [...prev, created]);
+          return created;
+        } catch (err) {
+          console.error("[レジュメ冊] 追加失敗、in-memory にフォールバック:", err);
+        }
+      }
+      const local: Resume = {
+        id: `resume-local-${Date.now()}`,
+        subjectId,
+        name,
+        isDefault: false,
+      };
+      setResumes((prev) => [...prev, local]);
+      return local;
+    },
+    [],
+  );
+
+  /** 冊名のリネーム。 */
+  const handleRenameResume = useCallback((id: string, name: string) => {
+    setResumes((prev) => prev.map((r) => (r.id === id ? { ...r, name } : r)));
+    if (isSupabaseConfigured()) {
+      void renameResume(id, name).catch((err) =>
+        console.error("[レジュメ冊] リネーム失敗:", err),
+      );
+    }
+  }, []);
+
+  /** デフォルト冊を変更 (同科目の他を false に、対象を true に)。 */
+  const handleSetDefaultResume = useCallback(
+    (id: string, subjectId: string) => {
+      setResumes((prev) =>
+        prev.map((r) =>
+          r.subjectId === subjectId ? { ...r, isDefault: r.id === id } : r,
+        ),
+      );
+      if (isSupabaseConfigured()) {
+        void getCurrentUserId()
+          .then((ownerId) => setDefaultResume(id, subjectId, ownerId))
+          .catch((err) =>
+            console.error("[レジュメ冊] デフォルト変更失敗:", err),
+          );
+      }
+    },
+    [],
+  );
+
+  /**
+   * 冊を削除 (★デフォルト冊は呼び出し側でガード)。中のピースをその科目のデフォルト冊へ
+   * 移してから論理削除し、子の本文を失わせない。
+   */
+  const handleDeleteResume = useCallback(
+    (id: string, subjectId: string) => {
+      const defaultResume = resumes.find(
+        (r) => r.subjectId === subjectId && r.isDefault && r.id !== id,
+      );
+      if (!defaultResume) {
+        console.error("[レジュメ冊] デフォルト冊が見つからず削除中止");
+        return;
+      }
+      // ピースをデフォルト冊へ (state)
+      setNoteEntries((prev) =>
+        prev.map((e) =>
+          e.resumeId === id ? { ...e, resumeId: defaultResume.id } : e,
+        ),
+      );
+      // 冊を一覧から除去 (state)
+      setResumes((prev) => prev.filter((r) => r.id !== id));
+      if (isSupabaseConfigured()) {
+        void getCurrentUserId()
+          .then((ownerId) => softDeleteResume(id, defaultResume.id, ownerId))
+          .catch((err) => console.error("[レジュメ冊] 削除失敗:", err));
+      }
+    },
+    [resumes],
+  );
+
+  /** ピースを別の冊へ振り分け (同一科目内、R5)。 */
+  const handleMoveEntryToResume = useCallback(
+    (entryId: string, resumeId: string) => {
+      setNoteEntries((prev) =>
+        prev.map((e) => (e.id === entryId ? { ...e, resumeId } : e)),
+      );
+      if (isSupabaseConfigured()) {
+        void moveEntryToResume(entryId, resumeId).catch((err) =>
+          console.error("[レジュメ冊] 振り分け失敗:", err),
+        );
+      }
+    },
+    [],
+  );
 
   // ----- まとめノート N9② Q3: 定期振り返り = ハブで open を 1 件だけ小出し -----
   // open エントリがあれば、セッション 1 回だけゆいが「もう一回見てみる?」と提案する
@@ -949,6 +1076,8 @@ export function TutorWorkspace({
             onOpenResume={() =>
               navigate("notes", { subjectId: readMaterial.subjectId })
             }
+            resumes={resumes}
+            onAddResume={handleAddResume}
             onNoteAdded={handleNoteAdded}
             notedSegmentIds={
               // ★ segment id は教材内ユニーク (seg-1 等) なので、必ず教材で絞る。
@@ -1038,11 +1167,17 @@ export function TutorWorkspace({
             onSubjectAdded={handleSubjectAdded}
             materials={materials}
             noteEntries={noteEntries}
+            resumes={resumes}
             onNoteUpdated={handleNoteUpdated}
             onNoteDeleted={handleNoteDeleted}
             onOpenNoteSource={(materialId, page) =>
               navigate("material-read", { materialId, page })
             }
+            onAddResume={handleAddResume}
+            onRenameResume={handleRenameResume}
+            onSetDefaultResume={handleSetDefaultResume}
+            onDeleteResume={handleDeleteResume}
+            onMoveEntryToResume={handleMoveEntryToResume}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

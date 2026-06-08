@@ -11,7 +11,24 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   BookOpen,
   List,
@@ -22,6 +39,10 @@ import {
   CheckCircle2,
   CircleDashed,
   RefreshCw,
+  Plus,
+  MoreVertical,
+  Star,
+  FolderInput,
 } from "lucide-react";
 import { MindMapPane } from "@/components/learn/MindMapPane";
 import { MarkdownText } from "@/components/chat/MarkdownText";
@@ -32,6 +53,7 @@ import type {
   KnowledgeNode,
   Material,
   NoteEntry,
+  Resume,
   Subject,
 } from "@/lib/learn/types";
 
@@ -42,6 +64,8 @@ type Props = {
   materials: Material[];
   /** 科目タブの表示名解決用 (R10 Phase 1) */
   subjects: Subject[];
+  /** R10 Phase 2: レジュメ冊一覧 (冊タブ用) */
+  resumes: Resume[];
   /** 初期選択する科目タブ (R10: 出典→レジュメ 往復でこの教科を開く) */
   initialSubjectId?: string;
   /** 出典「読む」→ 読書ビューの該当ページへ */
@@ -50,20 +74,43 @@ type Props = {
   onUpdateEntry: (id: string, patch: NotePatch) => void;
   /** エントリ削除 (論理削除) */
   onDeleteEntry: (id: string) => void;
+  /** R10 Phase 2: 冊を追加 (同科目)。作成した Resume を返す */
+  onAddResume: (subjectId: string, name: string) => Promise<Resume | null>;
+  /** R10 Phase 2: 冊名のリネーム */
+  onRenameResume: (id: string, name: string) => void;
+  /** R10 Phase 2: デフォルト冊を変更 */
+  onSetDefaultResume: (id: string, subjectId: string) => void;
+  /** R10 Phase 2: 冊を削除 (中身はデフォルト冊へ) */
+  onDeleteResume: (id: string, subjectId: string) => void;
+  /** R10 Phase 2: ピースを別冊へ振り分け (同一科目内) */
+  onMoveEntryToResume: (entryId: string, resumeId: string) => void;
 };
 
 export function NotesHomeView({
   entries,
   materials,
   subjects,
+  resumes,
   initialSubjectId,
   onOpenSource,
   onUpdateEntry,
   onDeleteEntry,
+  onAddResume,
+  onRenameResume,
+  onSetDefaultResume,
+  onDeleteResume,
+  onMoveEntryToResume,
 }: Props) {
   const [mode, setMode] = useState<"list" | "map">("list");
   // N9②: 振り返り (open→理解済み 昇格) の review ダイアログ対象
   const [reviewEntry, setReviewEntry] = useState<NoteEntry | null>(null);
+  // R10 Phase 2: 冊の 追加/リネーム ダイアログ + 削除確認
+  const [bookDialog, setBookDialog] = useState<
+    | { mode: "add"; value: string; moveEntryId?: string }
+    | { mode: "rename"; value: string; targetId: string }
+    | null
+  >(null);
+  const [deleteTarget, setDeleteTarget] = useState<Resume | null>(null);
 
   // ----- R10 Phase 1: 科目タブ (N4 違反是正、全科目混在をやめて科目で閉じる) -----
   // エントリのある科目だけをタブにする。表示名は subjects から解決 (無ければ「その他」)。
@@ -95,14 +142,45 @@ export function NotesHomeView({
 
   const selectedSubjectName =
     subjectTabs.find((t) => t.id === selectedSubjectId)?.name ?? "その他";
-  // 冊名 (R10: 「科目名 + レジュメ」)。Phase 2 で複数冊セレクターをここに足す。
-  const bookName = defaultResumeName(selectedSubjectName);
 
-  // 選択科目のエントリだけに絞る (科目スコープ)。
-  const scopedEntries = useMemo(
-    () => entries.filter((e) => e.subjectId === selectedSubjectId),
-    [entries, selectedSubjectId],
-  );
+  // ----- R10 Phase 2: 冊タブ (選択科目の冊。デフォルト冊を先頭に並べる) -----
+  const subjectResumes = useMemo(() => {
+    const list = resumes.filter(
+      (r) => r.subjectId === selectedSubjectId && !r.deletedAt,
+    );
+    return [...list].sort((a, b) => {
+      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+      return 0;
+    });
+  }, [resumes, selectedSubjectId]);
+  const hasBooks = subjectResumes.length > 0;
+  const defaultBook = subjectResumes.find((r) => r.isDefault) ?? null;
+
+  // 選択中の冊の「上書き」。null = 未操作 (= デフォルト冊を既定)。科目を変えたら無効化して
+  // その科目のデフォルトに自動で戻る (描画時解決、effect なし)。
+  const [bookOverride, setBookOverride] = useState<string | null>(null);
+  const selectedBookId =
+    bookOverride && subjectResumes.some((r) => r.id === bookOverride)
+      ? bookOverride
+      : (defaultBook?.id ?? subjectResumes[0]?.id ?? null);
+  const selectedBook =
+    subjectResumes.find((r) => r.id === selectedBookId) ?? null;
+
+  // 冊名 (R10): 冊があればその名前、無ければ「科目名 + レジュメ」(Phase 1 フォールバック)。
+  const bookName = selectedBook?.name ?? defaultResumeName(selectedSubjectName);
+
+  // 選択科目 + 選択冊のエントリに絞る。冊が無ければ科目スコープ (Phase 1 互換)。
+  // デフォルト冊は resume_id 未設定 (移行漏れ) のピースも拾う安全網。
+  const scopedEntries = useMemo(() => {
+    const bySubject = entries.filter((e) => e.subjectId === selectedSubjectId);
+    if (!hasBooks || !selectedBookId) return bySubject;
+    const isDefaultSelected = selectedBook?.isDefault ?? false;
+    return bySubject.filter(
+      (e) =>
+        e.resumeId === selectedBookId ||
+        (isDefaultSelected && !e.resumeId),
+    );
+  }, [entries, selectedSubjectId, hasBooks, selectedBookId, selectedBook]);
 
   const understoodCount = scopedEntries.filter(
     (e) => e.status === "understood",
@@ -134,6 +212,44 @@ export function NotesHomeView({
     () => Object.fromEntries(scopedEntries.map((e) => [e.id, e.status])),
     [scopedEntries],
   );
+
+  // 新規冊の自動名 (R10 Q5: 手入力の初期値、空ならこれでフォールバック)。
+  const autoBookName = `${selectedSubjectName}レジュメ${subjectResumes.length + 1}`;
+
+  const openAddBook = (moveEntryId?: string) =>
+    setBookDialog({ mode: "add", value: autoBookName, moveEntryId });
+
+  const submitBookDialog = async () => {
+    if (!bookDialog) return;
+    const name = bookDialog.value.trim();
+    if (bookDialog.mode === "rename") {
+      if (name) onRenameResume(bookDialog.targetId, name);
+      setBookDialog(null);
+      return;
+    }
+    if (!selectedSubjectId) return;
+    const created = await onAddResume(selectedSubjectId, name || autoBookName);
+    if (created) {
+      if (bookDialog.moveEntryId) {
+        onMoveEntryToResume(bookDialog.moveEntryId, created.id);
+      } else {
+        setBookOverride(created.id);
+      }
+    }
+    setBookDialog(null);
+  };
+
+  const confirmDeleteBook = () => {
+    if (!deleteTarget || !selectedSubjectId) return;
+    onDeleteResume(deleteTarget.id, selectedSubjectId);
+    if (bookOverride === deleteTarget.id) setBookOverride(null);
+    setDeleteTarget(null);
+  };
+
+  // 削除する冊の中身の件数 (確認文言「中の N 個はデフォルト冊に移ります」)。
+  const deleteTargetCount = deleteTarget
+    ? entries.filter((e) => e.resumeId === deleteTarget.id).length
+    : 0;
 
   return (
     <div className="flex h-full w-full flex-col bg-canvas">
@@ -196,6 +312,102 @@ export function NotesHomeView({
         </div>
       )}
 
+      {/* 冊タブ (R10 Phase 2): 選択科目の冊。⋯ で リネーム/デフォルト/削除、＋ で追加 */}
+      {hasBooks && selectedSubjectId && (
+        <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-background/40 px-3 py-1.5">
+          {subjectResumes.map((r) => {
+            const active = r.id === selectedBookId;
+            return (
+              <div
+                key={r.id}
+                className={`flex shrink-0 items-center rounded-full ${
+                  active ? "bg-primary text-primary-foreground" : "bg-muted/60"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setBookOverride(r.id)}
+                  className={`flex items-center gap-1 rounded-full py-1 pl-3 pr-1 text-xs font-medium ${
+                    active ? "" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {r.isDefault && (
+                    <Star
+                      className={`size-3 ${active ? "" : "text-amber-500"}`}
+                      fill="currentColor"
+                    />
+                  )}
+                  <span>{r.name}</span>
+                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        className={`rounded-full p-1 ${
+                          active
+                            ? "hover:bg-primary-foreground/20"
+                            : "hover:bg-muted"
+                        }`}
+                        title="この冊の操作"
+                        aria-label="冊の操作"
+                      />
+                    }
+                  >
+                    <MoreVertical className="size-3.5" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() =>
+                        setBookDialog({
+                          mode: "rename",
+                          value: r.name,
+                          targetId: r.id,
+                        })
+                      }
+                    >
+                      <PencilLine className="size-4" />
+                      名前を変える
+                    </DropdownMenuItem>
+                    {!r.isDefault && (
+                      <DropdownMenuItem
+                        onClick={() =>
+                          onSetDefaultResume(r.id, selectedSubjectId)
+                        }
+                      >
+                        <Star className="size-4" />
+                        デフォルトにする
+                      </DropdownMenuItem>
+                    )}
+                    {!r.isDefault && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => setDeleteTarget(r)}
+                        >
+                          <Trash2 className="size-4" />
+                          この冊を削除
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => openAddBook()}
+            className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+            title="この科目に冊を追加"
+          >
+            <Plus className="size-3.5" />
+            冊を追加
+          </button>
+        </div>
+      )}
+
       {/* 本体 */}
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {entries.length === 0 ? (
@@ -229,10 +441,19 @@ export function NotesHomeView({
                 materialName={
                   materials.find((m) => m.id === e.sourceMaterialId)?.name ?? null
                 }
+                // R10 Phase 2: 移動先候補 (同科目の他の冊)。hasBooks の時だけ振り分け表示。
+                moveTargets={
+                  hasBooks
+                    ? subjectResumes.filter((r) => r.id !== e.resumeId)
+                    : []
+                }
+                showMove={hasBooks}
                 onOpenSource={onOpenSource}
                 onUpdateEntry={onUpdateEntry}
                 onDeleteEntry={onDeleteEntry}
                 onStartReview={() => setReviewEntry(e)}
+                onMoveTo={(resumeId) => onMoveEntryToResume(e.id, resumeId)}
+                onMoveToNew={() => openAddBook(e.id)}
               />
             ))}
           </ul>
@@ -252,6 +473,77 @@ export function NotesHomeView({
           setReviewEntry(null);
         }}
       />
+
+      {/* R10 Phase 2: 冊の 追加 / リネーム ダイアログ */}
+      <Dialog
+        open={bookDialog !== null}
+        onOpenChange={(o) => {
+          if (!o) setBookDialog(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {bookDialog?.mode === "rename" ? "冊の名前を変える" : "新しい冊を作る"}
+            </DialogTitle>
+            <DialogDescription>
+              {bookDialog?.mode === "rename"
+                ? "この冊の名前を変えられるよ。"
+                : bookDialog?.moveEntryId
+                  ? "新しい冊を作って、このレジュメをそこに移すよ。"
+                  : "分野で分けたい時に新しい冊を作れるよ（例：英文法だけ）。"}
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={bookDialog?.value ?? ""}
+            autoFocus
+            onChange={(ev) =>
+              setBookDialog((prev) =>
+                prev ? { ...prev, value: ev.target.value } : prev,
+              )
+            }
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter") void submitBookDialog();
+            }}
+            placeholder={autoBookName}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBookDialog(null)}>
+              やめる
+            </Button>
+            <Button onClick={() => void submitBookDialog()}>
+              {bookDialog?.mode === "rename" ? "変える" : "作る"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* R10 Phase 2: 冊の削除確認 (中身はデフォルト冊へ移動) */}
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>「{deleteTarget?.name}」を削除する？</DialogTitle>
+            <DialogDescription>
+              {deleteTargetCount > 0
+                ? `この冊の中の ${deleteTargetCount} 個のレジュメは、デフォルトの冊に移ります（中身は消えません）。`
+                : "この冊は空っぽなので、そのまま削除するよ。"}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
+              やめる
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteBook}>
+              削除する
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -259,17 +551,29 @@ export function NotesHomeView({
 function NoteEntryCard({
   entry,
   materialName,
+  moveTargets,
+  showMove,
   onOpenSource,
   onUpdateEntry,
   onDeleteEntry,
   onStartReview,
+  onMoveTo,
+  onMoveToNew,
 }: {
   entry: NoteEntry;
   materialName: string | null;
+  /** R10 Phase 2: 移動先候補 (同科目の他の冊) */
+  moveTargets: Resume[];
+  /** R10 Phase 2: 振り分けメニューを出すか (hasBooks) */
+  showMove: boolean;
   onOpenSource: (materialId: string, page: number) => void;
   onUpdateEntry: (id: string, patch: NotePatch) => void;
   onDeleteEntry: (id: string) => void;
   onStartReview: () => void;
+  /** R10 Phase 2: 既存の冊へ移す */
+  onMoveTo: (resumeId: string) => void;
+  /** R10 Phase 2: 新しい冊を作って移す */
+  onMoveToNew: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [memo, setMemo] = useState(entry.userNote ?? "");
@@ -303,15 +607,60 @@ function NoteEntryCard({
               <MarkdownText text={entry.aiSummary} />
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => onDeleteEntry(entry.id)}
-            className="text-muted-foreground hover:text-destructive"
-            title="このエントリを削除"
-            aria-label="削除"
-          >
-            <Trash2 className="size-4" />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+                  title="このレジュメの操作"
+                  aria-label="操作"
+                />
+              }
+            >
+              <MoreVertical className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[200px]">
+              {showMove && (
+                <>
+                  <DropdownMenuLabel className="flex items-center gap-1.5">
+                    <FolderInput className="size-3.5" />
+                    別のレジュメに移す
+                  </DropdownMenuLabel>
+                  {moveTargets.map((r) => (
+                    <DropdownMenuItem
+                      key={r.id}
+                      onClick={() => onMoveTo(r.id)}
+                      className="whitespace-nowrap"
+                    >
+                      {r.isDefault && (
+                        <Star
+                          className="size-4 shrink-0 text-amber-500"
+                          fill="currentColor"
+                        />
+                      )}
+                      {r.name}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuItem
+                    onClick={onMoveToNew}
+                    className="whitespace-nowrap"
+                  >
+                    <Plus className="size-4 shrink-0" />
+                    新しい冊を作って移す
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => onDeleteEntry(entry.id)}
+              >
+                <Trash2 className="size-4" />
+                削除
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* 出典 + 振り返り */}

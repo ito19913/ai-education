@@ -116,3 +116,106 @@ export async function ensureDefaultResume(
 
   return resume;
 }
+
+// ============================================================================
+// Phase 2: 冊の追加 / リネーム / デフォルト変更 / 削除 + ピースの別冊振り分け
+// ============================================================================
+
+/** 新しい冊を作成 (Phase 2「＋冊を追加」/「新しい冊を作って移す」)。is_default=false。 */
+export async function insertResume(
+  subjectId: string,
+  name: string,
+  ownerId: string,
+): Promise<Resume> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("resumes")
+    .insert({
+      owner_id: ownerId,
+      subject_id: subjectId,
+      name,
+      is_default: false,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return rowToResume(data as ResumeRow);
+}
+
+/** 冊名のリネーム。 */
+export async function renameResume(id: string, name: string): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("resumes")
+    .update({ name })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * デフォルト冊を変更する。同科目の既存デフォルトを false にしてから対象を true に。
+ * 「科目に常に最低1冊+デフォルト1つ」を保つ (対象を true にしてから旧を false にする
+ * 順だと一瞬 2 つになるが論理削除しないので実害なし、ここは旧→新の順で 0 を作らない)。
+ */
+export async function setDefaultResume(
+  id: string,
+  subjectId: string,
+  ownerId: string,
+): Promise<void> {
+  const supabase = createClient();
+  // 対象を true (先に立てて「デフォルト0」状態を作らない)
+  const { error: upErr } = await supabase
+    .from("resumes")
+    .update({ is_default: true })
+    .eq("id", id);
+  if (upErr) throw upErr;
+  // 同科目の他の冊を false に
+  const { error: downErr } = await supabase
+    .from("resumes")
+    .update({ is_default: false })
+    .eq("owner_id", ownerId)
+    .eq("subject_id", subjectId)
+    .neq("id", id);
+  if (downErr) throw downErr;
+}
+
+/**
+ * 冊を論理削除する (Phase 2)。★中のピースは先にデフォルト冊へ移してから削除し、
+ * 子の本文を絶対に失わせない。デフォルト冊自体は呼び出し側でガードする (削除不可)。
+ *
+ * @param id               削除する冊
+ * @param defaultResumeId  ピースの移動先 (その科目のデフォルト冊)
+ */
+export async function softDeleteResume(
+  id: string,
+  defaultResumeId: string,
+  ownerId: string,
+): Promise<void> {
+  const supabase = createClient();
+  // ① 中のピースをデフォルト冊へ移す
+  const { error: moveErr } = await supabase
+    .from("note_entries")
+    .update({ resume_id: defaultResumeId })
+    .eq("owner_id", ownerId)
+    .eq("resume_id", id);
+  if (moveErr) throw moveErr;
+  // ② 冊を論理削除
+  const { error: delErr } = await supabase
+    .from("resumes")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (delErr) throw delErr;
+}
+
+/** ピースを別の冊へ振り分ける (Phase 2、同一科目内、R5)。 */
+export async function moveEntryToResume(
+  entryId: string,
+  resumeId: string,
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("note_entries")
+    .update({ resume_id: resumeId })
+    .eq("id", entryId);
+  if (error) throw error;
+}

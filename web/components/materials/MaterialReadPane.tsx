@@ -77,6 +77,7 @@ import type {
   GuidedBlock,
   Material,
   NoteEntry,
+  Resume,
   Subject,
 } from "@/lib/learn/types";
 
@@ -94,6 +95,10 @@ type Props = {
   notedSegmentIds?: Set<string>;
   /** まとめノートのエントリ一覧 (G-C: 2 周目検知 + 既存エントリの深化更新に使う) */
   noteEntries?: NoteEntry[];
+  /** R10 Phase 2: レジュメ冊一覧 (学習中の冊セレクター用、ResumePane へ渡す) */
+  resumes?: Resume[];
+  /** R10 Phase 2: 冊を追加 (学習中に新しい冊を作って入れる) */
+  onAddResume?: (subjectId: string, name: string) => Promise<Resume | null>;
 };
 
 // まとまり全体を vision で渡す時の最大ページ数 (payload / 速度の上限、M8)。
@@ -278,6 +283,8 @@ export function MaterialReadPane({
   onNoteAdded,
   notedSegmentIds,
   noteEntries,
+  resumes,
+  onAddResume,
 }: Props) {
   // 狭い画面では縦スタック (rail は隠す)、広い画面では横3ペイン。
   const isMobile = useIsMobile();
@@ -1374,6 +1381,12 @@ export function MaterialReadPane({
                     ? 1
                     : 0
                 }
+                subjectResumes={
+                  resumes?.filter(
+                    (r) => r.subjectId === material.subjectId && !r.deletedAt,
+                  ) ?? []
+                }
+                onAddResume={onAddResume}
                 onCommitted={(entry) => onNoteAdded?.(entry)}
                 onClose={() => setResumeMode(false)}
               />

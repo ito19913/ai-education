@@ -25,7 +25,17 @@ import {
   BookOpenCheck,
   Mic,
   MicOff,
+  ChevronDown,
+  Star,
+  Plus,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
 import { reviewResume } from "@/lib/notes/note-gate-claude";
@@ -36,7 +46,7 @@ import {
   getCurrentUserId,
 } from "@/lib/notes/notes-repo";
 import { ensureDefaultResume } from "@/lib/notes/resumes-repo";
-import type { ConceptSegment, NoteEntry } from "@/lib/learn/types";
+import type { ConceptSegment, NoteEntry, Resume } from "@/lib/learn/types";
 
 type Props = {
   conceptName: string;
@@ -54,6 +64,10 @@ type Props = {
   existingEntry?: NoteEntry;
   /** 周回数レベル (0=初回 / 1 以上=2 周目以降) */
   studyLevel?: number;
+  /** R10 Phase 2: この科目の冊一覧 (学習中の「入れる冊」セレクター用) */
+  subjectResumes?: Resume[];
+  /** R10 Phase 2: 学習中に新しい冊を作って入れる */
+  onAddResume?: (subjectId: string, name: string) => Promise<Resume | null>;
   /** 刻めた / 更新できたエントリを親へ (upsert) */
   onCommitted: (entry: NoteEntry) => void;
   /** ペインを閉じる (読書ビューに戻る) */
@@ -77,6 +91,8 @@ export function ResumePane(props: Props) {
     sourcePageRange,
     existingEntry,
     studyLevel,
+    subjectResumes,
+    onAddResume,
     onCommitted,
     onClose,
   } = props;
@@ -89,6 +105,19 @@ export function ResumePane(props: Props) {
   // 直前の添削が「仕上げる(強制・関所)」起点か「葵に見てもらう(任意の途中チェック)」起点か。
   // 仕上げる → 結果に応じて確定へ誘導。任意 → 書き続けに戻す。
   const [finalizeRequested, setFinalizeRequested] = useState(false);
+
+  // ----- R10 Phase 2: 入れる冊の選択 (新規作成時のみ。2 周目=既存は移動しない) -----
+  const books = subjectResumes ?? [];
+  const defaultBook = books.find((r) => r.isDefault) ?? null;
+  // override パターン (描画時解決)。null = デフォルト冊。複数冊ある時だけ UI を出す。
+  const [bookOverride, setBookOverride] = useState<string | null>(null);
+  const effectiveTargetId =
+    bookOverride && books.some((r) => r.id === bookOverride)
+      ? bookOverride
+      : (defaultBook?.id ?? books[0]?.id ?? null);
+  const targetBook = books.find((r) => r.id === effectiveTargetId) ?? null;
+  // セレクターを出すのは「新規作成 (existingEntry なし) かつ冊が 1 つ以上」の時。
+  const showBookPicker = !existingEntry && books.length >= 1;
 
   // 音声入力 (R4): 話した内容をレジュメ本文に追記する。
   const {
@@ -212,18 +241,20 @@ export function ResumePane(props: Props) {
       try {
         if (isSupabaseConfigured()) {
           const ownerId = await getCurrentUserId();
-          // R10 Phase 1: 保存直前に科目のデフォルト冊を確保し (オンデマンド)、
-          // その resume_id にピースを紐づける。冊確保が失敗しても note 保存は続行。
-          let resumeId: string | undefined;
-          try {
-            const resume = await ensureDefaultResume(
-              subjectId,
-              subjectName,
-              ownerId,
-            );
-            resumeId = resume.id;
-          } catch (err) {
-            console.error("[レジュメ冊] デフォルト冊の確保失敗 (冊なしで保存):", err);
+          // R10: 入れる冊を決める。Phase 2 でセレクターが選んだ冊 (effectiveTargetId) が
+          // あればそれ、無ければ Phase 1 同様にデフォルト冊をオンデマンド確保する。
+          let resumeId: string | undefined = effectiveTargetId ?? undefined;
+          if (!resumeId) {
+            try {
+              const resume = await ensureDefaultResume(
+                subjectId,
+                subjectName,
+                ownerId,
+              );
+              resumeId = resume.id;
+            } catch (err) {
+              console.error("[レジュメ冊] デフォルト冊の確保失敗 (冊なしで保存):", err);
+            }
           }
           const entry = await insertNoteEntry(
             {
@@ -255,6 +286,7 @@ export function ResumePane(props: Props) {
         sourceMaterialId: materialId,
         sourcePageRange,
         sourceSegmentId: segment?.id,
+        resumeId: effectiveTargetId ?? undefined,
       });
       setOutcome(status);
       setStage("done");
@@ -268,6 +300,7 @@ export function ResumePane(props: Props) {
       materialId,
       sourcePageRange,
       segment,
+      effectiveTargetId,
       onCommitted,
       stopMic,
     ],
@@ -321,6 +354,72 @@ export function ResumePane(props: Props) {
           </div>
         ) : (
           <>
+            {/* R10 Phase 2: 入れる冊セレクター (新規作成時のみ。普段はデフォルトのまま) */}
+            {showBookPicker && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="shrink-0 text-muted-foreground">入れる冊</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 font-medium hover:border-primary"
+                        disabled={
+                          stage === "reviewing" || stage === "committing"
+                        }
+                      />
+                    }
+                  >
+                    {targetBook?.isDefault && (
+                      <Star className="size-3 text-amber-500" fill="currentColor" />
+                    )}
+                    <span>{targetBook?.name ?? "レジュメ"}</span>
+                    <ChevronDown className="size-3" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-[200px]">
+                    {books.map((r) => (
+                      <DropdownMenuItem
+                        key={r.id}
+                        onClick={() => setBookOverride(r.id)}
+                        className="whitespace-nowrap"
+                      >
+                        {r.isDefault && (
+                          <Star
+                            className="size-4 shrink-0 text-amber-500"
+                            fill="currentColor"
+                          />
+                        )}
+                        {r.name}
+                      </DropdownMenuItem>
+                    ))}
+                    {onAddResume && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="whitespace-nowrap"
+                          onClick={() => {
+                            void (async () => {
+                              const name = `${subjectName}レジュメ${
+                                books.length + 1
+                              }`;
+                              const created = await onAddResume(
+                                subjectId,
+                                name,
+                              );
+                              if (created) setBookOverride(created.id);
+                            })();
+                          }}
+                        >
+                          <Plus className="size-4 shrink-0" />
+                          新しい冊を作る
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
+
             {/* 書く欄 */}
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between gap-2">
