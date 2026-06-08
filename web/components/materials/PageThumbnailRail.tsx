@@ -13,7 +13,7 @@
  * (renderPageToCanvas の cancel-token もそのまま効く)。
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { renderPageToCanvas } from "@/lib/admin/pdf-extract-text";
 import { findSegmentForPage } from "@/lib/notes/concept-for-page";
@@ -32,7 +32,8 @@ type Props = {
   onJump: (page: number) => void;
 };
 
-const THUMB_WIDTH = 60; // px (CSS 論理幅、レールを細くできるよう小さめ)
+const THUMB_MIN = 56; // px (細くした時の最小)
+const THUMB_MAX = 400; // px (広げた時の上限、細部確認用)
 
 export function PageThumbnailRail({
   doc,
@@ -47,6 +48,32 @@ export function PageThumbnailRail({
   const slotRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
   const renderedRef = useRef<Set<number>>(new Set());
+
+  // サムネ描画幅。レール (このパネル) の幅に追従させる → レールを広げると大きく＆
+  // くっきり描画され、細かい所まで見える (ito19 要望)。ドラッグ中の再描画連発を防ぐため
+  // 値の更新は debounce する。
+  const [thumbWidth, setThumbWidth] = useState(THUMB_MIN);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const measure = () => {
+      // スクロール領域 p-1(4px*2) + ボタン px-1(4px*2) を引いた実描画幅。
+      const w = Math.round(el.clientWidth - 16);
+      const clamped = Math.max(THUMB_MIN, Math.min(THUMB_MAX, w));
+      setThumbWidth((prev) => (Math.abs(prev - clamped) >= 4 ? clamped : prev));
+    };
+    const ro = new ResizeObserver(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(measure, 150);
+    });
+    ro.observe(el);
+    measure();
+    return () => {
+      if (timer) clearTimeout(timer);
+      ro.disconnect();
+    };
+  }, []);
 
   // IntersectionObserver: 画面に入ったページだけ描画 (遅延)。
   // doc / ページ数が変わったら描画済みをリセットして再描画させる。
@@ -63,7 +90,7 @@ export function PageThumbnailRail({
           if (!canvas) continue;
           renderedRef.current.add(idx);
           // ページ番号は 1-indexed
-          renderPageToCanvas(doc, idx + 1, canvas, THUMB_WIDTH).catch(() => {
+          renderPageToCanvas(doc, idx + 1, canvas, thumbWidth).catch(() => {
             renderedRef.current.delete(idx); // 失敗は次回再試行
           });
         }
@@ -72,7 +99,8 @@ export function PageThumbnailRail({
     );
     for (const el of slotRefs.current) if (el) io.observe(el);
     return () => io.disconnect();
-  }, [doc, numPages]);
+    // thumbWidth が変わったら描画済みをリセットして、見えてるサムネを新しい解像度で再描画。
+  }, [doc, numPages, thumbWidth]);
 
   // 現在ページを可視域へスクロール
   useEffect(() => {
@@ -158,7 +186,6 @@ export function PageThumbnailRail({
               canvasRefs.current[i] = el;
             }}
             className="block w-full rounded-sm border border-border bg-white shadow-sm"
-            style={{ width: THUMB_WIDTH }}
           />
           <span
             className={[

@@ -1943,6 +1943,7 @@ ito19 さん実機評価で **「子どもは"今どこを読んでるか"が見
 - 青枠の手動調整は `block.bbox` に直接焼き込み: ドラッグ中はローカル即追従 (`editGuidedBbox`)、**指を離した時** (`EditableHighlight` の `onCommit`→`commitGuidedBbox`) に 1 回だけ DB 永続化。失敗はログのみ。`guided_plans` が無ければ従来どおりオンデマンド生成にフォールバック。
 - **✅ E2E 実機確認済 (2026-06-07、ito19 さん)**: 法人税(TAC) でまとまりを開く→リロード後も**生成待ちなく即表示** (プラン永続)、青枠をドラッグ調整→**リロード後も位置・サイズ維持** (bbox 焼き込み永続) を確認。
 - 併せて **左サムネレールを細く** (サムネ 84→60px、レール幅をピクセル指定で密着) + **表示/非表示トグル** (操作バー左端、`railVisible`)。`PageThumbnailRail` に**キーボード操作** (↑↓/PageUp/Down/Home/End) も追加済 (前段)。
+- **★2026-06-08: サムネをレール幅に追従させ拡大表示** (ito19 実機「一枚一枚のページが小さすぎる」): `PageThumbnailRail` が ResizeObserver でパネル幅を測り (debounce 150ms)、`thumbWidth` を [56, 400]px にクランプして **その解像度で再描画** (w-full + IntersectionObserver effect の deps に thumbWidth)。レールを広げるとサムネが大きく・くっきりになり細部が読める。`MaterialReadPane` のレール `maxSize` を 240→**420px** に拡大。固定 `THUMB_WIDTH=60` は廃止。
 
 ---
 

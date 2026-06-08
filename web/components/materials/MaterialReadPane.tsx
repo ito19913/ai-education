@@ -1215,7 +1215,7 @@ export function MaterialReadPane({
               id="rail"
               defaultSize={78}
               minSize={66}
-              maxSize={240}
+              maxSize={420}
               className="min-w-0 border-r border-border"
             >
               <PageThumbnailRail
