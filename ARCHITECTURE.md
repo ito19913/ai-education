@@ -1994,6 +1994,38 @@ is_default / created_at / deleted_at) + `note_entries.resume_id`。既存ピー�
 - **Phase 2**: 冊の 追加 / 削除 (デフォルト保護) / デフォルト変更 / 別冊への手動振り分け (R5 呼び出し)。
 - **Phase 3**: 冊のコピー。
 
+#### 実装 (2026-06-08、✅ Phase 1 を実機 E2E 確認済)
+
+grill で残り設計を確定 ((a) 科目タブ / (b) ensure・backfill はオンデマンド / (c) `subject_id`
+は text / (d) 冊名「科目名＋レジュメ」) → 実装 → 本番 DB migration 適用 → 実機確認。
+
+- **migration `20260608000000_init_resumes.sql` (本番適用済)**: 新 `resumes` テーブル
+  (id / owner_id / subject_id **text** / name / is_default / deleted_at) + RLS (本人/admin) +
+  `note_entries.resume_id uuid references resumes(id) on delete set null`。subject_id を text に
+  したのは、ハードコード5教科 (`subj-english` 等の非 UUID) とカスタム科目 (subjects の uuid) の
+  両方を 1 列で受けるため (note_entries.subject_id と同型)。
+- **`lib/notes/resumes-repo.ts` (新規)**: `fetchResumes` / `defaultResumeName(科目名)→"○○レジュメ"` /
+  **`ensureDefaultResume(subjectId, subjectName, ownerId)`** = ①その科目のデフォルト冊を探す
+  ②無ければ作る ③同科目で `resume_id` 未設定の note をその冊へ backfill ④冊を返す (オンデマンド)。
+- **`ResumePane`**: 保存直前に `ensureDefaultResume` を呼び `resumeId` を `insertNoteEntry` に渡す。
+  冊確保が失敗しても note 保存は続行 (耐性)。`notes-repo` は `resume_id` 列が無い環境でもキーごと
+  省いて保存できる (source_segment_id と同じガード)。
+- **`NotesHomeView` (N4 違反是正)**: 上部に**科目タブ** (エントリのある科目のみ、名前は subjects から
+  解決・無ければ「その他」)。選択は「override + 描画時解決」で effect 同期なし
+  (set-state-in-effect 回避)。選んだ科目のエントリだけに絞り、カウント・リスト・体系図すべて
+  科目スコープ。見出しは冊名「○○レジュメ」。表示は **subject_id 絞り**で resume レコードに非依存
+  (Phase 1 は 1 科目 1 冊なので resume_id 不要)。
+- **出典→レジュメ 往復 (ito19 実機フィードバック)**: 読書ビュー (`MaterialReadPane`) ヘッダーに
+  「📒 レジュメを見る」ボタン (`onOpenResume`) → `navigate("notes", { subjectId })` でその教科の
+  レジュメ一覧へ。`NotesHomeView` は `initialSubjectId` で該当タブを初期選択 (navigate は notes view の
+  `?subjectId=` をサポート)。これで「レジュメ→出典を読む→レジュメに戻る」が往復可能に。
+- **✅ E2E**: 英語・法人税の 2 科目で確認。科目タブで切替・「○○レジュメ」見出し・科目スコープ表示
+  (混在なし)・リロード後も冊と resume_id が DB 永続。**型: `Resume` / `NoteEntry.resumeId` 追加**。
+  全 tsc/lint(既知 wasm 13 errors のみ)/build クリア。
+- **★Phase 2 への申し送り**: 既存データで「NotebookLM (税務 AI 教材) のレジュメ」が英語タブに居る
+  ケースを実機確認。これは登録時の subjectId が `subj-english` のため (タブ機能は正しく分類)。
+  別科目/別冊へ移したいケースは Phase 2「別冊への振り分け」で扱う。
+
 ---
 
 ## ゆい→葵への申し送り（TutorHandoff）
