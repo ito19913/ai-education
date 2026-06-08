@@ -1043,7 +1043,8 @@ C61 直後、ito19 さん指示「C58 以降全体を mock に反映 (第 1 段�
 - migration **不要** (Phase 1 のテーブルで足りる)。全 tsc/lint(既知 wasm 13)/build クリア。**ito19 実機確認済「OK」**。
 - **【✅ 科目付け間違いの修正「科目を直す」も実装済 (`d834192`)】**: Phase 2 grill Q6 で別件に切り出した NotebookLM 救済。カードの ⋯ に「科目を直す」→ 現在以外の全科目から選ぶと、その科目のデフォルト冊へ着地 (subject_id+resume_id 更新、出典そのまま)。`resumes-repo.moveEntryToSubject` + `handleMoveEntryToSubject` (ensureDefaultResume で着地冊確保)。tsc/lint/build クリア。
 - **【✅ 「ヒントちょうだい」も実装済 (R4、`8902aed`)】**: 書く pane の「💡 ヒント」で葵が教材(vision)+概念+書いた本文を見て**答えは言わず糸口を1つ**返す。grill 確定どおり**押すごとに段階的に濃く** (hintLevel+既出ヒントを葵に渡す、答えは最後まで言わない)。`note-gate-claude.getResumeHint` (Opus、max_tokens 300) + ResumePane の水色ヒントボックス (まとまり切替でリセット、mock 付)。これで R4 (音声+ヒント) 完全実装。tsc/lint/build クリア。
-- **【★次にやる候補】**: R10 Phase 3 (冊のコピー) / 2 周目 G-C で自分のレジュメ改稿 / 文字起こしを葵が整える「整える」/ 図クリップ。
+- **【✅ R10 Phase 3 = 冊のコピー も実装済 (`0f1006d`、R10 全 Phase 完結)】**: 冊タブ ⋯「この冊をコピー」(全冊) → 同科目に新冊 (is_default=false) を作り中身を新 id で全複製 (出典/本文/status/メモそのまま、コピー先は元と独立)。`resumes-repo.copyResume` + `handleCopyResume` + bookDialog copy モード (名前初期値「○○ のコピー」)。tsc/lint/build クリア。**★これで R10 (Phase1/2/3 + 科目修正) 完結。**
+- **【★次にやる候補】**: 2 周目 G-C で自分のレジュメ改稿 / 文字起こしを葵が整える「整える」/ 図クリップ。
 
 ← 以下は同日 Phase 1: **R10 レジュメ(冊)管理 Phase 1 + 出典→レジュメ往復 を実装・E2E 確認済・コミット済 (`74e46a7`)★**:
 
