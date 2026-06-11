@@ -30,6 +30,7 @@ import {
   Star,
   Plus,
   Lightbulb,
+  Wand2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -41,7 +42,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
-import { reviewResume, getResumeHint } from "@/lib/notes/note-gate-claude";
+import {
+  reviewResume,
+  getResumeHint,
+  tidyResumeBody,
+} from "@/lib/notes/note-gate-claude";
 import type { ResumeReviewResult } from "@/lib/notes/note-gate-claude";
 import { suggestResumeTemplate } from "@/lib/notes/template-claude";
 import {
@@ -49,6 +54,7 @@ import {
   addCustomDeclaration,
   buildFallbackTemplate,
   loadCustomDeclarations,
+  tidyTranscriptFallback,
 } from "@/lib/notes/declarations";
 import {
   insertNoteEntry,
@@ -252,6 +258,40 @@ export function ResumePane(props: Props) {
     if (listening) stopMic();
     else startMic(appendVoice);
   }, [listening, startMic, stopMic, appendVoice]);
+
+  // R11-③「整える」: 音声文字起こし・勢い書きを、子の言葉のまま記法だけ整える (R2 厳守)
+  const [tidyLoading, setTidyLoading] = useState(false);
+  const handleTidy = useCallback(async () => {
+    const text = body.trim();
+    if (text.length === 0) return;
+    stopMic(); // 整える間に追記されると上書き競合するので止める
+    setTidyLoading(true);
+    setErrorMsg(null);
+    try {
+      let tidied: string;
+      if (useClaude) {
+        try {
+          tidied = await tidyResumeBody({
+            conceptName,
+            subjectName,
+            childBody: text,
+            declarations,
+          });
+        } catch (err) {
+          console.error("[レジュメ] 整える失敗、簡易整形に:", err);
+          tidied = tidyTranscriptFallback(text);
+        }
+      } else {
+        tidied = tidyTranscriptFallback(text);
+      }
+      if (tidied.length > 0) {
+        setBody(tidied);
+        setStage((s) => (s === "reviewed" ? "writing" : s));
+      }
+    } finally {
+      setTidyLoading(false);
+    }
+  }, [body, conceptName, subjectName, declarations, stopMic]);
 
   // まとまりが変わったら書き直し (続きなら既存本文を初期値に)。
   const segKey = segment?.id ?? conceptName;
@@ -642,6 +682,28 @@ export function ResumePane(props: Props) {
                       <span>{listening ? "停止" : "話す"}</span>
                     </Button>
                   )}
+                  {/* R11-③: 話した/書いた本文を、子の言葉のまま記法だけ整える */}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleTidy()}
+                    disabled={
+                      tidyLoading ||
+                      body.trim().length === 0 ||
+                      stage === "reviewing" ||
+                      stage === "committing"
+                    }
+                    className="gap-1.5"
+                    title="言い回しは変えずに、宣言・番号・改行だけ整えるよ"
+                  >
+                    {tidyLoading ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Wand2 className="size-4" />
+                    )}
+                    <span>整える</span>
+                  </Button>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">

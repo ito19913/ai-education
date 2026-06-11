@@ -80,6 +80,18 @@ export function allDeclarations(
   return [...base, ...custom.filter((c) => !base.includes(c))];
 }
 
+/**
+ * flag off / AI 失敗時の「整える」簡易版 (R11-③)。フィラー除去 + 文末で改行のみ。
+ * 内容には触らない (R2)。
+ */
+export function tidyTranscriptFallback(text: string): string {
+  return text
+    .replace(/(えーと|えっと|あのー|あのう|なんか、|まあ、)/g, "")
+    .replace(/。(?!\n)/g, "。\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /** flag off / AI 失敗時の固定テンプレ (宣言と番号枠だけ、中身なし = R3 整合)。 */
 export function buildFallbackTemplate(
   subjectId: string,
