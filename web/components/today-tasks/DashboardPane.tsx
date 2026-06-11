@@ -226,6 +226,27 @@ export function DashboardPane({
       m.kind === "assignment" && (m.assignmentStatus ?? "todo") === "todo",
   ).length;
 
+  // 📅 宿題・テストの提出日 → 予定カレンダー自動マーカー (2026-06-11)。
+  // 「まだ」のものだけ (やったら消える)。教材側が真実の情報源、カレンダーに行は作らない。
+  const assignmentMarkers = useMemo(
+    () =>
+      materials
+        .filter(
+          (m) =>
+            m.kind === "assignment" &&
+            (m.assignmentStatus ?? "todo") === "todo" &&
+            !m.deletedAt &&
+            !!m.dueDate,
+        )
+        .map((m) => ({
+          id: m.id,
+          name: m.name,
+          dueDate: m.dueDate!,
+          isTest: m.assignmentType === "test",
+        })),
+    [materials],
+  );
+
   const activePlanCount = planTasks.length;
   const overduePlanCount = planTasks.filter((t) => t.overdue).length;
 
@@ -576,8 +597,8 @@ export function DashboardPane({
           </CardContent>
         </Card>
 
-        {/* 予定 (手動イベントだけの正直な表示。リスト/カレンダー トグル) */}
-        <SchedulePanel calendar={calendar} />
+        {/* 予定 (手動イベント + 宿題・テスト提出日の自動マーカー。リスト/カレンダー トグル) */}
+        <SchedulePanel calendar={calendar} assignments={assignmentMarkers} />
 
         {/* 📌 課題セクション (open 上位 5 + すべて見る→issues) */}
         <Card>

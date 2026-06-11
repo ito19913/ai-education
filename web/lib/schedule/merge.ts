@@ -7,6 +7,11 @@
  * - 勉強タスクは kind="study" のラベル (勉強) に自動で紐づく (色・名前はそのラベルから)。
  * - 手動イベントは labelId のラベルから色・名前・試験フラグ (kind="exam") を引く。
  * - 並びは 日付昇順 → 終日(時刻なし)を先 → 時刻昇順。
+ *
+ * 2026-06-11 追加: 宿題・テストの提出日マーカー (AssignmentMarker) を自動マージ。
+ * 教材側 (materials.due_date) が真実の情報源で、カレンダーには行を作らない (導出のみ、
+ * 二重管理しない)。テスト = kind="exam" ラベルの色 (「あと◯日」付き)、宿題 = 名前に
+ * 締切/提出を含む normal ラベルの色。リスト/カレンダーでは編集不可 (編集は宿題側で)。
  */
 import type {
   CalendarEvent,
@@ -14,6 +19,16 @@ import type {
   EventLabelColor,
   ScheduleItem,
 } from "@/lib/learn/types";
+
+/** 宿題・テスト由来の自動マーカー (DashboardPane が materials から導出して渡す)。 */
+export type AssignmentMarker = {
+  /** Material.id */
+  id: string;
+  name: string;
+  /** YYYY-MM-DD (提出日 / テスト日) */
+  dueDate: string;
+  isTest: boolean;
+};
 
 export type CalendarEntry = {
   id: string;
@@ -25,7 +40,7 @@ export type CalendarEntry = {
   labelName: string;
   /** 試験ラベル (kind="exam") か。リストで「あと◯日」を出す。 */
   isExam: boolean;
-  source: "study" | "event";
+  source: "study" | "event" | "assignment";
   /** 勉強タスクの所要分 (あれば) */
   estimateMinutes?: number;
   /** 勉強タスクの完了状態 (done なら淡く表示) */
@@ -42,6 +57,8 @@ export function mergeCalendarEntries(
   studyItems: ScheduleItem[],
   events: CalendarEvent[],
   labels: EventLabel[],
+  /** 宿題・テストの提出日マーカー (2026-06-11、導出のみ・行は作らない) */
+  assignments: AssignmentMarker[] = [],
 ): CalendarEntry[] {
   const studyLabel = findStudyLabel(labels);
   const studyColor: EventLabelColor = studyLabel?.color ?? "blue";
@@ -78,7 +95,29 @@ export function mergeCalendarEntries(
       };
     });
 
-  return [...studyEntries, ...eventEntries].sort((a, b) => {
+  // 宿題・テストの提出日マーカー (テスト = exam ラベル色 + あと◯日 / 宿題 = 締切・提出ラベル色)。
+  // ラベルは改名されうるので kind / 名前キーワードで引き、無ければ固定色フォールバック。
+  const examLabel =
+    labels.find((l) => l.kind === "exam" && !l.deletedAt) ?? null;
+  const dueLabel =
+    labels.find(
+      (l) => l.kind === "normal" && !l.deletedAt && /締切|提出/.test(l.name),
+    ) ?? null;
+  const assignmentEntries: CalendarEntry[] = assignments.map((a) => ({
+    id: `assignment-${a.id}`,
+    title: a.isTest ? a.name : `${a.name}（提出）`,
+    date: a.dueDate,
+    color: a.isTest
+      ? (examLabel?.color ?? "violet")
+      : (dueLabel?.color ?? "orange"),
+    labelName: a.isTest
+      ? (examLabel?.name ?? "試験")
+      : (dueLabel?.name ?? "締切・提出"),
+    isExam: a.isTest,
+    source: "assignment" as const,
+  }));
+
+  return [...studyEntries, ...eventEntries, ...assignmentEntries].sort((a, b) => {
     if (a.date !== b.date) return a.date.localeCompare(b.date);
     // 終日 (時刻なし) を先に、時刻ありは時刻昇順
     const at = a.time ?? "";

@@ -19,7 +19,10 @@ import type {
   EventLabelColor,
 } from "@/lib/learn/types";
 import type { CalendarEventInput } from "@/lib/schedule/calendar-events-repo";
-import { mergeCalendarEntries } from "@/lib/schedule/merge";
+import {
+  mergeCalendarEntries,
+  type AssignmentMarker,
+} from "@/lib/schedule/merge";
 import { ScheduleList } from "./ScheduleList";
 import { ScheduleCalendar } from "./ScheduleCalendar";
 import { EventDialog } from "./EventDialog";
@@ -42,20 +45,28 @@ export type CalendarApi = {
 
 type Props = {
   calendar: CalendarApi;
+  /** 宿題・テストの提出日マーカー (2026-06-11、自動マージ・編集不可) */
+  assignments?: AssignmentMarker[];
   now?: Date;
 };
 
-export function SchedulePanel({ calendar, now }: Props) {
+export function SchedulePanel({ calendar, assignments, now }: Props) {
   const [mode, setMode] = useState<"list" | "calendar">("list");
   const [eventDialogOpen, setEventDialogOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [labelDialogOpen, setLabelDialogOpen] = useState(false);
 
   // 2026-06-10: 勉強モック (studyItems) のマージを撤去。手動イベントだけの正直な表示に。
-  // (将来、宿題・テストの提出日マーカーをここに自動マージする = Phase 3)
+  // 2026-06-11: 宿題・テストの提出日マーカーを自動マージ (教材側が真実、行は作らない)。
   const entries = useMemo(
-    () => mergeCalendarEntries([], calendar.events, calendar.labels),
-    [calendar.events, calendar.labels],
+    () =>
+      mergeCalendarEntries(
+        [],
+        calendar.events,
+        calendar.labels,
+        assignments ?? [],
+      ),
+    [calendar.events, calendar.labels, assignments],
   );
 
   // 新規予定の初期ラベル: 「遊び・予定」優先 → 任意の normal → 先頭
