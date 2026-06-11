@@ -3158,6 +3158,110 @@ migration 2 本本番適用 + REST 検証済)。grill は AskUserQuestion で 1 
 
 ---
 
+## ダッシュボード化 + 予定 + 宿題・テスト + 新プラン + 学習履歴 (2026-06-09〜06-11、★実装・migration 5 本適用済★)
+
+ito19 さん実機フィードバックの連続 grill で、アプリの「日常の入口」を全面再設計した大型セッション。
+トップ = ダッシュボード = 唯一のハブになり、旧 Phase 5 Plan Engine は丸ごと廃棄された。
+
+### ① トップ = ダッシュボード (ハブ化、メニュー大幅削減)
+
+- `/tutor` の default ビュー = **DashboardPane** (`components/today-tasks/DashboardPane.tsx`)。
+  旧 `today-tasks` ビューも互換 alias として同じダッシュボードを表示。
+- **左メニューは「ダッシュボード」ボタン 1 つだけ** (TutorChat の TutorHubMenu)。
+  撤去 = 今日のタスク / 課題 / 先生▼ / もっと▼ / 教材 / レジュメ / プラン。
+  **廃止 = 週次/月次レポート・帰宅儀式** (記録系はダッシュボード下部「これまでの記録」帯
+  = 対話の履歴 / 学習の履歴 / 振り返りログ)。
+- 構成 (上から、全ブロック max-w-5xl 中央寄せで幅統一):
+  **今日のタスク (= 新プランの先頭まとまり) → 宿題・テスト → 予定 → 課題 (Issue 上位5) →
+  教材 (本棚サムネ横並び) → レジュメ (横型・理解済み/要振り返り) → プラン (サマリーリスト) → 記録帯**。
+- 画面に出るものは**すべて実データ** (モックの今日のタスク 4 件・進捗バー・「AI と相談」・
+  予定の勉強モックマージは撤去済)。
+
+### ② 予定 (何でも入る 1 本のカレンダー、grill 確定)
+
+- 勉強専用 → **何でも入れる** (遊び・試験・締切・習い事)。**ラベル** = {名前, 色(固定パレット10色), kind}
+  で見分け。デフォルト 5 (勉強[kind=study・削除保護]/試験[kind=exam・「あと◯日」]/締切・提出/遊び・予定/習い事)
+  をオンデマンドシード。改名・色変更・追加・削除可。
+- 「＋予定を追加」(タイトル/日付/ラベル/時間任意/メモ任意) + 行クリック編集・削除。
+  リスト (日付グルーピング) ⇆ カレンダー (2 週間・色ドット) トグル。
+- migration: `20260609000000_init_event_labels.sql` + `20260609010000_init_calendar_events.sql` (適用済)。
+  repo: `lib/schedule/event-labels-repo.ts` / `calendar-events-repo.ts` / `merge.ts`。
+  UI: `SchedulePanel` / `ScheduleList` / `ScheduleCalendar` / `EventDialog` / `LabelManagerDialog`、
+  色は `lib/learn/event-colors.ts` (Tailwind 静的クラス)。
+- ★base-ui の Select は値をそのまま表示する→ `SelectValue` に関数 children で名前+色ドットへ変換
+  (EventDialog で uuid 生表示になった実機バグの教訓)。
+
+### ③ 教材 2 エリア化 + 宿題・テスト (kind="assignment"、grill 確定)
+
+- Material を 1 エンティティのまま **kind** で分岐: `book` (本棚・まとまり・ガイド読書あり) /
+  `assignment` (**宿題・テスト**。リスト表示・提出日・状態 [まだ/やった]・**重い処理オフ**)。
+  呼び名は Issue (=「課題」) と衝突しないよう「宿題・テスト」。
+- 教材ペイン = 上部タブ **[本棚 | 宿題・テスト]** (縦積みだと下が遠い、ito19 さん指摘)。
+  宿題・テスト側: フィルタ (まだ/やった/すべて・種類・科目) + 並び替え (新しい順/提出日順/科目順) +
+  **やったは既定で非表示** + 行頭に科目ラベル。
+- 登録/編集 = `AssignmentDialog` (PDF は**ドラッグ＆ドロップ**任意・後から差し替え可・削除あり)。
+  **「学習する」は PDF がある行のみ** (無ければ disabled) → 読書ビューで葵と解く。
+- ダッシュボードにも宿題・テストセクション (まだ上位 5・提出日近い順・「すべて見る」→ `?tab=assignments`)。
+- migration: `20260609020000_add_material_kind_assignment.sql` (適用済)。
+  repo: `insertAssignment` / `updateAssignment` / `updateAssignmentStatus` (materials-repo)。
+
+### ④ 新プラン (ザックリ・まとまりキュー型、grill 確定。旧 Phase 5 Plan Engine 丸ごと廃棄)
+
+ito19 さんの経験則「1〜2 ヶ月先の計画は計画通りに進まない」から、**予定表を守らせる計画**を捨て、
+**順番に進む待ち行列**へ転換。
+
+- **プラン = 教材単位** `StudyPlan { subjectId, materialId, endsAt, status, skippedSegmentIds, countFrom? }`。
+  教材詳細の **「プランに組み込む」→ 期間を選ぶだけ** (PlanAddDialog、対話なし 10 秒。
+  参考ペース「週◯まとまり目安」は事実だけ・煽らない)。**まとまり未生成の教材は組み込めない**。
+- **キュー = ConceptSegment を上から順** (前付け除外・startPdfPage 昇順)。
+  **「済み」はレジュメから導出** (`lib/plans/plan-progress.ts`: そのまとまりのレジュメが understood
+  = 済み。順不同 OK・プラン作成前の理解済みも有効) **+ 手動スキップ**。プラン側に完了フラグを持たない
+  (レジュメが真実の情報源、二重管理しない)。先頭 = 最初の未済。
+- **今日のタスク = 各アクティブプランの先頭 1 個が常駐** (完了で即次が出る・1 日複数 OK・
+  未完了でも溜まらない/負債表示しない)。「学習する」→ 読書ビューの該当まとまり (`&unit=1`)。
+- **期間 = チェックポイント** (予定表ではない)。期限超過でカードが 3 択
+  **[延長する / ここで終了 / 最初からやり直す (2周目)]** に変わる。ブロックしない。
+  2 周目 = 旧プラン completed + 新プラン `countFrom=now` → countFrom 以降に **updated_at** が進んだ
+  レジュメだけ済みに数える (G-C の既存エントリ深化更新と整合。NoteEntry.updatedAt を repo でマップ)。
+- migration: `20260610000000_init_plans.sql` (適用済)。UI: `PlansView` (カード+まとまり一覧+スキップ+3択) /
+  `PlanAddDialog` / 教材詳細プランカード / ダッシュボードのプランサマリー (科目+教材名+進捗バー+あと◯日)。
+- **廃棄したもの**: PlanEngineDashboard (ファイル削除) / chat 内計画立案フロー (subject→duration→
+  weak-nodes→confirm。計画系発話は新プラン画面への案内に一本化) / detectPlanTypeFromUtterance /
+  monthlyRoadmap・GeneratedTask 月次展開・Replan・モード配分の実運用 (型・mock は他参照が残るため残置)。
+  朝の定例声かけは既に C63 で廃止済みを確認 (`MORNING_MODE_ENABLED=false`)。
+
+### ⑤ 学習履歴 (出来事ログ + 学習時間、grill 確定。「タスク任意・履歴は自動必須」)
+
+- **今日のタスクを作らず学習しても、履歴は自動で残る**。
+  - **learning_logs** (不変ログ): read (ガイド読書開始、同まとまり 1 日 1 回に丸め) /
+    resume-draft (今日はここまで) / resume-done (仕上げた) / review-promote (open→understood 昇格) /
+    assignment-done (宿題やった)。フックは TutorWorkspace の handleNoteAdded / handleNoteUpdated /
+    handleToggleAssignmentStatus + MaterialReadPane.startGuided。
+  - **study_minutes** (日×教材の分): 読書ビューの**アクティブ時間ハートビート** =
+    タブ可視 && 直近 3 分以内に操作 (pointer/key/wheel) がある時だけ毎分 +1。
+    セッション開始/終了の境界問題を構造的に回避し、離席・放置を数えない正直な数字。
+- 表示 = `LearningHistoryView` (旧セッション型 HistoryView モックを司令室では置換):
+  上部「今日 ◯分・◯件」「この 7 日間 ◯時間◯分」+ 日別の足あと (アイコン+科目+タイトル+時刻)。
+- migration: `20260610010000_init_learning_logs.sql` (適用済)。repo: `lib/history/learning-logs-repo.ts`。
+
+### 細かい改善 (同期間)
+
+- 教材詳細ヘッダーに**表紙サムネ** (本棚と同じ cover_thumb、w-24。無ければアバター fallback)。
+- レジュメ: **エントリのある科目に起動時デフォルト冊を自動確保** (英語で「冊を追加」が出ない
+  実機バグの解消 = R10 以前のエントリは resume レコードが無く冊タブ自体が非表示だった)。
+- navigate() に `tab` (教材ペイン初期タブ) / `unit` (まとまり選択で開く) パラメータ追加。
+
+### 未実装・次の候補 (このブロック起点)
+
+- **Phase B: 勉強開始 chat 儀式** (「おかえり、今日なにやる?」で宿題を選ぶ「その日決める枠」。
+  今日のタスクは 自動枠=プラン先頭 + その日決める枠 の 2 層構想)。
+- 宿題・テストの提出日 → 予定カレンダー自動マーカー (締切/試験ラベル)。
+- 宿題専用「AI と解く」画面 (現状は本用読書ビューを流用)。
+- 旧 today-tasks 系の残骸整理 (`/today-tasks` 独立ページ・ScheduleHeader・ScheduleMiniCalendar・
+  TodayTaskList・HistoryView は標準ページ用に残置)。
+
+---
+
 ## 設計の核（一行で）
 
 > ログインしたら **ゆい先生（純粋コーチ）** の **司令室（左ペイン chat + 右ペイン動的展開）** に着く。**朝の振り返り** で昨日 / 学校 / 気分 / 疑問 / 今日の計画を語り、**「何が分からないか分からない」を言語化する「掘り起こし」** で課題を発見、**葵先生（科目）への申し送りドキュメント (TutorHandoff)** を介して **IssueChat（課題ごとの個別 chat）** に展開、対話で潰す。**長期 + 週次ゴールのコーチング契約** が学習リズムを支え、**日次 / 週次 / 月次の振り返り** が自走に近づける。**「教えない、引き出す。環境（時間・場・儀式）は決めてあげる、対話の中身はコーチング」**。
