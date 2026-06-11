@@ -3253,12 +3253,58 @@ ito19 さんの経験則「1〜2 ヶ月先の計画は計画通りに進まな�
 
 ### 未実装・次の候補 (このブロック起点)
 
-- **Phase B: 勉強開始 chat 儀式** (「おかえり、今日なにやる?」で宿題を選ぶ「その日決める枠」。
-  今日のタスクは 自動枠=プラン先頭 + その日決める枠 の 2 層構想)。
+- ~~**Phase B: 勉強開始 chat 儀式**~~ → ✅ 2026-06-11 grill B-1〜B-8 確定 + 実装済 (次節)。
 - 宿題・テストの提出日 → 予定カレンダー自動マーカー (締切/試験ラベル)。
 - 宿題専用「AI と解く」画面 (現状は本用読書ビューを流用)。
 - 旧 today-tasks 系の残骸整理 (`/today-tasks` 独立ページ・ScheduleHeader・ScheduleMiniCalendar・
   TodayTaskList・HistoryView は標準ページ用に残置)。
+
+---
+
+## Phase B: 勉強開始 chat 儀式「おかえり、今日なにやる?」(2026-06-11、grill B-1〜B-8 確定 + 実装済)
+
+今日のタスクを **2 層** にする: 上段 = 自動枠 (各プランの先頭まとまり、既存) + 下段 =
+**「その日決める枠」**。子がゆいとの軽い chat 儀式で「今日やる宿題・まとまり」を選ぶ。
+
+### grill 確定 (B-1〜B-8)
+
+| # | 論点 | 確定 |
+|---|---|---|
+| B-1 | 発火入口 | **その日最初の chat 挨拶が「おかえり! 今日なにやる?」化** + ダッシュボード「＋ゆいと決める」ボタンの二重入口。強制なし (帰宅儀式廃止の教訓)、無視しても普通に使える |
+| B-2 | 選べる対象 | **宿題・テスト (まだ) + プラン外の本のまとまり**。プラン中の本は自動枠が受け持つので出さない |
+| B-3 | 本の粒度 | 本を選んだら **chat 内のまとまりピッカーで選ばせる** (済み ✓ バッジ、おすすめ = 最初の未済を先頭ハイライト、どれでも選べる)。まとまり未生成の本は候補外 |
+| B-4 | 永続化 | 新テーブル **`daily_picks`** (migration `20260611000000`)。**完了フラグは持たず導出** (宿題 = status やった / まとまり = レジュメ understood)。プランの「二重管理しない」規律と同型 |
+| B-5 | 持ち越し | **完了するか子が「やめとく」で外すまで残る**。否定バッジなし (F1)。完了日は ✓ 表示 → 翌日消える (fetch 時に自動掃除)。重複選択不可 |
+| B-6 | 儀式フロー | ピッカーカード 1 枚 (宿題上位 5 提出日順 / プラン外の本) → 選ぶたび追加「他にもやる?」→ 複数 OK →「今日はプランだけでいい」で断れる |
+| B-7 | ダッシュボード | 既存「今日のタスク」カード内 2 段 (上 = プラン先頭、下 = 「きょう決めたこと」) + ヘッダー「＋ゆいと決める」。picks 0 件の日は下段非表示 |
+| B-8 | 初回判定 | **今日の thread 未存在 = その日最初** (既存 1 日 1 chat に乗る、新フラグ不要)。候補 0 件は通常挨拶フォールバック。2 回目以降のボタンも同じ儀式 |
+
+### 実装 (2026-06-11)
+
+- **DB**: `daily_picks { id, owner_id, material_id (FK materials cascade), segment_id text?, completed_at?, removed_at?, created_at }` + RLS 既存同型。
+  `completed_at` は「完了を観測した時刻」の**表示用キャッシュ** (真実は宿題 status / レジュメ)。
+  repo = `lib/today/daily-picks-repo.ts` (fetch 時に「昨日以前に完了した pick」へ removed_at を入れて自動掃除)。
+- **型**: `DailyPick` + `TutorCard` に `day-picker` / `day-segment-picker` (候補はカード作成時に埋め込む、既存ピッカーと同型)。
+- **カード**: `components/tutor/cards/DayPickerCard.tsx` (宿題 + 本の 2 セクション、選択済みは ✓ 無効化) /
+  `DaySegmentPickerCard.tsx` (済み ✓ + ⭐おすすめ先頭ハイライト + 全選択可)。
+- **TutorWorkspace** (中核):
+  - `dayPicks` state + fetch (mock は in-memory)。`materialsLoaded`/`plansLoaded`/`dayPicksLoaded` フラグ追加。
+  - **初回挨拶**: tutor-mock の morning 挨拶を「今日なにやる?」化 (quickReplies に「今日やることを決める」)。
+    `tutorInit.freshToday` (= 今日の thread が無かった) + データロード完了で、ゆいの挨拶に続けて
+    day-picker カードを 900ms 後に 1 回だけ append (候補 0 件なら出さない = B-8)。
+  - **キーワード intercept**: generateReply の冒頭で「今日やること/今日なにやる/他にもやる」→ 儀式カード、
+    「今日はプランだけ/今日はこれでOK」→ 締め発話。**ゆいの state machine は通さない**
+    (候補が workspace の実データからしか作れない + 会話文脈を壊さない)。
+    text は Claude シーン `day-start` / `day-close` で言い換え (flag on 時、失敗は mock 維持)。
+  - **pick 操作**: `onPickDayAssignment` / `onPickDayBook` (→ まとまりピッカー) / `onPickDaySegment`。
+    選ぶたび「入れたよ📌 他にもやる?」+ quickReplies [他にもやる / 今日はこれでOK]。
+  - **完了観測**: learning_logs と同じ実アクションフック = `handleToggleAssignmentStatus` (done→observe / todo→取消) +
+    `handleNoteAdded` / `handleNoteUpdated` (understood で observe)。
+- **DashboardPane**: 今日のタスクカード 2 段化。下段「きょう決めたこと」(0 件非表示) = 科目ラベル +
+  宿題/テスト chip + 学習する (segment は page+unit、宿題は PDF ある時のみ) + 宿題「やった」+
+  「やめとく」✕。完了行は ✓ + エメラルド。ヘッダー右「＋ゆいと決める」→ 左 chat に儀式カード。
+- **TutorChat / TutorMessageBubble / RightPaneRouter / TutorArchiveView**: props 配線
+  (`dayPickedKeys` で重複選択防止、archive は readonly no-op)。
 
 ---
 
