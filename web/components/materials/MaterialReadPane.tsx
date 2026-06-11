@@ -45,6 +45,12 @@ import {
 import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
 import { buildScanSegments } from "@/lib/admin/scan-segment-builder";
 import { buildGuidedReadingPlan } from "@/lib/admin/guided-reading-claude";
+import {
+  buildAssignmentProblemPlan,
+  detectAssignmentIssues,
+  type DetectedAssignmentIssue,
+} from "@/lib/admin/assignment-solve-claude";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { getSessionPdf, setSessionPdf } from "@/lib/admin/session-pdf-store";
 import { downloadMaterialPdf } from "@/lib/materials/pdf-storage";
 import {
@@ -71,7 +77,15 @@ import {
 } from "@/lib/notes/concept-for-page";
 import { SubjectTeacherAvatar } from "@/components/ui/subject-teacher-avatar";
 import { MarkdownText } from "@/components/chat/MarkdownText";
-import { NotebookPen, Play, ListChecks, Check } from "lucide-react";
+import {
+  NotebookPen,
+  Play,
+  ListChecks,
+  Check,
+  CircleCheck,
+  Mic,
+  MicOff,
+} from "lucide-react";
 import type {
   AiExtractedNode,
   ConceptSegment,
@@ -115,6 +129,13 @@ type Props = {
   onLogRead?: (segmentId: string, conceptName: string) => void;
   /** 学習履歴 (2026-06-10): アクティブ 1 分ごとのハートビート (+1 分) */
   onStudyMinute?: () => void;
+  /**
+   * 宿題「AI と解く」(2026-06-11 grill 確定): 解説セッション末に葵が検知した
+   * つまずきを親へ渡す (親が Issue として自動登録、監修なし)。
+   */
+  onAssignmentIssues?: (found: DetectedAssignmentIssue[]) => void;
+  /** 宿題「AI と解く」: 子が「ぜんぶ解けた!」と宣言した時 (親が assignmentStatus=done に) */
+  onAssignmentDone?: () => void;
 };
 
 // まとまり全体を vision で渡す時の最大ページ数 (payload / 速度の上限、M8)。
@@ -154,6 +175,9 @@ const sessionGuidedPlanCache = new Map<string, GuidedBlock[]>();
 
 // ガイド読書のブロックプラン生成で vision に渡すまとまりページの上限 (大きすぎるまとまり対策)。
 const GUIDED_MAX_PAGES = 16;
+
+// 宿題「AI と解く」: 問題ブロック検出で vision に渡すページ上限 (宿題は数ページが普通)。
+const ASSIGNMENT_MAX_PAGES = 12;
 
 /** 範囲 [start,end] のページを最大 max 枚に均等サンプリングして返す。 */
 function sampleRangePages(pages: number[], max: number): number[] {
@@ -322,9 +346,15 @@ export function MaterialReadPane({
   onAddResume,
   onLogRead,
   onStudyMinute,
+  onAssignmentIssues,
+  onAssignmentDone,
 }: Props) {
   // 狭い画面では縦スタック (rail は隠す)、広い画面では横3ペイン。
   const isMobile = useIsMobile();
+
+  // 宿題「AI と解く」モード (2026-06-11 grill 確定): 紙で解いた宿題・テストを
+  // 葵が 1 問ずつ全問解説する伴走。まとまり/レジュメ/ガイド読書の本用 UI は出さない。
+  const assignmentMode = (material.kind ?? "book") === "assignment";
 
   const [loaded, setLoaded] = useState<LoadedPdf | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -373,6 +403,9 @@ export function MaterialReadPane({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  // 音声で質問 (R4 と同じ Web Speech API。宿題「AI と解く」の質疑応答は音声メイン。
+  // 本の読書でも使えるよう常時表示、非対応ブラウザでは 🎤 を出さない)。
+  const speech = useSpeechRecognition();
 
   // まとまり (一単元=1概念) 区切り。
   // 優先: DB 永続 (material.conceptSegments) → セッション内でその場生成した localSegments。
@@ -496,6 +529,9 @@ export function MaterialReadPane({
   // 再実行→ cleanup で in-flight をキャンセル→ segmenting=true のまま固まる (実機バグ)。
   // 再入防止は attemptedSegmentation (module Set) が担うので state を deps に入れない。
   useEffect(() => {
+    // 宿題・テストは「まとまり」を作らない (登録時スキップと同じ判断。
+    // 解く単位は問題ブロック = buildAssignmentProblemPlan が担う)。
+    if (assignmentMode) return;
     const hasPersisted =
       !!material.conceptSegments && material.conceptSegments.length > 0;
     if (hasPersisted || !loaded) return;
@@ -735,7 +771,11 @@ export function MaterialReadPane({
         ? "これは本文の補足 (POINT/MEMO など) だよ。本文の要点をおさらいする感じで、"
         : "";
       const posText = block.positionHint ? `（${block.positionHint}あたり）` : "";
-      const userMessage = `（ガイド読書）${suppText}次は「${block.label}」${posText}を ${levelText} 説明して。今このブロックだけに絞って、長くなりすぎないように。最後に「ここまで大丈夫? 次に行く?」と一言添えてね。`;
+      // 宿題「AI と解く」: 解き終わった問題の解説 (解答はワークにある前提なので答えを
+      // 隠さない。①考え方 ②筋道 ③答えの確認 → 「合ってた?」は子の自己申告)。
+      const userMessage = assignmentMode
+        ? `（宿題の解説）問題「${block.label}」${posText}を ${levelText} 解説して。①この問題の考え方 → ②解き方の筋道 → ③答えの確認、の順で、この問題だけに絞って。最後に「答え、合ってた?」と聞いてね。計算や答えに確信が持てない時は「ここは学校の解答でも確認してね」と一言添えること。`
+        : `（ガイド読書）${suppText}次は「${block.label}」${posText}を ${levelText} 説明して。今このブロックだけに絞って、長くなりすぎないように。最後に「ここまで大丈夫? 次に行く?」と一言添えてね。`;
       const aiText = await respondViaAokiChat({
         materialName: material.name,
         subjectName: subject?.name ?? "教科",
@@ -748,7 +788,7 @@ export function MaterialReadPane({
       });
       setHistory((prev) => [...prev, { role: "assistant", text: aiText }]);
     },
-    [loaded, spread, packPages, material, subject, history],
+    [loaded, spread, packPages, material, subject, history, assignmentMode],
   );
 
   // 入口の一覧から まとまり を選んだ時: ガイド読書を開始 (ブロックプラン生成 → 最初を解説)。
@@ -879,6 +919,163 @@ export function MaterialReadPane({
     setPendingSegment(null);
     void startGuided(seg);
   }, [pendingSegment, startGuided]);
+
+  // ----- 宿題「AI と解く」(2026-06-11 grill 確定) -----
+  // 「一緒に解く」: 問題ブロックを検出 (1 回だけ・guided_plans に永続化) して伴走を開始。
+  // 進行状態は保存しない (紙が真実の情報源)。子が問題を選んで「この問題を解説」で進む。
+  const startAssignment = useCallback(async () => {
+    if (!loaded || guidedBusy || sending) return;
+    setGuidedBusy(true);
+    // 擬似まとまり: 既存のガイド読書機構 (青枠調整の commit / guided_plans 永続化) に
+    // そのまま乗せるための器。id は教材スコープで安定 (session キャッシュの衝突回避に
+    // material.id を含める)。
+    const pseudoSeg: ConceptSegment = {
+      id: `assignment-${material.id}`,
+      conceptName: material.name,
+      startPdfPage: 1,
+      endPdfPage: numPages || 1,
+      source: "manual",
+    };
+    setGuidedSegment(pseudoSeg);
+    setGuidedLevel(0);
+    onLogRead?.(pseudoSeg.id, `宿題: ${material.name}`);
+    setHistory((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        text: `宿題を一緒にやっていこう✏️\n紙で解けたところから、1 問ずつ確認していくよ。**「前 / 次」や問題のタップ**で解き終わった問題を選んで(青い枠が動くよ)、**「この問題を解説」**を押してね。解説のあと、答えが合ってたかも教えて。わからない事はいつでも聞いてOK!`,
+      },
+    ]);
+    try {
+      // 問題ブロックの取得優先順: ①永続化済み ②session キャッシュ ③Opus vision 生成。
+      let blocks =
+        guidedPlansMap[pseudoSeg.id] ?? sessionGuidedPlanCache.get(pseudoSeg.id);
+      let generated = false;
+      if (!blocks) {
+        const allPages = Array.from(
+          { length: numPages || 1 },
+          (_, i) => i + 1,
+        );
+        const pages = sampleRangePages(allPages, ASSIGNMENT_MAX_PAGES);
+        const packed = await packPages(pages);
+        blocks = packed
+          ? await buildAssignmentProblemPlan({
+              materialName: material.name,
+              subjectName: subject?.name ?? "教科",
+              gradeLevel: material.gradeLevel ?? "中2",
+              imagesPacked: packed,
+              pageNumbers: pages,
+            })
+          : [];
+        generated = blocks.length > 0;
+      }
+      // 問題を検出できなければ宿題全体 1 ブロックにフォールバック (動線は止めない)。
+      if (!blocks || blocks.length === 0) {
+        blocks = [
+          {
+            id: "blk-1",
+            label: "この宿題",
+            pdfPage: 1,
+            kind: "example",
+            supplementary: false,
+          },
+        ];
+        generated = true;
+      }
+      if (generated) {
+        const plan = blocks;
+        sessionGuidedPlanCache.set(pseudoSeg.id, plan);
+        setGuidedPlansMap((prev) => {
+          const next = { ...prev, [pseudoSeg.id]: plan };
+          if (isSupabaseConfigured()) {
+            updateMaterialGuidedPlans(material.id, next).catch((e) =>
+              console.error("[AIと解く] 問題プラン保存失敗:", e),
+            );
+          }
+          return next;
+        });
+      }
+      setGuidedBlocks(blocks);
+      setGuidedIndex(0);
+      setPage(blocks[0]?.pdfPage ?? 1);
+    } catch (err) {
+      console.error("[AIと解く] 開始失敗:", err);
+      setHistory((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: "ごめん、うまく準備できなかった…もう一度試してくれる?",
+        },
+      ]);
+    } finally {
+      setGuidedBusy(false);
+    }
+  }, [
+    loaded,
+    guidedBusy,
+    sending,
+    numPages,
+    packPages,
+    material,
+    subject,
+    guidedPlansMap,
+    onLogRead,
+  ]);
+
+  // セッションの締め: つまずきをまとめて検知して親へ (自動 Issue 化、監修なし)。
+  // allDone=true (「ぜんぶ解けた!」= 子の宣言) なら宿題を「やった」にする。
+  const finishAssignment = useCallback(
+    async (allDone: boolean) => {
+      if (sending || guidedBusy) return;
+      setGuidedBusy(true);
+      try {
+        let found: DetectedAssignmentIssue[] = [];
+        // 解説のやり取りが何も無ければ検知はスキップ (開いてすぐ閉じた等)。
+        if (history.some((m) => m.role === "user")) {
+          try {
+            found = await detectAssignmentIssues({
+              materialName: material.name,
+              subjectName: subject?.name ?? "教科",
+              gradeLevel: material.gradeLevel ?? "中2",
+              historyPacked: history
+                .map((m) => `${m.role === "user" ? "子" : "葵"}: ${m.text}`)
+                .join("\n"),
+            });
+          } catch (err) {
+            console.error("[AIと解く] つまずき検知失敗:", err);
+          }
+        }
+        if (found.length > 0) onAssignmentIssues?.(found);
+        const issueText =
+          found.length > 0
+            ? `今日引っかかってたのは ${found
+                .map((f) => `「${f.concept}」`)
+                .join("・")} みたいだね。課題にしておいたから、また一緒に振り返ろう。\n`
+            : "";
+        setHistory((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            text: allDone
+              ? `${issueText}おつかれさま🎉 この宿題は「やった」にしておくね!`
+              : `${issueText}今日はここまで! つづきもがんばろうね✏️`,
+          },
+        ]);
+        if (allDone) onAssignmentDone?.();
+      } finally {
+        setGuidedBusy(false);
+      }
+    },
+    [
+      sending,
+      guidedBusy,
+      history,
+      material,
+      subject,
+      onAssignmentIssues,
+      onAssignmentDone,
+    ],
+  );
 
   // 教材詳細の「読む」(まとまりごと) から来た時 (selectUnitOnLoad): initialPage に
   // 該当する まとまり を「選択した段階」で開く。まとまりは登録時バックグラウンド or
@@ -1298,7 +1495,7 @@ export function MaterialReadPane({
         <BookOpen className="size-4 text-primary" />
         <span className="truncate text-sm font-medium">{material.name}</span>
         <div className="ml-auto flex items-center gap-3">
-          {onOpenResume && (
+          {!assignmentMode && onOpenResume && (
             <Button
               variant="outline"
               size="sm"
@@ -1311,7 +1508,7 @@ export function MaterialReadPane({
             </Button>
           )}
           <span className="text-xs text-muted-foreground">
-            葵先生と一緒に読む
+            {assignmentMode ? "葵先生と一緒に解く" : "葵先生と一緒に読む"}
           </span>
         </div>
       </div>
@@ -1626,9 +1823,58 @@ export function MaterialReadPane({
               </span>
             </div>
           </div>
-          {/* 入口: まとまり一覧から選ぶ (M6/M7)。まとまり未生成の本は今ページから開始の保険。 */}
+          {/* 入口: まとまり一覧から選ぶ (M6/M7)。まとまり未生成の本は今ページから開始の保険。
+              宿題モード (2026-06-11): 「一緒に解く」開始 + 締めの 2 ボタンに置き換え。 */}
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-primary/5 px-3 py-1.5">
-            {contentSegments.length > 0 ? (
+            {assignmentMode ? (
+              <>
+                {!guidedBlocks ? (
+                  <Button
+                    size="sm"
+                    onClick={() => void startAssignment()}
+                    disabled={!loaded || sending || guidedBusy}
+                    className="gap-1.5"
+                    title="紙で解いた宿題を、葵先生が 1 問ずつ解説するよ。"
+                  >
+                    {guidedBusy ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Play className="size-4" />
+                    )}
+                    <span>一緒に解く</span>
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void finishAssignment(false)}
+                      disabled={!loaded || sending || guidedBusy}
+                      className="gap-1.5"
+                      title="今日はここで中断する (つまずきは課題にしておくよ)"
+                    >
+                      <span>今日はここまで</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => void finishAssignment(true)}
+                      disabled={!loaded || sending || guidedBusy}
+                      className="gap-1.5"
+                      title="宿題ぜんぶ終わり! 「やった」にするよ"
+                    >
+                      <CircleCheck className="size-4" />
+                      <span>ぜんぶ解けた!</span>
+                    </Button>
+                  </>
+                )}
+                {material.dueDate && (
+                  <span className="ml-auto truncate rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                    {material.assignmentType === "test" ? "テスト日" : "提出日"}:{" "}
+                    {material.dueDate.slice(5).replace("-", "/")}
+                  </span>
+                )}
+              </>
+            ) : contentSegments.length > 0 ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -1668,20 +1914,22 @@ export function MaterialReadPane({
                 単元一覧を準備中…
               </span>
             )}
-            <Button
-              size="sm"
-              onClick={() => void openResume()}
-              disabled={!loaded || preparingGate || guidedBusy || resumeMode}
-              className="gap-1.5"
-              title="教科書を閉じて、自分の言葉でレジュメにするよ。"
-            >
-              {preparingGate ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <NotebookPen className="size-4" />
-              )}
-              <span>レジュメにする</span>
-            </Button>
+            {!assignmentMode && (
+              <Button
+                size="sm"
+                onClick={() => void openResume()}
+                disabled={!loaded || preparingGate || guidedBusy || resumeMode}
+                className="gap-1.5"
+                title="教科書を閉じて、自分の言葉でレジュメにするよ。"
+              >
+                {preparingGate ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <NotebookPen className="size-4" />
+                )}
+                <span>レジュメにする</span>
+              </Button>
+            )}
             {currentSegment && (
               <span
                 className="ml-auto truncate rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
@@ -1743,20 +1991,24 @@ export function MaterialReadPane({
                 <span>次</span>
                 <ChevronRight className="size-4" />
               </Button>
-              {/* ここを解説 = 選んだ所を初めて葵が読む (主ボタン)。 */}
+              {/* ここを解説 = 選んだ所を初めて葵が読む (主ボタン)。宿題は「この問題を解説」。 */}
               <Button
                 size="sm"
                 onClick={() => void explainCursor()}
                 disabled={!loaded || guidedBusy || sending}
                 className="gap-1.5"
-                title="選んでいる所を葵に説明してもらう"
+                title={
+                  assignmentMode
+                    ? "選んでいる問題を葵に解説してもらう"
+                    : "選んでいる所を葵に説明してもらう"
+                }
               >
                 {guidedBusy ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <Play className="size-4" />
                 )}
-                <span>ここを解説</span>
+                <span>{assignmentMode ? "この問題を解説" : "ここを解説"}</span>
               </Button>
               <Button
                 size="sm"
@@ -1779,6 +2031,7 @@ export function MaterialReadPane({
                 詳しく
               </Button>
               <span className="ml-auto text-xs text-muted-foreground">
+                {assignmentMode ? "問題 " : ""}
                 {guidedIndex + 1} / {guidedBlocks.length}
               </span>
             </div>
@@ -1848,9 +2101,18 @@ export function MaterialReadPane({
                   className="shadow-sm ring-2 ring-sky-100"
                 />
                 <div className="max-w-[260px] rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3 text-sm text-card-foreground shadow-sm">
-                  こんにちは、{teacherName}だよ📖
+                  こんにちは、{teacherName}だよ{assignmentMode ? "✏️" : "📖"}
                   <br />
-                  {segmenting ? (
+                  {assignmentMode ? (
+                    <>
+                      紙で解いた宿題を、1 問ずつ一緒に確認していこう。
+                      <br />
+                      <span className="font-medium text-primary">
+                        ▶ 一緒に解く
+                      </span>{" "}
+                      を押すと、わたしが問題ごとに解説するよ。
+                    </>
+                  ) : segmenting ? (
                     <>
                       今、本を読んで単元一覧を準備中だよ（少し待ってね）。
                       <br />
@@ -1923,10 +2185,38 @@ export function MaterialReadPane({
                   void handleSend();
                 }
               }}
-              placeholder="今のページについて聞く（Ctrl+Enter で送信）"
+              placeholder={
+                speech.listening
+                  ? "聞いているよ…🎤 (話した言葉が入るよ)"
+                  : assignmentMode
+                    ? "今の問題について聞く（Ctrl+Enter で送信）"
+                    : "今のページについて聞く（Ctrl+Enter で送信）"
+              }
               className="max-h-32 min-h-[44px] flex-1 resize-none"
               disabled={sending || guidedBusy}
             />
+            {speech.supported && (
+              <Button
+                size="icon"
+                variant={speech.listening ? "default" : "outline"}
+                onClick={() =>
+                  speech.listening
+                    ? speech.stop()
+                    : speech.start((text) =>
+                        setDraft((d) => (d ? d + text : text)),
+                      )
+                }
+                disabled={sending || guidedBusy}
+                aria-label={speech.listening ? "音声入力を止める" : "音声で話す"}
+                title={speech.listening ? "音声入力を止める" : "音声で話す"}
+              >
+                {speech.listening ? (
+                  <MicOff className="size-4" />
+                ) : (
+                  <Mic className="size-4" />
+                )}
+              </Button>
+            )}
             <Button
               size="icon"
               onClick={() => void handleSend()}

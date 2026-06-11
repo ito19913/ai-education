@@ -25,6 +25,7 @@ import { TutorChat } from "./TutorChat";
 import { RightPaneRouter } from "./RightPaneRouter";
 import { AssignmentDialog } from "@/components/materials/AssignmentDialog";
 import { MaterialReadPane } from "@/components/materials/MaterialReadPane";
+import type { DetectedAssignmentIssue } from "@/lib/admin/assignment-solve-claude";
 import { setSessionPdf } from "@/lib/admin/session-pdf-store";
 import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
 import {
@@ -2467,6 +2468,41 @@ export function TutorWorkspace({
     );
   }, []);
 
+  // 宿題「AI と解く」(2026-06-11 grill 確定): 解説セッション末に葵が検知した
+  // つまずきを Issue として自動登録する (監修なし、間違っていれば後で消せる)。
+  // nodeId には概念名をそのまま入れる: 宿題は共有体系図 (KnowledgeNode) に紐付かないが、
+  // IssueListView は未知 nodeId を「その文字列のまま」表示するため、概念名が出る。
+  const handleAssignmentIssues = useCallback(
+    (materialName: string, found: DetectedAssignmentIssue[]) => {
+      if (found.length === 0) return;
+      const now = new Date().toISOString();
+      const stamp = Date.now();
+      setIssues((prev) => [
+        ...found.map(
+          (f, i): Issue => ({
+            id: `issue-hw-${stamp}-${i}`,
+            nodeId: f.concept,
+            source: "ai-detected",
+            title: f.title,
+            detail: f.detail,
+            status: "open",
+            createdAt: now,
+            occurrences: [
+              {
+                id: `occ-hw-${stamp}-${i}`,
+                detectedAt: now,
+                description: `宿題「${materialName}」の解説で見つかった`,
+                source: "ai-detected",
+              },
+            ],
+          }),
+        ),
+        ...prev,
+      ]);
+    },
+    [],
+  );
+
   const handleAppendChatMessages = useCallback(
     (issueId: string, msgs: IssueChatMessage[]) => {
       setIssues((prev) =>
@@ -2519,7 +2555,10 @@ export function TutorWorkspace({
             selectUnitOnLoad={readSelectUnit}
             onCoverThumb={handleCoverThumb}
             onBack={() =>
-              navigate("material-detail", { materialId: readMaterial.id })
+              readMaterial.kind === "assignment"
+                ? // 宿題は教材詳細を持たない → 宿題・テスト一覧タブへ戻る
+                  navigate("materials", { tab: "assignments" })
+                : navigate("material-detail", { materialId: readMaterial.id })
             }
             onOpenResume={() =>
               navigate("notes", { subjectId: readMaterial.subjectId })
@@ -2538,6 +2577,12 @@ export function TutorWorkspace({
             }
             onStudyMinute={() =>
               handleStudyMinute(readMaterial.id, readMaterial.subjectId)
+            }
+            onAssignmentIssues={(found) =>
+              handleAssignmentIssues(readMaterial.name, found)
+            }
+            onAssignmentDone={() =>
+              handleToggleAssignmentStatus(readMaterial.id, "done")
             }
             notedSegmentIds={
               // ★ segment id は教材内ユニーク (seg-1 等) なので、必ず教材で絞る。

@@ -445,10 +445,10 @@ export function DashboardPane({
                                     })
                                   }
                                   className="h-7 shrink-0 gap-1 px-2 text-xs"
-                                  title="葵先生と一緒に解く"
+                                  title="葵先生と 1 問ずつ解説しながら解く"
                                 >
                                   <BookOpen className="size-3.5" />
-                                  <span>学習する</span>
+                                  <span>AI と解く</span>
                                 </Button>
                               )}
                               <Button
@@ -583,10 +583,10 @@ export function DashboardPane({
                             onNavigate("material-read", { materialId: a.id })
                           }
                           className="h-7 shrink-0 gap-1 px-2 text-xs"
-                          title="葵先生と一緒に解く"
+                          title="葵先生と 1 問ずつ解説しながら解く"
                         >
                           <BookOpen className="size-3.5" />
-                          <span>学習する</span>
+                          <span>AI と解く</span>
                         </Button>
                       )}
                     </li>

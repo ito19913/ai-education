@@ -520,7 +520,7 @@ export function MaterialsListPane({
                             )}
                           </button>
 
-                          {/* 学習する: PDF があれば読書ビューで葵と解く。
+                          {/* AI と解く: PDF があれば宿題モードの読書ビューで葵と 1 問ずつ。
                               問題 (PDF) が無いときは押せない (遷移しない、2026-06-09 ito19 さん)。 */}
                           <Button
                             size="sm"
@@ -530,12 +530,12 @@ export function MaterialsListPane({
                             className="h-7 shrink-0 gap-1 px-2 text-xs"
                             title={
                               a.pdfPath
-                                ? "葵先生と一緒に解く"
+                                ? "葵先生と 1 問ずつ解説しながら解く"
                                 : "問題PDFをアップすると学習できます（行をクリックして追加）"
                             }
                           >
                             <BookOpen className="size-3.5" />
-                            <span>学習する</span>
+                            <span>AI と解く</span>
                           </Button>
                         </li>
                       );
