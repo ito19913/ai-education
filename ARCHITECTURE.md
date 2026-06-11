@@ -3356,7 +3356,8 @@ ito19 さんの経験則「1〜2 ヶ月先の計画は計画通りに進まな�
   assignment を DashboardPane が導出して SchedulePanel へ (教材側が真実、カレンダーに行は
   作らない)。テスト = exam ラベル色 + あと◯日、宿題 = 締切/提出ラベル色 + 「（提出）」。
   編集不可 (編集は宿題・テスト側)、「やった」で消える。
-- 宿題専用「AI と解く」画面 (現状は本用読書ビューを流用)。
+- ~~宿題専用「AI と解く」画面~~ → ✅ 2026-06-11 grill 確定 + 実装 (`592c83c`、下記
+  「## 宿題・テスト「AI と解く」」参照)。
 - ~~旧 today-tasks 系の残骸整理~~ → ✅ 2026-06-11 実施 (`475e016`): `/today-tasks` を
   `/tutor` リダイレクト化 (/learn と同じ扱い) + 旧 LearnWorkspace 一式 13 本
   (MindMapPane / MaterialEditDialog は現役共有のため温存) + TodayTaskDashboard /
@@ -3427,6 +3428,55 @@ ito19 さんの経験則「1〜2 ヶ月先の計画は計画通りに進まな�
     教材ペインの宿題・テストタブまで行かずに登録できる。
 - `handleSubmitAssignment` は新規作成時に作成 `Material` を返すよう拡張 (自動 pick 用。
   編集時は null)。
+
+---
+
+## 宿題・テスト「AI と解く」(2026-06-11、grill 確定 + 実装済 `592c83c`)
+
+紙で解いた宿題・テストを、葵が **1 問ずつ全問解説する伴走モード**。これまで宿題の
+「学習する」は本用読書ビューの素流用 (素の PDF + 葵 chat) だったのを、専用体験にした。
+
+### grill 確定 (2026-06-11)
+
+| # | 論点 | 確定 |
+|---|---|---|
+| 1 | 前提 | **宿題は紙で解く** (学校提出物)。アプリは詰まった時だけでなく**宿題全体を AI と一緒に進める伴走** |
+| 2 | 体験の核 | **解答はワークに付いている前提** = AI が答えを隠す/判定する話ではない。解き終わった問題を葵が**1 問ずつ全問しっかり解説** (①考え方→②筋道→③答えの確認)+「合ってた?」は子の自己申告+不明点は音声質疑応答。**わからない所はこの場で全部把握する** |
+| 3 | つまずき記録 | 葵が解説中に内部マーク→**セッション末にまとめて自動 Issue 化** (1 問ごとに中断しない、監修なし、子に通知) |
+| 4 | 画面 | 新画面でなく **MaterialReadPane に宿題モード** (resumeMode と同じ作法)。問題の位置は**ガイド読書と同じ青枠**で指す (buildGuidedReadingPlan の宿題版を流用) |
+| 5 | 進行 | **子が範囲を持ち込む駆動** (「どこまで解いた?」)。**進行状態は保存しない** (紙が真実の情報源)。永続化は問題ブロック検出結果 (guided_plans) と Issue だけ |
+| 6 | 完了 | 葵が聞いて**子の宣言で「やった」(done)**。既存フック連動 (きょう決めたこと ✓・提出日マーカー消滅・学習履歴) |
+| 7 | スコープ | **テスト (過去問・対策プリント PDF) も同じ画面・同じ体験**。本の該当まとまりへの「戻って読む?」誘導は N9③ の入口としてスコープ外 |
+
+### 実装
+
+- **`lib/admin/assignment-solve-claude.ts`** (新規、Server Action):
+  - `buildAssignmentProblemPlan` = ページ画像から「解く順の問題ブロック列」検出 (Opus
+    vision)。**GuidedBlock を流用**するので、青枠ハイライト / タップ選択 / EditableHighlight
+    手動調整 / `materials.guided_plans` 永続化の既存機構にそのまま乗る (キー =
+    `assignment-{materialId}` の擬似 segment id)。1 ブロック = 大問 1 つが基本。
+  - `detectAssignmentIssues` = 対話履歴から「わかってなさそうな概念」を抽出 (最大 3 件、
+    title/concept/detail、確信があるものだけ。失敗時 [] で動線を止めない)。
+- **MaterialReadPane** (`assignmentMode = material.kind === "assignment"`):
+  - 入口バー =「**一緒に解く**」(問題ブロック検出、1 回だけ・DB 永続化、フォールバック =
+    宿題全体 1 ブロック) → 検出後は「**今日はここまで**」/「**ぜんぶ解けた!**」+ 提出日バッジ。
+  - 解説サイクル = ガイド読書の機構を共有: 前/次/タップで問題を選ぶ (青枠) →
+    「**この問題を解説**」→ 葵が①考え方②筋道③答えの確認→「答え、合ってた?」(プロンプトを
+    `explainGuidedBlock` 内で宿題分岐)。やさしく/詳しく もそのまま使える。確信が持てない時は
+    「学校の解答でも確認してね」と言う安全弁。
+  - 本用 UI は出さない: まとまりオンデマンド生成 effect をスキップ / レジュメにする・
+    まとまりを選ぶ・レジュメを見る 非表示 / ヘッダー「葵先生と一緒に解く」。
+  - **🎤 音声入力** (use-speech-recognition 流用) を葵 chat 入力欄に追加 (本の読書でも使える)。
+  - 締め = `finishAssignment(allDone)`: detectAssignmentIssues → `onAssignmentIssues` →
+    葵「『◯◯』を課題にしておいたよ」。allDone (= ぜんぶ解けた、子の宣言) なら
+    `onAssignmentDone`。
+- **TutorWorkspace**: `handleAssignmentIssues` = Issue 自動登録 (**nodeId = 概念名**。宿題は
+  共有体系図に紐付かないが IssueListView は未知 nodeId をその文字列のまま表示する仕様を利用) /
+  done は既存 `handleToggleAssignmentStatus` / 宿題の「戻る」は教材詳細でなく
+  **宿題・テスト一覧タブ** へ。
+- **入口ラベル**: 宿題行の「学習する」→「**AI と解く**」 (MaterialsListPane 宿題タブ /
+  DashboardPane 宿題・テストカード / きょう決めたこと行の 3 か所。本のまとまり用は据え置き)。
+- migration 不要 (guided_plans / Issue in-memory / assignmentStatus 既存)。
 
 ---
 
