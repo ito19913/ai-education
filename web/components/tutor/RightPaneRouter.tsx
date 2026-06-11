@@ -130,6 +130,8 @@ type Props = {
   onRemoveDayPick: (id: string) => void;
   /** 「＋ゆいと決める」→ 左の chat に儀式カードを出す */
   onStartDayRitual: () => void;
+  /** 宿題・テストカードの「＋追加」→ その場登録ダイアログ (登録のみ、Phase B 拡張) */
+  onAddAssignmentQuick: () => void;
   onCreatePlan: (material: Material, endsAt: string, countFrom?: string) => void;
   onExtendPlan: (planId: string, endsAt: string) => void;
   onCompletePlan: (planId: string) => void;
@@ -199,6 +201,7 @@ export function RightPaneRouter({
   dayPicks,
   onRemoveDayPick,
   onStartDayRitual,
+  onAddAssignmentQuick,
   onCreatePlan,
   onExtendPlan,
   onCompletePlan,
@@ -232,6 +235,7 @@ export function RightPaneRouter({
         dayPicks={dayPicks}
         onRemoveDayPick={onRemoveDayPick}
         onStartDayRitual={onStartDayRitual}
+        onAddAssignmentQuick={onAddAssignmentQuick}
         onToggleAssignmentStatus={onToggleAssignmentStatus}
         onNavigate={onNavigate}
       />

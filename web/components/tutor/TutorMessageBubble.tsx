@@ -56,6 +56,8 @@ type Props = {
     segmentId: string,
     label: string,
   ) => void;
+  /** 「＋新しい宿題・テストを登録」(その場登録 → 今日へ自動 pick) */
+  onAddDayAssignment: () => void;
 };
 
 export function TutorMessageBubble({
@@ -75,6 +77,7 @@ export function TutorMessageBubble({
   onPickDayAssignment,
   onPickDayBook,
   onPickDaySegment,
+  onAddDayAssignment,
 }: Props) {
   // セクションヘッダー (話題区切り)
   if (message.role === "section") {
@@ -161,6 +164,7 @@ export function TutorMessageBubble({
                   pickedKeys={dayPickedKeys}
                   onPickAssignment={onPickDayAssignment}
                   onPickBook={onPickDayBook}
+                  onAddAssignment={onAddDayAssignment}
                 />
               )}
               {message.card.kind === "day-segment-picker" && (

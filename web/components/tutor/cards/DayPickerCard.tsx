@@ -9,7 +9,7 @@
  * 断る動線 (「今日はプランだけでいい」) は quickReplies 側で出す。
  */
 import { Card } from "@/components/ui/card";
-import { Book, Check, ClipboardList, GraduationCap } from "lucide-react";
+import { Book, Check, ClipboardList, GraduationCap, Plus } from "lucide-react";
 import type { TutorCard } from "@/lib/learn/types";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +22,12 @@ type Props = {
   pickedKeys: Set<string>;
   onPickAssignment: (materialId: string, label: string) => void;
   onPickBook: (materialId: string, label: string) => void;
+  /**
+   * 「＋新しい宿題・テストを登録」→ その場で AssignmentDialog を開く
+   * (帰ってきて今日の宿題をその場登録する一番多いケース。登録と同時に
+   * 今日の枠へ自動 pick される)。
+   */
+  onAddAssignment: () => void;
 };
 
 export function DayPickerCard({
@@ -29,6 +35,7 @@ export function DayPickerCard({
   pickedKeys,
   onPickAssignment,
   onPickBook,
+  onAddAssignment,
 }: Props) {
   return (
     <Card className="my-2 flex flex-col gap-3 p-3">
@@ -109,9 +116,20 @@ export function DayPickerCard({
 
       {card.assignments.length === 0 && card.books.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          今日は選べるものがないみたい。プランのまとまりを進めよう!
+          登録済みで選べるものは今日はないみたい。新しい宿題・テストは下から登録できるよ。
         </p>
       )}
+
+      {/* 帰ってきて「今日の宿題」をその場登録する一番多いケース (登録と同時に今日へ) */}
+      <button
+        type="button"
+        onClick={onAddAssignment}
+        className="flex items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary"
+        title="新しい宿題・テストを登録して、そのまま今日のタスクに入れます"
+      >
+        <Plus className="size-4" />
+        <span className="font-medium">新しい宿題・テストを登録</span>
+      </button>
     </Card>
   );
 }

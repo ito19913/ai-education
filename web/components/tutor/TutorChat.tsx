@@ -65,6 +65,8 @@ type Props = {
     segmentId: string,
     label: string,
   ) => Promise<TutorMessage>;
+  /** 「＋新しい宿題・テストを登録」(その場登録ダイアログを開く、Phase B 拡張) */
+  onAddDayAssignment: () => void;
   /** Phase 3: 課題カードクリック → 右ペインに IssueChat / IssueListView を出す */
   onSelectIssue?: (issueId: string) => void;
   onSeeAllIssues?: () => void;
@@ -94,6 +96,7 @@ export function TutorChat({
   onPickDayAssignment,
   onPickDayBook,
   onPickDaySegment,
+  onAddDayAssignment,
   onSelectIssue,
   onSeeAllIssues,
   onSelectIssueItem,
@@ -303,6 +306,7 @@ export function TutorChat({
                   onPickDaySegment(materialId, segmentId, label),
                 )
               }
+              onAddDayAssignment={onAddDayAssignment}
               issues={issues}
               scheduleItems={scheduleItems}
               onSelectIssue={onSelectIssue ?? noop}

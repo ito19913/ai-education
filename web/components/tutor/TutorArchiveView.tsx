@@ -316,6 +316,9 @@ export function TutorArchiveView({ nodes, issues, scheduleItems }: Props) {
                   onPickDaySegment={() => {
                     /* archive: no-op (Phase B day-segment-picker) */
                   }}
+                  onAddDayAssignment={() => {
+                    /* archive: no-op (Phase B 宿題その場登録) */
+                  }}
                   onSelectIssue={() => {
                     /* archive: no-op */
                   }}

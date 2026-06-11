@@ -39,6 +39,7 @@ import {
   MessageSquare,
   NotebookPen,
   Paperclip,
+  Plus,
   RotateCcw,
   Sparkles,
   Target,
@@ -79,6 +80,8 @@ type Props = {
   onRemoveDayPick: (id: string) => void;
   /** 「＋ゆいと決める」→ 左の chat で儀式開始 (B-1) */
   onStartDayRitual: () => void;
+  /** 宿題・テストカードの「＋追加」→ その場登録ダイアログ (登録のみ) */
+  onAddAssignmentQuick: () => void;
   /** 宿題 pick の「やった」チェック (既存宿題トグルと同じハンドラ) */
   onToggleAssignmentStatus: (id: string, status: AssignmentStatus) => void;
   /** ダッシュボード各カード/セクション → 該当ビューへ。TutorWorkspace の navigate を渡す */
@@ -113,6 +116,7 @@ export function DashboardPane({
   dayPicks,
   onRemoveDayPick,
   onStartDayRitual,
+  onAddAssignmentQuick,
   onToggleAssignmentStatus,
   onNavigate,
 }: Props) {
@@ -473,15 +477,27 @@ export function DashboardPane({
                 </span>
               )}
             </CardTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onNavigate("materials", { tab: "assignments" })}
-              className="h-auto gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <span>すべて見る</span>
-              <ArrowRight className="size-3.5" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onAddAssignmentQuick}
+                className="h-7 gap-1 px-2 text-xs"
+                title="宿題・テストをその場で登録"
+              >
+                <Plus className="size-3.5" />
+                <span>追加</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onNavigate("materials", { tab: "assignments" })}
+                className="h-auto gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <span>すべて見る</span>
+                <ArrowRight className="size-3.5" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {todoAssignments.length === 0 ? (

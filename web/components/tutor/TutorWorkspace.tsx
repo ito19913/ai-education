@@ -23,6 +23,7 @@ import { BookOpenCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TutorChat } from "./TutorChat";
 import { RightPaneRouter } from "./RightPaneRouter";
+import { AssignmentDialog } from "@/components/materials/AssignmentDialog";
 import { MaterialReadPane } from "@/components/materials/MaterialReadPane";
 import { setSessionPdf } from "@/lib/admin/session-pdf-store";
 import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
@@ -1124,8 +1125,13 @@ export function TutorWorkspace({
   );
 
   // 追加 or 編集 (id があれば編集)。PDF があれば一緒にアップ/差し替え。
+  // Phase B 拡張: 新規作成時は作成 Material を返す (儀式中の「登録→今日の枠に自動 pick」用)。
   const handleSubmitAssignment = useCallback(
-    async (input: NewAssignmentInput, pdfFile?: File, id?: string) => {
+    async (
+      input: NewAssignmentInput,
+      pdfFile?: File,
+      id?: string,
+    ): Promise<Material | null> => {
       // ----- 編集 -----
       if (id) {
         setMaterials((prev) =>
@@ -1152,7 +1158,7 @@ export function TutorWorkspace({
             await uploadAssignmentPdf(id, ownerId, pdfFile);
           }
         }
-        return;
+        return null;
       }
       // ----- 新規 -----
       if (isSupabaseConfigured()) {
@@ -1164,7 +1170,7 @@ export function TutorWorkspace({
           if (pdfFile) {
             await uploadAssignmentPdf(created.id, ownerId, pdfFile);
           }
-          return;
+          return created;
         } catch (err) {
           console.error("[宿題・テスト] 追加失敗、in-memory にフォールバック:", err);
         }
@@ -1181,6 +1187,7 @@ export function TutorWorkspace({
         assignmentStatus: "todo",
       };
       setMaterials((prev) => [...prev, local]);
+      return local;
     },
     [uploadAssignmentPdf],
   );
@@ -1881,16 +1888,11 @@ export function TutorWorkspace({
     async (userInput: string): Promise<TutorMessage> => {
       const { assignments, books } = computeDayCandidates();
       const now = new Date().toISOString();
-      if (assignments.length === 0 && books.length === 0) {
-        return {
-          id: `t-day-${Date.now()}`,
-          role: "tutor",
-          text: "今日は選べる宿題や本がないみたい。プランの「つぎのまとまり」を進めよう💪 ダッシュボードに出てるよ。",
-          createdAt: now,
-        };
-      }
+      // 候補 0 件でもカードは出す (「＋新しい宿題・テストを登録」が一番多いケース)
       let text =
-        "いいね、今日やること決めよう! 候補はこのへんだよ👇 やるやつをタップしてね。\n\nもちろん「今日はプランだけ」でも全然 OK だよ。";
+        assignments.length === 0 && books.length === 0
+          ? "今日なにやる? 登録済みで選べるものはないけど、新しく出た宿題があったらここから登録してね👇 プランのまとまりだけでも OK!"
+          : "いいね、今日やること決めよう! 候補はこのへんだよ👇 やるやつをタップしてね。\n\nもちろん「今日はプランだけ」でも全然 OK だよ。";
       if (process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true") {
         try {
           const aiText = await tutorClaudeRespondToScene({
@@ -2065,28 +2067,53 @@ export function TutorWorkspace({
   );
 
   // ダッシュボード「＋ゆいと決める」ボタン → 左の chat に儀式カードを出す (B-1/B-8)。
-  // 2 回目以降も同じ儀式 (候補は選択済みを除いた最新)。
+  // 2 回目以降も同じ儀式 (候補は選択済みを除いた最新)。候補 0 件でもカードは出す
+  // (「＋新しい宿題・テストを登録」が一番多いケースのため)。
   const handleStartDayRitual = useCallback(() => {
     const { assignments, books } = computeDayCandidates();
     const now = new Date().toISOString();
-    const msg: TutorMessage =
-      assignments.length === 0 && books.length === 0
-        ? {
-            id: `t-day-${Date.now()}`,
-            role: "tutor",
-            text: "今日は選べる宿題や本がないみたい。プランの「つぎのまとまり」を進めよう💪",
-            createdAt: now,
-          }
-        : {
-            id: `t-day-${Date.now()}`,
-            role: "tutor",
-            text: "今日やること決めよう! 候補はこのへんだよ👇 やるやつをタップしてね。",
-            card: { kind: "day-picker", assignments, books },
-            quickReplies: ["今日はプランだけでいい"],
-            createdAt: now,
-          };
+    const msg: TutorMessage = {
+      id: `t-day-${Date.now()}`,
+      role: "tutor",
+      text:
+        assignments.length === 0 && books.length === 0
+          ? "今日なにやる? 新しく出た宿題があったら、ここから登録してね👇"
+          : "今日やること決めよう! 候補はこのへんだよ👇 やるやつをタップしてね。",
+      card: { kind: "day-picker", assignments, books },
+      quickReplies: ["今日はプランだけでいい"],
+      createdAt: now,
+    };
     setTutorMessages((prev) => [...prev, msg]);
   }, [computeDayCandidates]);
+
+  // 「＋新しい宿題・テストを登録」(Phase B 拡張、2026-06-11 ito19 さん実機フィードバック
+  // 「今日のタスクで一番多いのは宿題・テスト」)。その場で AssignmentDialog を開く。
+  //   "ritual" = 儀式中の登録 → 保存と同時に今日の枠へ自動 pick + ゆいが続ける
+  //   "plain"  = ダッシュボード宿題・テストカードの「＋追加」→ 登録だけ
+  const [dayAssignmentDialog, setDayAssignmentDialog] = useState<
+    null | "ritual" | "plain"
+  >(null);
+
+  const handleDayAssignmentSubmit = useCallback(
+    async (input: NewAssignmentInput, pdfFile?: File, id?: string) => {
+      const mode = dayAssignmentDialog;
+      const created = await handleSubmitAssignment(input, pdfFile, id);
+      if (mode === "ritual" && created) {
+        await addDayPick(created.id);
+        setTutorMessages((prev) => [
+          ...prev,
+          {
+            id: `t-daypick-${Date.now()}`,
+            role: "tutor",
+            text: `「${created.name}」を登録して、今日のタスクに入れたよ📌 ダッシュボードの「きょう決めたこと」に出てるからね。\n\n**他にもやる?**`,
+            quickReplies: ["他にもやる", "今日はこれでOK"],
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+      }
+    },
+    [dayAssignmentDialog, handleSubmitAssignment, addDayPick],
+  );
 
   // その日最初 (今日の thread が新規 = B-8) は、データロード後にゆいの挨拶へ続けて
   // 候補ピッカーカードを 1 回だけ append する (B-1)。候補 0 件なら出さない =
@@ -2395,6 +2422,7 @@ export function TutorWorkspace({
             onPickDayAssignment={onPickDayAssignment}
             onPickDayBook={onPickDayBook}
             onPickDaySegment={onPickDaySegment}
+            onAddDayAssignment={() => setDayAssignmentDialog("ritual")}
             externallyLocked={tutorLocked}
             externalLockMessage={
               tutorLocked
@@ -2448,6 +2476,7 @@ export function TutorWorkspace({
             dayPicks={dayPicks}
             onRemoveDayPick={handleRemoveDayPick}
             onStartDayRitual={handleStartDayRitual}
+            onAddAssignmentQuick={() => setDayAssignmentDialog("plain")}
             onCreatePlan={handleCreatePlan}
             onExtendPlan={handleExtendPlan}
             onCompletePlan={handleCompletePlan}
@@ -2471,6 +2500,19 @@ export function TutorWorkspace({
         </ResizablePanel>
       </ResizablePanelGroup>
       )}
+
+      {/* Phase B 拡張: 宿題・テストのその場登録 (儀式カード / ダッシュボード「＋追加」から)。
+          ritual モードは保存と同時に今日の枠へ自動 pick + ゆいが続ける。 */}
+      <AssignmentDialog
+        open={dayAssignmentDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setDayAssignmentDialog(null);
+        }}
+        subjects={subjects}
+        assignment={null}
+        onSubmit={handleDayAssignmentSubmit}
+        onDelete={() => {}}
+      />
     </div>
   );
 }
