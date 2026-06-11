@@ -1694,7 +1694,10 @@ N8「学習概念は全部ノート・理解済み/未理解(=Issue)ステータ
 - **NoteGateDialog**: 2 出口 + 本人決定 (AI 判定→passed/failed、理解済み/open を本人が選択、安全側のみ=不通過→理解済み不可で関所維持) + **review モード**(open を再ゲートで昇格)
 - **NotesHomeView**: open=黄バッジ「振り返りたい」+「もう一回説明してみる」+件数表示 + 体系図 status 色分け + review ダイアログ
 - **MindMapPane/mindmap-layout**: opt-in `statusById` で 理解済み=緑/open=黄 (既存 /learn・教材詳細の呼び出しは不変)
-- **TutorWorkspace**: ハブで open を 1 件だけ小出し (定期振り返りトリガー、quickReply「ノートを見る」)
+- **TutorWorkspace**: ハブで open を 1 件だけ小出し (定期振り返りトリガー、quickReply「ノートを見る」)。
+  ★2026-06-11 重複表示バグ修正 (`43409f8`): 同日 thread は localStorage 復元されるため
+  リロード毎に「復元済みナッジ+新規ナッジ」が積み重なっていた → thread 内に既に
+  `t-note-nudge-` があれば append しない dedupe で 1 日 1 回に
 - **送り(N9③以降)**: AI 自動検知の open 化 / 振り返り間隔ロジック / レガシー Issue 畳み込み / 戻り提案 N6 / 段階2
 
 ### ノート作成フロー再設計 — 対話＋子のメモで作る「オリジナルノート」 (2026-06-05、✅ 実装、grill Q1-Q4)
@@ -1834,7 +1837,11 @@ ito19 さんの実教材「税法実務講座 税法入門 法人税 (TAC)」(18
 真っ白で読めず第1章の断片のみ)。C-8 ハイブリッドは体系図を土台にするため、体系図が不完全だと まとまりも
 不完全になる。今回は目次 (PDF p.2-4、第1-4章) を再 vision 抽出して 38 ノードに修復 → 26 まとまり成立。
 **wasm 修正前に登録したスキャン本は体系図の再抽出が必要** (新規登録は wasm で正しく抽出されるので不要)。
-→ 既存スキャン本の「体系図 再抽出」動線は未実装 (今回は一時スクリプトで修復)。要追加検討。
+→ 既存スキャン本の「体系図 再抽出」動線は未実装 (今回は一時スクリプトで修復)。
+→ **2026-06-11 判断: 見送り**。動機だった C-8 ハイブリッドは `USE_HYBRID=false`
+  (scan-segment-builder.ts、2026-06-07 ページずれ解消で vision 経路に統一) で停止しており、
+  現在 `extractedNodes` の用途は「まとまりが無い時のフォールバック」(ページジャンプ先・
+  concept-for-page) と課題逆引き程度 = 不完全でも実害ほぼ無し。ハイブリッド復活時に再検討。
 
 ### AI 主導ガイド読書 — 受け身で一区切りずつ解説 (2026-06-06、★grill 確定・未実装★)
 
@@ -3350,8 +3357,14 @@ ito19 さんの経験則「1〜2 ヶ月先の計画は計画通りに進まな�
   作らない)。テスト = exam ラベル色 + あと◯日、宿題 = 締切/提出ラベル色 + 「（提出）」。
   編集不可 (編集は宿題・テスト側)、「やった」で消える。
 - 宿題専用「AI と解く」画面 (現状は本用読書ビューを流用)。
-- 旧 today-tasks 系の残骸整理 (`/today-tasks` 独立ページ・ScheduleHeader・ScheduleMiniCalendar・
-  TodayTaskList・HistoryView は標準ページ用に残置)。
+- ~~旧 today-tasks 系の残骸整理~~ → ✅ 2026-06-11 実施 (`475e016`): `/today-tasks` を
+  `/tutor` リダイレクト化 (/learn と同じ扱い) + 旧 LearnWorkspace 一式 13 本
+  (MindMapPane / MaterialEditDialog は現役共有のため温存) + TodayTaskDashboard /
+  TodayTaskList / ScheduleHeader / ScheduleMiniCalendar / TaskSourcesPanel を削除
+  (−4,621 行)。ScheduleTaskTypeIcon は TodayScheduleCard (アーカイブ thread のカード
+  描画で現役) が使うため温存。旧チャットカード 4 種 (today-schedule / weak-node-picker /
+  node-review-suggestion / replan-draft) と tutor-mock 内の旧シーンは、過去 thread の
+  復元描画に必要なため残置 (深掘り整理は別途)。
 
 ---
 
