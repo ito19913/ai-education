@@ -140,3 +140,61 @@ ${structuresText}${currentText}${instructionText}`;
     .join("");
   return extractJson(text) as OutlineDraftOutput;
 }
+
+// ============================================================================
+// suggestOutlinePlacement — 刻む時の配置提案 (R11-②、grill R11-2)
+//
+// 新しいピースを刻んだ瞬間に「どの章 (Ⅰ) に入るか」だけを判定する軽い分類。
+// 高頻度 (ピースごと) なので Haiku 4.5 (segment-claude と同じコスト判断)。
+// どの章にも合わなければ -1 (→ 未整理に残し、「作り直す」で再配置)。
+// ============================================================================
+
+export type PlacementInput = {
+  subjectName: string;
+  conceptName: string;
+  /** 子の本文の先頭 (文脈ヒント、~200 字) */
+  bodyHead?: string;
+  /** 章タイトル一覧 (表示順) */
+  sectionTitles: string[];
+};
+
+export type PlacementOutput = {
+  /** 入れる章の index (0 始まり)。合う章が無ければ -1 */
+  sectionIndex: number;
+};
+
+export async function suggestOutlinePlacement(
+  input: PlacementInput,
+): Promise<PlacementOutput> {
+  const anthropic = getClient();
+  const res = await anthropic.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 100,
+    system: `学習ノートの新しい概念を、既存の章のどれに入れるか判定します。
+出力は JSON のみ: {"sectionIndex": 数値}。0 始まりの index。どの章にも明らかに合わなければ -1。`,
+    messages: [
+      {
+        role: "user",
+        content: `科目: ${input.subjectName}
+新しい概念: ${input.conceptName}
+${input.bodyHead ? `本文の冒頭: ${input.bodyHead}` : ""}
+
+章一覧:
+${input.sectionTitles.map((t, i) => `${i}: ${t}`).join("\n")}`,
+      },
+    ],
+  });
+  const text = res.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+  const parsed = extractJson(text) as { sectionIndex?: unknown };
+  const idx =
+    typeof parsed.sectionIndex === "number" ? parsed.sectionIndex : -1;
+  return {
+    sectionIndex:
+      Number.isInteger(idx) && idx >= 0 && idx < input.sectionTitles.length
+        ? idx
+        : -1,
+  };
+}

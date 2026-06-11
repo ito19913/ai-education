@@ -69,10 +69,14 @@ import {
   copyResume,
   updateResumeOutline,
 } from "@/lib/notes/resumes-repo";
-import { buildResumeOutlineViaClaude } from "@/lib/notes/outline-claude";
+import {
+  buildResumeOutlineViaClaude,
+  suggestOutlinePlacement,
+} from "@/lib/notes/outline-claude";
 import {
   sanitizeOutline,
   buildFallbackOutline,
+  toRoman,
 } from "@/lib/notes/resume-outline";
 import {
   fetchCustomSubjects,
@@ -1268,11 +1272,64 @@ export function TutorWorkspace({
         observeDayPickDone(entry.sourceMaterialId, entry.sourceSegmentId);
       }
       // upsert: 2 周目の深化更新 (同じ id) は置換、新規は追加 (G-C で重複を防ぐ)。
+      const isNewEntry = !noteEntries.some((e) => e.id === entry.id);
       setNoteEntries((prev) =>
         prev.some((e) => e.id === entry.id)
           ? prev.map((e) => (e.id === entry.id ? entry : e))
           : [...prev, entry],
       );
+      // R11-②: 刻んだ瞬間の配置提案 (grill R11-2) — 入れ先の冊にアウトラインが
+      // あれば AI (Haiku) が章を判定して末尾に配置。合う章が無い/失敗は未整理のまま
+      // (「作り直す」か言葉で直すで救える)。違ったらレジュメ画面で言葉で直す。
+      const targetResume = entry.resumeId
+        ? resumes.find((r) => r.id === entry.resumeId)
+        : undefined;
+      if (
+        isNewEntry &&
+        targetResume?.outline &&
+        targetResume.outline.length > 0 &&
+        process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true"
+      ) {
+        const outline = targetResume.outline;
+        void (async () => {
+          try {
+            const subjectName =
+              subjects.find((s) => s.id === entry.subjectId)?.name ?? "教科";
+            const { sectionIndex } = await suggestOutlinePlacement({
+              subjectName,
+              conceptName: entry.conceptName,
+              bodyHead: entry.aiSummary.slice(0, 200),
+              sectionTitles: outline.map((s) => s.title),
+            });
+            if (sectionIndex < 0) return;
+            const sec = outline[sectionIndex];
+            const nextOutline = outline.map((s, i) =>
+              i === sectionIndex
+                ? { ...s, entryIds: [...s.entryIds, entry.id] }
+                : s,
+            );
+            setResumes((prev) =>
+              prev.map((r) =>
+                r.id === targetResume.id ? { ...r, outline: nextOutline } : r,
+              ),
+            );
+            if (isSupabaseConfigured()) {
+              await updateResumeOutline(targetResume.id, nextOutline);
+            }
+            setTutorMessages((prev) => [
+              ...prev,
+              {
+                id: `t-place-${Date.now()}`,
+                role: "tutor",
+                text: `レジュメの「${toRoman(sectionIndex + 1)} ${sec.title}」に入れたよ📒 違ったらレジュメ画面で言葉で直してね。`,
+                createdAt: new Date().toISOString(),
+              },
+            ]);
+          } catch (err) {
+            console.error("[レジュメ] 配置提案失敗 (未整理のまま):", err);
+          }
+        })();
+      }
       const text =
         entry.status === "open"
           ? `「${entry.conceptName}」を「振り返りたい」としてレジュメに残したよ📌\nあとでまた一緒に見て、自分の言葉で説明できたら理解済みにしよう。メニューの「レジュメ」から振り返れるよ。`
@@ -1285,7 +1342,7 @@ export function TutorWorkspace({
       };
       setTutorMessages((prev) => [...prev, reply]);
     },
-    [addLearningLog, observeDayPickDone],
+    [addLearningLog, observeDayPickDone, noteEntries, resumes, subjects],
   );
 
   const handleNoteUpdated = useCallback(

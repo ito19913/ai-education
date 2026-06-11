@@ -23,6 +23,7 @@ import {
   CircleX,
   Sparkles,
   BookOpenCheck,
+  LayoutTemplate,
   Mic,
   MicOff,
   ChevronDown,
@@ -30,6 +31,7 @@ import {
   Plus,
   Lightbulb,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,6 +43,13 @@ import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
 import { reviewResume, getResumeHint } from "@/lib/notes/note-gate-claude";
 import type { ResumeReviewResult } from "@/lib/notes/note-gate-claude";
+import { suggestResumeTemplate } from "@/lib/notes/template-claude";
+import {
+  allDeclarations,
+  addCustomDeclaration,
+  buildFallbackTemplate,
+  loadCustomDeclarations,
+} from "@/lib/notes/declarations";
 import {
   insertNoteEntry,
   updateNoteEntry,
@@ -106,6 +115,105 @@ export function ResumePane(props: Props) {
   // R4「ヒントちょうだい」: 押すごとに段階的に濃く (答えは言わない、小出し)。
   const [hints, setHints] = useState<string[]>([]);
   const [hintLoading, setHintLoading] = useState(false);
+  // R11-②: 宣言パレット (科目別既定 + 自作 localStorage) + テンプレ提案
+  const [customDecls, setCustomDecls] = useState<string[]>(() =>
+    loadCustomDeclarations(subjectId),
+  );
+  const [declInputOpen, setDeclInputOpen] = useState(false);
+  const [declInput, setDeclInput] = useState("");
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const declarations = allDeclarations(subjectId, subjectName, customDecls);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // 本文のカーソル位置にスニペットを挿入 (チップ / テンプレ共通)。
+  // 添削後の挿入は writing に戻す (古い 3 色判定を確定に使わせない)。
+  const insertAtCursor = useCallback(
+    (snippet: string) => {
+      const el = textareaRef.current;
+      const start = el?.selectionStart ?? body.length;
+      const end = el?.selectionEnd ?? start;
+      const next = body.slice(0, start) + snippet + body.slice(end);
+      setBody(next);
+      setStage((s) => (s === "reviewed" ? "writing" : s));
+      requestAnimationFrame(() => {
+        if (!el) return;
+        el.focus();
+        const pos = start + snippet.length;
+        el.setSelectionRange(pos, pos);
+      });
+    },
+    [body],
+  );
+
+  // 宣言チップ: 行頭なら【宣言】、行の途中なら改行してから (だらっと続けない型)
+  const insertDeclaration = useCallback(
+    (label: string) => {
+      const el = textareaRef.current;
+      const start = el?.selectionStart ?? body.length;
+      const atLineStart = start === 0 || body[start - 1] === "\n";
+      insertAtCursor(`${atLineStart ? "" : "\n"}【${label}】`);
+    },
+    [body, insertAtCursor],
+  );
+
+  const submitCustomDeclaration = useCallback(() => {
+    const cleaned = declInput.trim();
+    if (!cleaned) {
+      setDeclInputOpen(false);
+      return;
+    }
+    setCustomDecls(addCustomDeclaration(subjectId, cleaned));
+    insertDeclaration(cleaned.replace(/^【|】$/g, "").slice(0, 12));
+    setDeclInput("");
+    setDeclInputOpen(false);
+  }, [declInput, subjectId, insertDeclaration]);
+
+  // R11-②「この型で書く」: AI が教材を見て宣言の並び + 番号枠だけ提案 → カーソル位置に挿入
+  const handleTemplate = useCallback(async () => {
+    setTemplateLoading(true);
+    setErrorMsg(null);
+    try {
+      let template: string;
+      if (useClaude) {
+        try {
+          template = await suggestResumeTemplate({
+            conceptName,
+            subjectName,
+            gradeLevel,
+            pageImagesPacked,
+            declarations,
+          });
+        } catch (err) {
+          console.error("[レジュメ] 型の提案失敗、固定テンプレに:", err);
+          template = buildFallbackTemplate(subjectId, subjectName);
+        }
+      } else {
+        template = buildFallbackTemplate(subjectId, subjectName);
+      }
+      // 既に書いた本文があるなら末尾に足す (上書きしない)
+      const el = textareaRef.current;
+      if (body.trim().length === 0) {
+        setBody(template);
+        setStage((s) => (s === "reviewed" ? "writing" : s));
+        requestAnimationFrame(() => el?.focus());
+      } else {
+        const sep = body.endsWith("\n") ? "\n" : "\n\n";
+        setBody(body + sep + template);
+        setStage((s) => (s === "reviewed" ? "writing" : s));
+        requestAnimationFrame(() => el?.focus());
+      }
+    } finally {
+      setTemplateLoading(false);
+    }
+  }, [
+    body,
+    conceptName,
+    subjectName,
+    subjectId,
+    gradeLevel,
+    pageImagesPacked,
+    declarations,
+  ]);
   // 直前の添削が「仕上げる(強制・関所)」起点か「葵に見てもらう(任意の途中チェック)」起点か。
   // 仕上げる → 結果に応じて確定へ誘導。任意 → 書き続けに戻す。
   const [finalizeRequested, setFinalizeRequested] = useState(false);
@@ -468,6 +576,27 @@ export function ResumePane(props: Props) {
                   教科書を閉じて、自分の言葉でまとめてみよう
                 </label>
                 <div className="flex shrink-0 items-center gap-1.5">
+                  {/* R11-②: AI が教材を見て「宣言の並び + 番号枠」だけ提案 (中身は書かない) */}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleTemplate()}
+                    disabled={
+                      templateLoading ||
+                      stage === "reviewing" ||
+                      stage === "committing"
+                    }
+                    className="gap-1.5"
+                    title="このまとまりに合う書く型 (宣言と番号の空テンプレ) を入れるよ。中身は自分で埋めてね"
+                  >
+                    {templateLoading ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <LayoutTemplate className="size-4" />
+                    )}
+                    <span>この型で書く</span>
+                  </Button>
                   {/* R4: 詰まったら糸口だけ小出し (答えは言わない) */}
                   <Button
                     type="button"
@@ -520,14 +649,63 @@ export function ResumePane(props: Props) {
                 {micSupported ? "「話す」で声でも入れられるよ。" : ""}
                 お手本は出さないよ — 自分の言葉が大事。
               </p>
+
+              {/* R11-②: 宣言パレット (タップで【宣言】挿入。だらっと書かず名前を付けてから書く) */}
+              <div className="flex flex-wrap items-center gap-1">
+                {declarations.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => insertDeclaration(d)}
+                    disabled={stage === "reviewing" || stage === "committing"}
+                    className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+                    title={`【${d}】を本文に入れる`}
+                  >
+                    【{d}】
+                  </button>
+                ))}
+                {declInputOpen ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Input
+                      value={declInput}
+                      autoFocus
+                      onChange={(ev) => setDeclInput(ev.target.value)}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter") submitCustomDeclaration();
+                        if (ev.key === "Escape") {
+                          setDeclInput("");
+                          setDeclInputOpen(false);
+                        }
+                      }}
+                      onBlur={submitCustomDeclaration}
+                      placeholder="自分の宣言"
+                      className="h-6 w-28 px-2 text-[11px]"
+                    />
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setDeclInputOpen(true)}
+                    disabled={stage === "reviewing" || stage === "committing"}
+                    className="rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+                    title="自分の宣言を作る (この科目のパレットに残るよ)"
+                  >
+                    ＋宣言を作る
+                  </button>
+                )}
+              </div>
+
               <Textarea
+                ref={textareaRef}
                 value={body}
                 onChange={(e) => {
                   setBody(e.target.value);
                   // 添削後に編集したら writing に戻す (古い3色判定を確定に使わせない)。
                   if (stage === "reviewed") setStage("writing");
                 }}
-                placeholder="例: つまり〜ということ。ポイントは〜で、〜のときは〜になる…（自分の言葉でOK）"
+                placeholder={
+                  "例:\n(1)【定義】 つまり〜ということ\n(2)【ポイント】\n①〜\n②〜\n（「この型で書く」で型を入れられるよ）"
+                }
                 className="min-h-[140px] resize-none"
                 disabled={stage === "reviewing" || stage === "committing"}
               />
