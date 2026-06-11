@@ -3306,6 +3306,21 @@ ito19 さんの経験則「1〜2 ヶ月先の計画は計画通りに進まな�
 - **TutorChat / TutorMessageBubble / RightPaneRouter / TutorArchiveView**: props 配線
   (`dayPickedKeys` で重複選択防止、archive は readonly no-op)。
 
+### 宿題・テストのその場登録 (同日追加、ito19 さん実機フィードバック)
+
+「今日のタスクで一番多いのは宿題・テスト」= 帰ってきて**その日出た宿題をその場で登録**する
+のが主ケース。登録済みからしか選べなかった儀式に新規登録の入口を追加:
+
+- **DayPickerCard 末尾「＋新しい宿題・テストを登録」** (点線ボタン)。候補 0 件でも
+  カードを出す (登録が主目的になるため。buildDayRitualReply / handleStartDayRitual 両方)。
+- **TutorWorkspace に AssignmentDialog を常設** (`dayAssignmentDialog` state、2 モード):
+  - `"ritual"` (儀式カードから) = 保存と同時に**今日の枠へ自動 pick** + ゆい
+    「登録して今日に入れたよ📌 他にもやる?」(儀式中に登録する = 今日やるつもり)。
+  - `"plain"` (ダッシュボード宿題・テストカードの**「＋追加」**) = 登録のみ。
+    教材ペインの宿題・テストタブまで行かずに登録できる。
+- `handleSubmitAssignment` は新規作成時に作成 `Material` を返すよう拡張 (自動 pick 用。
+  編集時は null)。
+
 ---
 
 ## 設計の核（一行で）
