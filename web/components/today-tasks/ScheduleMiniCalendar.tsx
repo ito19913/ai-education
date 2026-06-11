@@ -18,6 +18,11 @@ type Props = {
   exams: ExamPrep[];
   /** 「今日」基準 */
   now?: Date;
+  /**
+   * true の時、外側の Card + ヘッダ ("今後 2 週間") を出さずに中身 (グリッド + 凡例)
+   * だけを描画する。SchedulePanel が枠とトグルを提供する時に使う (2026-06-09)。
+   */
+  bare?: boolean;
 };
 
 function ymd(d: Date): string {
@@ -37,7 +42,7 @@ function startOfWeek(d: Date): Date {
   return x;
 }
 
-export function ScheduleMiniCalendar({ items, exams, now }: Props) {
+export function ScheduleMiniCalendar({ items, exams, now, bare }: Props) {
   const today = now ?? new Date();
   const todayKey = ymd(today);
   const weekStart = startOfWeek(today);
@@ -72,16 +77,9 @@ export function ScheduleMiniCalendar({ items, exams, now }: Props) {
     return cs;
   }, [weekStart]);
 
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <CalendarRange className="size-4 text-primary" />
-          <span>今後 2 週間</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-7 gap-1">
+  const inner = (
+    <>
+      <div className="grid grid-cols-7 gap-1">
           {["月", "火", "水", "木", "金", "土", "日"].map((w) => (
             <div
               key={w}
@@ -151,13 +149,27 @@ export function ScheduleMiniCalendar({ items, exams, now }: Props) {
             );
           })}
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
-          <DotLegend type="lesson-review" label="授業復習" />
-          <DotLegend type="exam-prep" label="試験対策" />
-          <DotLegend type="homework" label="宿題" />
-          <DotLegend type="issue" label="課題" />
-        </div>
-      </CardContent>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+        <DotLegend type="lesson-review" label="授業復習" />
+        <DotLegend type="exam-prep" label="試験対策" />
+        <DotLegend type="homework" label="宿題" />
+        <DotLegend type="issue" label="課題" />
+      </div>
+    </>
+  );
+
+  // SchedulePanel から bare で呼ばれた時は中身だけ返す (枠は呼び出し側が持つ)
+  if (bare) return inner;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <CalendarRange className="size-4 text-primary" />
+          <span>今後 2 週間</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>{inner}</CardContent>
     </Card>
   );
 }

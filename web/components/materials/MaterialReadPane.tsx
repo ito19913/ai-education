@@ -111,6 +111,10 @@ type Props = {
   resumes?: Resume[];
   /** R10 Phase 2: 冊を追加 (学習中に新しい冊を作って入れる) */
   onAddResume?: (subjectId: string, name: string) => Promise<Resume | null>;
+  /** 学習履歴 (2026-06-10): ガイド読書を始めた時に「読んだ」を記録 (同まとまり1日1回は親で丸め) */
+  onLogRead?: (segmentId: string, conceptName: string) => void;
+  /** 学習履歴 (2026-06-10): アクティブ 1 分ごとのハートビート (+1 分) */
+  onStudyMinute?: () => void;
 };
 
 // まとまり全体を vision で渡す時の最大ページ数 (payload / 速度の上限、M8)。
@@ -316,6 +320,8 @@ export function MaterialReadPane({
   noteEntries,
   resumes,
   onAddResume,
+  onLogRead,
+  onStudyMinute,
 }: Props) {
   // 狭い画面では縦スタック (rail は隠す)、広い画面では横3ペイン。
   const isMobile = useIsMobile();
@@ -751,6 +757,8 @@ export function MaterialReadPane({
       if (!loaded || starting || sending || guidedBusy) return;
       setShowUnitMenu(false);
       setGuidedSegment(seg);
+      // 学習履歴 (2026-06-10): 「まとまりを葵と読んだ」を自動記録 (1日1回は親で丸め)
+      onLogRead?.(seg.id, seg.conceptName);
       // G-6: 2 周目以降 (既にノート化済み) は最初からやや踏み込んだ難易度で始める。
       setGuidedLevel(notedSegmentIds?.has(seg.id) ? 1 : 0);
       setGuidedBusy(true);
@@ -838,6 +846,7 @@ export function MaterialReadPane({
       subject,
       notedSegmentIds,
       guidedPlansMap,
+      onLogRead,
     ],
   );
 
@@ -906,6 +915,32 @@ export function MaterialReadPane({
       }
     })();
   }, [loaded, onCoverThumb, material.coverThumb, material.id]);
+
+  // 学習履歴 (2026-06-10): アクティブ時間のハートビート。
+  // タブが見えていて、直近 3 分以内に操作 (pointer/key/wheel) がある時だけ毎分 +1。
+  // 離席・放置タブは数えない (正直な数字)。セッション開始/終了の境界問題を構造的に回避。
+  const lastInteractionRef = useRef(0);
+  useEffect(() => {
+    if (!onStudyMinute) return;
+    lastInteractionRef.current = Date.now();
+    const touch = () => {
+      lastInteractionRef.current = Date.now();
+    };
+    window.addEventListener("pointerdown", touch);
+    window.addEventListener("keydown", touch);
+    window.addEventListener("wheel", touch, { passive: true });
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastInteractionRef.current > 3 * 60 * 1000) return;
+      onStudyMinute();
+    }, 60 * 1000);
+    return () => {
+      window.removeEventListener("pointerdown", touch);
+      window.removeEventListener("keydown", touch);
+      window.removeEventListener("wheel", touch);
+      window.clearInterval(id);
+    };
+  }, [onStudyMinute]);
 
   // guidedBlocks の最新値を ref へ同期 (commit 時に stale を避ける)。
   useEffect(() => {

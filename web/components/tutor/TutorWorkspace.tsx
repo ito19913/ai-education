@@ -34,7 +34,11 @@ import {
   updateMaterialMeta,
   updateMaterialCoverThumb,
   softDeleteMaterial,
+  insertAssignment,
+  updateAssignment,
+  updateAssignmentStatus,
   getCurrentUserId,
+  type NewAssignmentInput,
 } from "@/lib/materials/materials-repo";
 import {
   extractFullPageTexts,
@@ -68,6 +72,35 @@ import {
   insertSubject,
 } from "@/lib/subjects/subjects-repo";
 import {
+  ensureDefaultEventLabels,
+  insertEventLabel,
+  updateEventLabel,
+  softDeleteEventLabel,
+} from "@/lib/schedule/event-labels-repo";
+import {
+  fetchCalendarEvents,
+  insertCalendarEvent,
+  updateCalendarEvent,
+  softDeleteCalendarEvent,
+  type CalendarEventInput,
+} from "@/lib/schedule/calendar-events-repo";
+import {
+  fetchPlans,
+  insertPlan,
+  updatePlanEndsAt,
+  updatePlanStatus,
+  updatePlanSkips,
+  softDeletePlan,
+} from "@/lib/plans/plans-repo";
+import {
+  fetchLearningLogs,
+  insertLearningLog,
+  fetchStudyMinutes,
+  incrementStudyMinute,
+  type NewLearningLogInput,
+} from "@/lib/history/learning-logs-repo";
+import { DEFAULT_EVENT_LABELS } from "@/lib/learn/event-colors";
+import {
   buildInitialTutorThread,
   buildNextTutorReply,
   buildNextTutorReplyAsync,
@@ -84,20 +117,27 @@ import {
 } from "@/lib/learn/tutor-thread-storage";
 import { MOCK_MATERIALS, MOCK_SUBJECTS } from "@/lib/learn/mock-data";
 import type {
+  AssignmentStatus,
+  CalendarEvent,
   ChatMessage,
   ConceptSegment,
+  EventLabel,
+  EventLabelColor,
   ExamPrep,
   Homework,
   Issue,
   IssueChatMessage,
   KnowledgeNode,
+  LearningLog,
   LearningSession,
+  StudyMinutesBucket,
   LessonReview,
   Material,
   NoteEntry,
   Resume,
   RightPaneView,
   ScheduleItem,
+  StudyPlan,
   Subject,
   TutorMessage,
   TutorRightPaneAction,
@@ -149,12 +189,7 @@ export function TutorWorkspace({
   nodes,
   initialIssues,
   initialScheduleToday,
-  scheduleUpcoming,
-  exams,
-  homeworks,
-  lessonReviews,
   subjects: initialSubjects,
-  sessions,
   chatMessages,
 }: Props) {
   // C30 2026-05-25 grill 2 S7: 科目追加対応で subjects を useState 化
@@ -221,6 +256,9 @@ export function TutorWorkspace({
   // R10 Phase 2: レジュメ冊。real は起動時 DB fetch、mock は空 (1 科目 1 冊運用なら
   // resume レコードなしでも Phase 1 同様に科目スコープ表示は成立する)。
   const [resumes, setResumes] = useState<Resume[]>([]);
+  // 初期 fetch 完了フラグ。デフォルト冊の自動確保 effect がこの後に走るようにして、
+  // fetch の setResumes(rows) で新規冊が上書き消去されるレースを防ぐ。
+  const [resumesLoaded, setResumesLoaded] = useState(false);
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
     let cancelled = false;
@@ -228,11 +266,445 @@ export function TutorWorkspace({
       .then((rows) => {
         if (!cancelled) setResumes(rows);
       })
-      .catch((err) => console.error("[レジュメ冊] 一覧取得失敗:", err));
+      .catch((err) => console.error("[レジュメ冊] 一覧取得失敗:", err))
+      .finally(() => {
+        if (!cancelled) setResumesLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // R10: エントリのある科目には必ず「デフォルト冊」を確保する (2026-06-09 ito19 さん指摘)。
+  // 英語など R10 以前に作られたエントリは resume レコードが無く、NotesHomeView の
+  // 冊タブ (＝「冊を追加」ボタン) が出ない。ensureDefaultResume は既存チェック付きで、
+  // 無ければ作成 + 同科目の未割当ピースを backfill する (古いエントリの resume_id も補修)。
+  const ensuredSubjectsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    if (!resumesLoaded || noteEntries.length === 0) return;
+    const subjectsWithEntries = new Set(
+      noteEntries.filter((e) => !e.deletedAt).map((e) => e.subjectId),
+    );
+    const haveDefault = new Set(
+      resumes
+        .filter((r) => r.isDefault && !r.deletedAt)
+        .map((r) => r.subjectId),
+    );
+    const missing = [...subjectsWithEntries].filter(
+      (sid) => !haveDefault.has(sid) && !ensuredSubjectsRef.current.has(sid),
+    );
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const ownerId = await getCurrentUserId();
+        for (const sid of missing) {
+          // 二重実行を防ぐため先に記録 (await をまたいでも重複しない)
+          ensuredSubjectsRef.current.add(sid);
+          const subjectName =
+            subjects.find((s) => s.id === sid)?.name ?? "その他";
+          const resume = await ensureDefaultResume(sid, subjectName, ownerId);
+          if (cancelled) return;
+          setResumes((prev) =>
+            prev.some((r) => r.id === resume.id) ? prev : [...prev, resume],
+          );
+        }
+      } catch (err) {
+        console.error("[レジュメ冊] デフォルト冊の自動確保に失敗:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resumesLoaded, noteEntries, resumes, subjects]);
+
+  // ----- 予定 (カレンダー) のラベル + 手動イベント (2026-06-09) -----
+  // real は DB から (ラベルはオンデマンドシード)、mock はデフォルトラベルをローカルに。
+  const [eventLabels, setEventLabels] = useState<EventLabel[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setEventLabels(
+        DEFAULT_EVENT_LABELS.map((d, i) => ({
+          id: `label-local-${i}`,
+          name: d.name,
+          color: d.color,
+          kind: d.kind,
+        })),
+      );
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const ownerId = await getCurrentUserId();
+        const labels = await ensureDefaultEventLabels(ownerId);
+        if (!cancelled) setEventLabels(labels);
+      } catch (err) {
+        console.error("[予定] ラベル取得失敗:", err);
+      }
+      try {
+        const events = await fetchCalendarEvents();
+        if (!cancelled) setCalendarEvents(events);
+      } catch (err) {
+        console.error("[予定] イベント取得失敗:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleAddEvent = useCallback(async (input: CalendarEventInput) => {
+    if (isSupabaseConfigured()) {
+      try {
+        const ownerId = await getCurrentUserId();
+        const created = await insertCalendarEvent(input, ownerId);
+        setCalendarEvents((prev) => [...prev, created]);
+        return;
+      } catch (err) {
+        console.error("[予定] 追加失敗、in-memory にフォールバック:", err);
+      }
+    }
+    setCalendarEvents((prev) => [
+      ...prev,
+      {
+        id: `event-local-${Date.now()}`,
+        title: input.title,
+        date: input.date,
+        labelId: input.labelId,
+        time: input.time,
+        memo: input.memo,
+      },
+    ]);
+  }, []);
+
+  const handleUpdateEvent = useCallback(
+    async (id: string, patch: Partial<CalendarEventInput>) => {
+      if (isSupabaseConfigured()) {
+        try {
+          await updateCalendarEvent(id, patch);
+        } catch (err) {
+          console.error("[予定] 更新失敗:", err);
+        }
+      }
+      setCalendarEvents((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+      );
+    },
+    [],
+  );
+
+  const handleDeleteEvent = useCallback(async (id: string) => {
+    if (isSupabaseConfigured()) {
+      try {
+        await softDeleteCalendarEvent(id);
+      } catch (err) {
+        console.error("[予定] 削除失敗:", err);
+      }
+    }
+    setCalendarEvents((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  const handleAddLabel = useCallback(
+    async (name: string, color: EventLabelColor) => {
+      if (isSupabaseConfigured()) {
+        try {
+          const ownerId = await getCurrentUserId();
+          const created = await insertEventLabel(name, color, ownerId);
+          setEventLabels((prev) => [...prev, created]);
+          return;
+        } catch (err) {
+          console.error("[予定] ラベル追加失敗:", err);
+        }
+      }
+      setEventLabels((prev) => [
+        ...prev,
+        { id: `label-local-${Date.now()}`, name, color, kind: "normal" },
+      ]);
+    },
+    [],
+  );
+
+  const handleUpdateLabel = useCallback(
+    async (id: string, patch: { name?: string; color?: EventLabelColor }) => {
+      if (isSupabaseConfigured()) {
+        try {
+          await updateEventLabel(id, patch);
+        } catch (err) {
+          console.error("[予定] ラベル更新失敗:", err);
+        }
+      }
+      setEventLabels((prev) =>
+        prev.map((l) => (l.id === id ? { ...l, ...patch } : l)),
+      );
+    },
+    [],
+  );
+
+  const handleDeleteLabel = useCallback(async (id: string) => {
+    if (isSupabaseConfigured()) {
+      try {
+        await softDeleteEventLabel(id);
+      } catch (err) {
+        console.error("[予定] ラベル削除失敗:", err);
+      }
+    }
+    setEventLabels((prev) => prev.filter((l) => l.id !== id));
+  }, []);
+
+  const calendarApi = useMemo(
+    () => ({
+      labels: eventLabels,
+      events: calendarEvents,
+      onAddEvent: handleAddEvent,
+      onUpdateEvent: handleUpdateEvent,
+      onDeleteEvent: handleDeleteEvent,
+      onAddLabel: handleAddLabel,
+      onUpdateLabel: handleUpdateLabel,
+      onDeleteLabel: handleDeleteLabel,
+    }),
+    [
+      eventLabels,
+      calendarEvents,
+      handleAddEvent,
+      handleUpdateEvent,
+      handleDeleteEvent,
+      handleAddLabel,
+      handleUpdateLabel,
+      handleDeleteLabel,
+    ],
+  );
+
+  // ----- 新プラン (ザックリ・まとまりキュー型、2026-06-10 grill 確定) -----
+  // real は DB から。mock は in-memory (リロードで消える)。
+  const [plans, setPlans] = useState<StudyPlan[]>([]);
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+    fetchPlans()
+      .then((rows) => {
+        if (!cancelled) setPlans(rows);
+      })
+      .catch((err) => console.error("[プラン] 一覧取得失敗:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** 「プランに組み込む」。countFrom 指定は 2 周目 (最初からやり直す) 用。 */
+  const handleCreatePlan = useCallback(
+    async (material: Material, endsAt: string, countFrom?: string) => {
+      const input = {
+        subjectId: material.subjectId,
+        materialId: material.id,
+        endsAt,
+        countFrom,
+      };
+      if (isSupabaseConfigured()) {
+        try {
+          const ownerId = await getCurrentUserId();
+          const created = await insertPlan(input, ownerId);
+          setPlans((prev) => [...prev, created]);
+          return;
+        } catch (err) {
+          console.error("[プラン] 作成失敗、in-memory にフォールバック:", err);
+        }
+      }
+      setPlans((prev) => [
+        ...prev,
+        {
+          id: `plan-local-${Date.now()}`,
+          subjectId: material.subjectId,
+          materialId: material.id,
+          endsAt,
+          status: "active",
+          skippedSegmentIds: [],
+          countFrom,
+        },
+      ]);
+    },
+    [],
+  );
+
+  const handleExtendPlan = useCallback((id: string, endsAt: string) => {
+    setPlans((prev) => prev.map((p) => (p.id === id ? { ...p, endsAt } : p)));
+    if (isSupabaseConfigured()) {
+      void updatePlanEndsAt(id, endsAt).catch((err) =>
+        console.error("[プラン] 延長失敗:", err),
+      );
+    }
+  }, []);
+
+  const handleCompletePlan = useCallback((id: string) => {
+    setPlans((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, status: "completed" } : p)),
+    );
+    if (isSupabaseConfigured()) {
+      void updatePlanStatus(id, "completed").catch((err) =>
+        console.error("[プラン] 終了失敗:", err),
+      );
+    }
+  }, []);
+
+  /** 最初からやり直す (2周目): 旧プランを completed にし、countFrom=now の新プランを作る。 */
+  const handleRestartPlan = useCallback(
+    (plan: StudyPlan, endsAt: string) => {
+      handleCompletePlan(plan.id);
+      const material = materials.find((m) => m.id === plan.materialId);
+      if (material) {
+        void handleCreatePlan(material, endsAt, new Date().toISOString());
+      }
+    },
+    [handleCompletePlan, handleCreatePlan, materials],
+  );
+
+  const handleTogglePlanSkip = useCallback(
+    (planId: string, segmentId: string) => {
+      setPlans((prev) =>
+        prev.map((p) => {
+          if (p.id !== planId) return p;
+          const has = p.skippedSegmentIds.includes(segmentId);
+          const next = has
+            ? p.skippedSegmentIds.filter((s) => s !== segmentId)
+            : [...p.skippedSegmentIds, segmentId];
+          if (isSupabaseConfigured()) {
+            void updatePlanSkips(planId, next).catch((err) =>
+              console.error("[プラン] スキップ更新失敗:", err),
+            );
+          }
+          return { ...p, skippedSegmentIds: next };
+        }),
+      );
+    },
+    [],
+  );
+
+  const handleDeletePlan = useCallback((id: string) => {
+    setPlans((prev) => prev.filter((p) => p.id !== id));
+    if (isSupabaseConfigured()) {
+      void softDeletePlan(id).catch((err) =>
+        console.error("[プラン] 削除失敗:", err),
+      );
+    }
+  }, []);
+
+  // ----- 学習履歴 (出来事ログ + 学習時間、2026-06-10 grill 確定) -----
+  // 履歴は「自動・必須」。実アクションへのフックから記録される (タスク任意とは独立)。
+  const [learningLogs, setLearningLogs] = useState<LearningLog[]>([]);
+  const [studyMinutes, setStudyMinutes] = useState<StudyMinutesBucket[]>([]);
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+    fetchLearningLogs()
+      .then((rows) => {
+        if (!cancelled) setLearningLogs(rows);
+      })
+      .catch((err) => console.error("[履歴] ログ取得失敗:", err));
+    fetchStudyMinutes()
+      .then((rows) => {
+        if (!cancelled) setStudyMinutes(rows);
+      })
+      .catch((err) => console.error("[履歴] 学習時間取得失敗:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** 出来事を 1 件記録 (楽観更新 + 裏で DB)。"read" は同まとまり 1 日 1 回に丸める。 */
+  const addLearningLog = useCallback(
+    (input: NewLearningLogInput) => {
+      if (input.kind === "read" && input.segmentId) {
+        const todayKey = formatLocalDate(new Date());
+        const dup = learningLogs.some(
+          (l) =>
+            l.kind === "read" &&
+            l.segmentId === input.segmentId &&
+            l.materialId === input.materialId &&
+            formatLocalDate(new Date(l.createdAt)) === todayKey,
+        );
+        if (dup) return;
+      }
+      const local: LearningLog = {
+        id: `log-local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        kind: input.kind,
+        subjectId: input.subjectId,
+        materialId: input.materialId,
+        segmentId: input.segmentId,
+        title: input.title,
+        createdAt: new Date().toISOString(),
+      };
+      setLearningLogs((prev) => [local, ...prev]);
+      if (isSupabaseConfigured()) {
+        void (async () => {
+          try {
+            const ownerId = await getCurrentUserId();
+            const created = await insertLearningLog(input, ownerId);
+            setLearningLogs((prev) =>
+              prev.map((l) => (l.id === local.id ? created : l)),
+            );
+          } catch (err) {
+            console.error("[履歴] 記録失敗:", err);
+          }
+        })();
+      }
+    },
+    [learningLogs],
+  );
+
+  /** 読書ビューのアクティブ 1 分ごとのハートビート (+1 分)。 */
+  const handleStudyMinute = useCallback(
+    (materialId: string, subjectId: string) => {
+      const day = formatLocalDate(new Date());
+      // 楽観更新 (バケットが無ければ作る)
+      setStudyMinutes((prev) => {
+        const idx = prev.findIndex(
+          (b) => b.day === day && b.materialId === materialId,
+        );
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], minutes: next[idx].minutes + 1 };
+          return next;
+        }
+        return [
+          {
+            id: `sm-local-${Date.now()}`,
+            day,
+            subjectId,
+            materialId,
+            minutes: 1,
+          },
+          ...prev,
+        ];
+      });
+      if (isSupabaseConfigured()) {
+        void (async () => {
+          try {
+            const ownerId = await getCurrentUserId();
+            const bucket = await incrementStudyMinute(
+              day,
+              subjectId,
+              materialId,
+              ownerId,
+            );
+            // DB の真値で同期 (local 仮 id の行を置換)
+            setStudyMinutes((prev) => {
+              const others = prev.filter(
+                (b) => !(b.day === day && b.materialId === materialId),
+              );
+              return [bucket, ...others];
+            });
+          } catch (err) {
+            console.error("[履歴] 学習時間加算失敗:", err);
+          }
+        })();
+      }
+    },
+    [],
+  );
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = viewFromParam(searchParams.get("view"));
@@ -383,6 +855,10 @@ export function TutorWorkspace({
         materialId?: string;
         /** 段階1-C: material-read の初期ページ (体系図ノードジャンプ用) */
         page?: number;
+        /** 教材ペインの初期タブ ("books" | "assignments"、2026-06-09) */
+        tab?: string;
+        /** material-read で該当まとまりを「選択した段階」で開く (&unit=1、2026-06-10) */
+        unit?: boolean;
       },
     ) => {
       const url = new URLSearchParams();
@@ -393,7 +869,10 @@ export function TutorWorkspace({
       if (next === "material-read" && params?.materialId) {
         url.set("id", params.materialId);
         if (params.page && params.page > 0) url.set("page", String(params.page));
+        if (params.unit) url.set("unit", "1");
       }
+      // 教材ペインの初期タブ (ダッシュボード「宿題・テスト すべて見る」→ assignments)
+      if (next === "materials" && params?.tab) url.set("tab", params.tab);
       if (next === "subject-history" && params?.subjectId)
         url.set("subjectId", params.subjectId);
       // R10: 出典→レジュメ 往復。notes view に科目を渡して該当タブを初期選択する。
@@ -528,9 +1007,144 @@ export function TutorWorkspace({
     [materials, navigate],
   );
 
+  // ----- 宿題・テスト (kind="assignment"、2026-06-09) -----
+  // 問題 PDF を Storage にアップして紐付ける共通処理 (新規/差し替え両用)。
+  const uploadAssignmentPdf = useCallback(
+    async (id: string, ownerId: string, pdfFile: File) => {
+      try {
+        const { path, size } = await uploadMaterialPdf(ownerId, id, pdfFile);
+        await updateMaterialPdfPath(id, path, size);
+        setMaterials((prev) =>
+          prev.map((m) =>
+            m.id === id ? { ...m, pdfPath: path, pdfSize: size } : m,
+          ),
+        );
+      } catch (e) {
+        console.error("[宿題・テスト] PDF アップロード失敗:", e);
+      }
+    },
+    [],
+  );
+
+  // 追加 or 編集 (id があれば編集)。PDF があれば一緒にアップ/差し替え。
+  const handleSubmitAssignment = useCallback(
+    async (input: NewAssignmentInput, pdfFile?: File, id?: string) => {
+      // ----- 編集 -----
+      if (id) {
+        setMaterials((prev) =>
+          prev.map((m) =>
+            m.id === id
+              ? {
+                  ...m,
+                  name: input.name,
+                  subjectId: input.subjectId,
+                  assignmentType: input.assignmentType,
+                  dueDate: input.dueDate,
+                }
+              : m,
+          ),
+        );
+        if (isSupabaseConfigured()) {
+          try {
+            await updateAssignment(id, input);
+          } catch (err) {
+            console.error("[宿題・テスト] 更新失敗:", err);
+          }
+          if (pdfFile) {
+            const ownerId = await getCurrentUserId();
+            await uploadAssignmentPdf(id, ownerId, pdfFile);
+          }
+        }
+        return;
+      }
+      // ----- 新規 -----
+      if (isSupabaseConfigured()) {
+        try {
+          const ownerId = await getCurrentUserId();
+          const created = await insertAssignment(input, ownerId);
+          setMaterials((prev) => [...prev, created]);
+          // assignment なので まとまり/体系図 等の重い処理はしない。
+          if (pdfFile) {
+            await uploadAssignmentPdf(created.id, ownerId, pdfFile);
+          }
+          return;
+        } catch (err) {
+          console.error("[宿題・テスト] 追加失敗、in-memory にフォールバック:", err);
+        }
+      }
+      const local: Material = {
+        id: `assignment-local-${Date.now()}`,
+        subjectId: input.subjectId,
+        name: input.name,
+        label: "テキスト",
+        coveredNodeIds: [],
+        kind: "assignment",
+        assignmentType: input.assignmentType,
+        dueDate: input.dueDate,
+        assignmentStatus: "todo",
+      };
+      setMaterials((prev) => [...prev, local]);
+    },
+    [uploadAssignmentPdf],
+  );
+
+  const handleDeleteAssignment = useCallback(
+    (id: string) => {
+      const target = materials.find((m) => m.id === id);
+      setMaterials((prev) => prev.filter((m) => m.id !== id));
+      if (isSupabaseConfigured()) {
+        void softDeleteMaterial(id).catch((err) =>
+          console.error("[宿題・テスト] 削除失敗:", err),
+        );
+        if (target?.pdfPath) {
+          void removeMaterialPdf(target.pdfPath).catch((err) =>
+            console.error("[宿題・テスト] PDF 実体削除失敗:", err),
+          );
+        }
+      }
+    },
+    [materials],
+  );
+
+  const handleToggleAssignmentStatus = useCallback(
+    (id: string, status: AssignmentStatus) => {
+      // 履歴 (自動): 「やった」にした時だけ記録 (戻した時は記録しない)
+      if (status === "done") {
+        const target = materials.find((m) => m.id === id);
+        if (target) {
+          addLearningLog({
+            kind: "assignment-done",
+            subjectId: target.subjectId,
+            materialId: target.id,
+            title: target.name,
+          });
+        }
+      }
+      setMaterials((prev) =>
+        prev.map((m) =>
+          m.id === id ? { ...m, assignmentStatus: status } : m,
+        ),
+      );
+      if (isSupabaseConfigured()) {
+        void updateAssignmentStatus(id, status).catch((err) =>
+          console.error("[宿題・テスト] 状態更新失敗:", err),
+        );
+      }
+    },
+    [materials, addLearningLog],
+  );
+
   // ----- まとめノート N9①: 能動ゲート通過でエントリが刻まれた時 -----
   const handleNoteAdded = useCallback(
     (entry: NoteEntry) => {
+      // 履歴 (自動): 仕上げた (understood) / 途中 (open) を記録
+      addLearningLog({
+        kind: entry.status === "understood" ? "resume-done" : "resume-draft",
+        subjectId: entry.subjectId,
+        materialId: entry.sourceMaterialId,
+        segmentId: entry.sourceSegmentId,
+        title: entry.conceptName,
+      });
       // upsert: 2 周目の深化更新 (同じ id) は置換、新規は追加 (G-C で重複を防ぐ)。
       setNoteEntries((prev) =>
         prev.some((e) => e.id === entry.id)
@@ -549,11 +1163,24 @@ export function TutorWorkspace({
       };
       setTutorMessages((prev) => [...prev, reply]);
     },
-    [],
+    [addLearningLog],
   );
 
   const handleNoteUpdated = useCallback(
     (id: string, patch: { userNote?: string; status?: "understood" | "open" }) => {
+      // 履歴 (自動): 振り返りで open → understood に昇格した時を記録
+      if (patch.status === "understood") {
+        const entry = noteEntries.find((e) => e.id === id);
+        if (entry && entry.status === "open") {
+          addLearningLog({
+            kind: "review-promote",
+            subjectId: entry.subjectId,
+            materialId: entry.sourceMaterialId,
+            segmentId: entry.sourceSegmentId,
+            title: entry.conceptName,
+          });
+        }
+      }
       setNoteEntries((prev) =>
         prev.map((e) => (e.id === id ? { ...e, ...patch } : e)),
       );
@@ -563,7 +1190,7 @@ export function TutorWorkspace({
         );
       }
     },
-    [],
+    [noteEntries, addLearningLog],
   );
 
   const handleNoteDeleted = useCallback((id: string) => {
@@ -1230,6 +1857,18 @@ export function TutorWorkspace({
             resumes={resumes}
             onAddResume={handleAddResume}
             onNoteAdded={handleNoteAdded}
+            onLogRead={(segmentId, conceptName) =>
+              addLearningLog({
+                kind: "read",
+                subjectId: readMaterial.subjectId,
+                materialId: readMaterial.id,
+                segmentId,
+                title: conceptName,
+              })
+            }
+            onStudyMinute={() =>
+              handleStudyMinute(readMaterial.id, readMaterial.subjectId)
+            }
             notedSegmentIds={
               // ★ segment id は教材内ユニーク (seg-1 等) なので、必ず教材で絞る。
               //   絞らないと別教材の同名 seg がこの教材の緑チェックに誤マッチする。
@@ -1268,7 +1907,6 @@ export function TutorWorkspace({
             nodes={nodes}
             issues={issues}
             scheduleItems={scheduleToday}
-            subjects={subjects}
             generateReply={generateReply}
             onPickSubject={onPickSubject}
             onPickMaterial={onPickMaterial}
@@ -1283,7 +1921,8 @@ export function TutorWorkspace({
             onSelectIssue={(id) => navigate("issue", { issueId: id })}
             onSeeAllIssues={() => navigate("issues")}
             onSelectIssueItem={(id) => navigate("issue", { issueId: id })}
-            onSeeAllSchedule={() => navigate("today-tasks")}
+            onSeeAllSchedule={() => navigate("default")}
+            onOpenDashboard={() => navigate("default")}
           />
         </ResizablePanel>
 
@@ -1300,17 +1939,13 @@ export function TutorWorkspace({
             nodes={nodes}
             chatMessages={chatMessages}
             scheduleToday={scheduleToday}
-            scheduleUpcoming={scheduleUpcoming}
-            exams={exams}
-            homeworks={homeworks}
-            lessonReviews={lessonReviews}
             subjects={subjects}
-            sessions={sessions}
+            learningLogs={learningLogs}
+            studyMinutes={studyMinutes}
             onResolveIssue={handleResolveIssue}
             onReopenIssue={handleReopenIssue}
             onAppendChatMessages={handleAppendChatMessages}
             onSelectIssue={(id) => navigate("issue", { issueId: id })}
-            onSelectIssueItem={(id) => navigate("issue", { issueId: id })}
             onBack={() => navigate("default")}
             onMaterialAdded={handleMaterialAdded}
             onMaterialUpdated={handleMaterialUpdated}
@@ -1323,6 +1958,21 @@ export function TutorWorkspace({
             onNoteDeleted={handleNoteDeleted}
             onOpenNoteSource={(materialId, page) =>
               navigate("material-read", { materialId, page })
+            }
+            onNavigate={navigate}
+            calendar={calendarApi}
+            plans={plans}
+            onCreatePlan={handleCreatePlan}
+            onExtendPlan={handleExtendPlan}
+            onCompletePlan={handleCompletePlan}
+            onRestartPlan={handleRestartPlan}
+            onTogglePlanSkip={handleTogglePlanSkip}
+            onDeletePlan={handleDeletePlan}
+            onSubmitAssignment={handleSubmitAssignment}
+            onDeleteAssignment={handleDeleteAssignment}
+            onToggleAssignmentStatus={handleToggleAssignmentStatus}
+            onStudyAssignment={(materialId) =>
+              navigate("material-read", { materialId })
             }
             onAddResume={handleAddResume}
             onRenameResume={handleRenameResume}

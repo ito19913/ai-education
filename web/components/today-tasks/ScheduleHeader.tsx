@@ -1,8 +1,11 @@
 "use client";
 
 /**
- * ScheduleHeader - ダッシュボード最上部のサマリーヘッダ。
+ * ScheduleHeader - /today-tasks (標準ページ) のサマリーヘッダ。
  * 試験までのカウントダウン / 未クリア課題 / 今週の予定数 を一目で。
+ *
+ * 2026-06-09: ダッシュボード (DashboardPane) は独自の 2 枚サマリー (レジュメ/教材) に
+ * 移行したため、本コンポーネントは標準の today-tasks ページ専用 (3 枚) に戻した。
  */
 import { Card, CardContent } from "@/components/ui/card";
 import { CalendarRange, Flame, GraduationCap, Target } from "lucide-react";

@@ -163,6 +163,139 @@ export type StudyTaskType =
 
 export type StudyTaskStatus = "todo" | "doing" | "done" | "skipped";
 
+// ============================================================================
+// 予定 (カレンダー) — 2026-06-09 grill 確定
+// 「予定」を勉強専用から「何でも入る1本のカレンダー」に拡張する。勉強タスク
+// (ScheduleItem、当面モック) と、子が自分で入れる手動イベント (CalendarEvent、実DB) を
+// ラベル色でマージして並べる。ラベルは固定パレットの色つきで、改名・追加・削除できる。
+// ============================================================================
+
+/** 予定ラベルの色 (固定パレット)。Tailwind 静的クラスにマップする (event-colors.ts)。 */
+export type EventLabelColor =
+  | "blue"
+  | "violet"
+  | "orange"
+  | "green"
+  | "pink"
+  | "amber"
+  | "sky"
+  | "rose"
+  | "teal"
+  | "slate";
+
+/**
+ * ラベルの種類。改名・色変更しても役割は保つため name でなく kind で判定する。
+ * - "study"  … 勉強タスクが自動で紐づくシステムラベル (削除保護、1つだけ)
+ * - "exam"   … 試験。リストで「あと◯日」カウントダウンを出す
+ * - "normal" … それ以外 (締切・遊び・習い事・自作ラベル)
+ */
+export type EventLabelKind = "study" | "exam" | "normal";
+
+/** 予定ラベル (色つき、改名・追加・削除できる)。 */
+export type EventLabel = {
+  id: string;
+  name: string;
+  color: EventLabelColor;
+  kind: EventLabelKind;
+  /** 論理削除日時 (ISO)。値あり = 非表示。 */
+  deletedAt?: string;
+};
+
+/** 子が自分で入れる手動の予定 (遊び・試験・締切など)。実DB。 */
+export type CalendarEvent = {
+  id: string;
+  /** タイトル (例「サッカーの試合」「英検」) */
+  title: string;
+  /** 日付 (YYYY-MM-DD, ローカル日付) */
+  date: string;
+  /** どのラベルか (EventLabel.id) */
+  labelId: string;
+  /** 開始時刻 "HH:MM" (任意、終日なら undefined) */
+  time?: string;
+  /** メモ (任意) */
+  memo?: string;
+  /** 論理削除日時 (ISO)。値あり = 非表示。 */
+  deletedAt?: string;
+};
+
+// ============================================================================
+// 新プラン (ザックリ・まとまりキュー型、2026-06-10 grill 確定)
+//
+// 旧 Plan Engine (Phase 5: LearningPlan/GeneratedTask/月次ロードマップ/Replan) は
+// 「予定表を守らせる」思想だったため丸ごと廃棄し、ゼロベースで置き換えた。
+//   - プラン = 教材 (テキスト/問題集) 単位。「プランに組み込む」だけで成立 (期間を選ぶのみ)
+//   - キュー = 教材のまとまり (ConceptSegment) を上から順。先頭 1 個が今日のタスクに常駐
+//   - 「済み」はレジュメから導出 (understood = 済み) + 手動スキップ。プラン側に完了フラグを
+//     持たない (レジュメが真実の情報源、plan-progress.ts で導出)
+//   - 期間 = チェックポイント。期限が来たらカードが 3 択 (延長/終了/最初から) に変わる。
+//     ブロックしない・急かさない・溜まらない
+// ============================================================================
+
+// ============================================================================
+// 学習履歴 (出来事ログ + 学習時間、2026-06-10 grill 確定)
+//
+// 今日のタスクは「任意」(作りたい人がコーチと決める)、履歴は「自動・必須」。
+// タスクを作らず学習しても、実アクションへのフックで勝手に記録される:
+//   - 出来事ログ (learning_logs): 読んだ / レジュメ途中 / 仕上げた / 振り返り昇格 / 宿題やった
+//   - 学習時間 (study_minutes): 読書ビューのアクティブ時間だけを 1 分単位で自動加算
+//     (タブが見えていて直近 3 分以内に操作がある時のみ。離席・放置は数えない正直な数字)
+// 旧セッション型履歴 (LearningSession、/learn 由来モック) は司令室では置き換え。
+// ============================================================================
+
+/** 出来事の種類。 */
+export type LearningLogKind =
+  | "read" // まとまりを葵と読んだ (ガイド読書開始、同まとまりは1日1回)
+  | "resume-draft" // レジュメを書いた (途中、「今日はここまで」)
+  | "resume-done" // レジュメを仕上げた (理解済み)
+  | "review-promote" // 振り返りで理解済みに昇格 (open → understood)
+  | "assignment-done"; // 宿題・テストを「やった」にした
+
+/** 自動で取る出来事ログ 1 件。Supabase learning_logs に永続化。 */
+export type LearningLog = {
+  id: string;
+  kind: LearningLogKind;
+  subjectId: string;
+  materialId?: string;
+  /** まとまり (ConceptSegment.id、read/resume 系) */
+  segmentId?: string;
+  /** 人が読むラベルのスナップショット (まとまり名・宿題名など) */
+  title: string;
+  /** 発生時刻 (ISO) */
+  createdAt: string;
+};
+
+/** 学習時間バケット (日 × 教材、分)。Supabase study_minutes に永続化。 */
+export type StudyMinutesBucket = {
+  id: string;
+  /** YYYY-MM-DD (ローカル日付) */
+  day: string;
+  subjectId: string;
+  materialId?: string;
+  minutes: number;
+};
+
+/** 新プラン (教材単位のまとまりキュー)。Supabase plans テーブルに永続化。 */
+export type StudyPlan = {
+  id: string;
+  /** 科目 (教材の subjectId と同じ。タブ・ラベル表示用に非正規化して持つ) */
+  subjectId: string;
+  /** 対象教材 (まとまり = この教材の ConceptSegment 列) */
+  materialId: string;
+  /** チェックポイント日 (YYYY-MM-DD)。過ぎたらカードが 3 択表示に変わる */
+  endsAt: string;
+  status: "active" | "completed";
+  /** 手動スキップした まとまり (ConceptSegment.id) 群 */
+  skippedSegmentIds: string[];
+  /**
+   * 済みに数えるレジュメの起点 (ISO)。undefined = 全期間 (作成前の理解済みも数える)。
+   * 「最初からやり直す (2周目)」で now を入れ、それ以降に更新されたレジュメだけ数える。
+   */
+  countFrom?: string;
+  createdAt?: string;
+  /** 論理削除日時 (ISO)。値あり = 非表示。 */
+  deletedAt?: string;
+};
+
 /**
  * Phase 4 拡張: ScheduleItem の出処を識別 (Q7 確定)。
  * - "plan"       = LearningPlan の月次バッチ展開で生成された分
@@ -565,6 +698,21 @@ export type CurrentUser = {
 /** 教材のラベル（種類） */
 export type MaterialLabel = "テキスト" | "問題集" | "副教材";
 
+/**
+ * 教材の種類 (2026-06-09 grill 確定)。
+ * - "book"       … 長期の本 (テキスト/問題集/副教材)。本棚・まとまり・ガイド読書あり。
+ * - "assignment" … 宿題・テスト。リスト表示、提出日・状態つき。重い処理 (まとまり生成・
+ *                  表紙サムネ・体系図抽出) は走らせない。イシュー(=「課題」)とは別物。
+ * 未指定 = "book" 扱い (既存教材は全部 book)。
+ */
+export type MaterialKind = "book" | "assignment";
+
+/** 宿題・テストの種類 (kind="assignment")。表示は 宿題 / テスト。 */
+export type AssignmentType = "homework" | "test";
+
+/** 宿題・テストの状態 (kind="assignment")。表示は まだ / やった。未指定 = todo。 */
+export type AssignmentStatus = "todo" | "done";
+
 /** 教材（教科書 PDF など 1 冊 1 教材） */
 export type Material = {
   id: string;
@@ -583,6 +731,17 @@ export type Material = {
   coverThumb?: string;
   /** 学年（'中1' | '中2' | '中3' | '高1' ... など、任意） */
   gradeLevel?: string;
+  /**
+   * 教材の種類 (2026-06-09)。未指定 = "book"。"assignment" は宿題・テスト
+   * (本棚でなくリスト表示、提出日・状態つき、重い処理オフ)。
+   */
+  kind?: MaterialKind;
+  /** 宿題・テストの種類 (kind="assignment" の時)。 */
+  assignmentType?: AssignmentType;
+  /** 提出日 / テスト日 (YYYY-MM-DD、任意)。予定カレンダーへの自動マーカー元。 */
+  dueDate?: string;
+  /** 宿題・テストの状態 (まだ/やった)。未指定 = "todo"。 */
+  assignmentStatus?: AssignmentStatus;
   /** この教材が扱う体系図ノードの ID 群（教材ビュー表示用） */
   coveredNodeIds: string[];
   /** 論理削除日時 (ISO)。undefined = アクティブ、値あり = ゴミ箱に入っている */
@@ -655,6 +814,11 @@ export type NoteEntry = {
   resumeId?: string;
   /** 子の自分メモ (N7: 本体は守り、子はメモで所有) */
   userNote?: string;
+  /**
+   * 最終更新日時 (ISO、DB の updated_at)。新プランの「最初からやり直す (2周目)」で
+   * 「countFrom 以降に更新されたレジュメだけを済みに数える」判定に使う (2026-06-10)。
+   */
+  updatedAt?: string;
   /** 論理削除日時 (ISO)。値あり = 非表示 */
   deletedAt?: string;
 };

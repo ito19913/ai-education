@@ -22,22 +22,26 @@ import { SubjectTeacherAvatar } from "@/components/ui/subject-teacher-avatar";
 import { MaterialEditDialog } from "@/components/learn/MaterialEditDialog";
 import {
   ArrowRight,
+  BookOpen,
   BookText,
   CalendarClock,
   ChevronLeft,
+  Compass,
   ListChecks,
   Pencil,
 } from "lucide-react";
+import { PlanAddDialog } from "@/components/plans/PlanAddDialog";
 import {
-  MOCK_GENERATED_TASKS,
-  MOCK_LEARNING_PLANS,
-  MOCK_SCHEDULE_TODAY,
-  MOCK_SCHEDULE_UPCOMING,
-} from "@/lib/learn/mock-data";
+  computePlanProgress,
+  daysUntilEnd,
+  getPlanSegments,
+} from "@/lib/plans/plan-progress";
 import type {
   Issue,
   KnowledgeNode,
   Material,
+  NoteEntry,
+  StudyPlan,
   Subject,
 } from "@/lib/learn/types";
 
@@ -57,6 +61,11 @@ type Props = {
   nodes: KnowledgeNode[];
   /** 全 Issue (課題)。この教材の coveredNodeIds に紐づく open 課題をメタ欄に表示する */
   issues: Issue[];
+  /** 新プラン (2026-06-10): この教材のプラン状況表示 + 「プランに組み込む」 */
+  plans: StudyPlan[];
+  /** プラン進捗導出用 (レジュメが真実の情報源) */
+  noteEntries: NoteEntry[];
+  onCreatePlan: (material: Material, endsAt: string) => void;
   /** C46 F (ito19 さん意見): MaterialEditDialog の onSave 経由で呼ばれる */
   onMaterialUpdated: (id: string, patch: Partial<Material>) => void;
   /** C46 F (ito19 さん意見): MaterialEditDialog の onDelete 経由で呼ばれる */
@@ -68,12 +77,17 @@ export function MaterialDetailView({
   subject,
   nodes,
   issues,
+  plans,
+  noteEntries,
+  onCreatePlan,
   onMaterialUpdated,
   onMaterialDeleted,
 }: Props) {
   const router = useRouter();
   // C46 F: 教材編集・削除 dialog の open state
   const [editOpen, setEditOpen] = useState(false);
+  // 新プラン: 「プランに組み込む」ダイアログ
+  const [planDialogOpen, setPlanDialogOpen] = useState(false);
 
   // この教材の「まとまり (一単元=1概念、ConceptSegment)」一覧。
   // 2026-06-08 ito19 さん意見「体系図(目次ノード)とまとまりは別物→まとまりに統一」。
@@ -98,89 +112,24 @@ export function MaterialDetailView({
       }));
   }, [issues, material.coveredNodeIds, nodes]);
 
-  // D + E 2026-05-26 (ito19 さん意見 α 案): スケジュール組み込み状況
-  // - active LearningPlan を materialIds で逆引き
-  // - SI → GT → resource.materialId の経路で「教材紐付き SI」を集計 (P5-Q1 構造)
-  // - 当月の SI (SI.date が YYYY-MM- prefix 一致) + 進捗 % + 未着手 SI 上位 3 件
-  //   + [今月の予定を見る] ボタン (today-tasks 遷移)
-  // C49 2026-05-26 (ito19 さん意見): 信号機色 (赤/黄/青) で進捗状況を表示、
-  //   パッと見で順調かどうかが分かるように。
-  //   ⚠️ TODO: 暫定閾値 (80% 順調 / 50-80% 注意 / 50%未満 遅れ)。
-  //   本物の閾値ロジック (日付経過率との比較: 月の半分過ぎてるのに 30%
-  //   なら赤、等) は ito19 さん「要件は後で詰める」明示なので Phase 6/7
-  //   の要件 grill で確定する。
-  const scheduleInfo = useMemo(() => {
-    const activePlan = MOCK_LEARNING_PLANS.find(
-      (p) =>
-        p.materialIds.includes(material.id) && p.status === "active",
-    );
-    const now = new Date();
-    const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const gtIdsForMaterial = new Set(
-      MOCK_GENERATED_TASKS.filter(
-        (gt) => gt.resource.materialId === material.id,
-      ).map((gt) => gt.id),
-    );
-    const allSIs = [...MOCK_SCHEDULE_TODAY, ...MOCK_SCHEDULE_UPCOMING];
-    const thisMonthSIs = allSIs.filter(
-      (si) =>
-        si.date.startsWith(thisMonth) &&
-        si.generatedTaskId !== undefined &&
-        gtIdsForMaterial.has(si.generatedTaskId),
-    );
-    const doneCount = thisMonthSIs.filter((si) => si.status === "done").length;
-    const totalCount = thisMonthSIs.length;
-    const progressPct =
-      totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
-    const unfinished = thisMonthSIs
-      .filter((si) => si.status !== "done" && si.status !== "skipped")
-      .slice(0, 3);
-    // C49 暫定信号: Phase 6/7 で要件 grill 確定後に置換予定
-    const signal: "green" | "yellow" | "red" | null =
-      totalCount === 0
-        ? null
-        : progressPct >= 80
-          ? "green"
-          : progressPct >= 50
-            ? "yellow"
-            : "red";
-    return {
-      activePlan,
-      thisMonthSIs,
-      doneCount,
-      totalCount,
-      progressPct,
-      unfinished,
-      signal,
-    };
-  }, [material.id]);
-
-  // C49 信号機色 → スタイル設定 (Phase 6/7 要件 grill 後に閾値/色を再確定)
-  const signalConfig = scheduleInfo.signal
-    ? {
-        green: {
-          label: "順調",
-          dot: "bg-emerald-500",
-          text: "text-emerald-700",
-          bar: "bg-emerald-500",
-          ring: "ring-emerald-200",
-        },
-        yellow: {
-          label: "ペース注意",
-          dot: "bg-amber-500",
-          text: "text-amber-700",
-          bar: "bg-amber-500",
-          ring: "ring-amber-200",
-        },
-        red: {
-          label: "遅れ気味",
-          dot: "bg-red-500",
-          text: "text-red-700",
-          bar: "bg-red-500",
-          ring: "ring-red-200",
-        },
-      }[scheduleInfo.signal]
-    : null;
+  // 新プラン (2026-06-10): この教材のアクティブプランと進捗 (レジュメから導出)。
+  // 旧 Phase 5 のモック集計 (MOCK_LEARNING_PLANS / GT / SI、信号機色) は廃止。
+  const activePlan = useMemo(
+    () =>
+      plans.find(
+        (p) =>
+          p.materialId === material.id &&
+          p.status === "active" &&
+          !p.deletedAt,
+      ) ?? null,
+    [plans, material.id],
+  );
+  const planProgress = useMemo(
+    () =>
+      activePlan ? computePlanProgress(activePlan, material, noteEntries) : null,
+    [activePlan, material, noteEntries],
+  );
+  const canAddToPlan = getPlanSegments(material).length > 0;
 
   return (
     // 二層パターン: flex 子の min-height: auto 規則で overflow が効かない問題を回避。
@@ -210,7 +159,18 @@ export function MaterialDetailView({
         <CardContent className="flex flex-col gap-4 pt-5">
           {/* タイトル行 + アクション */}
           <div className="flex items-start gap-3">
-            {subject ? (
+            {/* 2026-06-09 ito19 さん意見「ここも(本棚と同じ)表紙サムネを」:
+                教材一覧 (本棚) と同じ cover_thumb を主役の表紙として出す。
+                未生成 (= 一度も「一緒に読む」で開いていない) 教材は従来どおり
+                担当先生アバター / BookText アイコンにフォールバック。 */}
+            {material.coverThumb ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={material.coverThumb}
+                alt=""
+                className="aspect-[3/4] w-24 shrink-0 rounded-md border border-border bg-muted object-cover shadow-sm"
+              />
+            ) : subject ? (
               <SubjectTeacherAvatar
                 subjectId={subject.id}
                 size={48}
@@ -352,118 +312,73 @@ export function MaterialDetailView({
         </CardContent>
       </Card>
 
-      {/* D + E 2026-05-26 (ito19 さん意見 α 案、C45): 学習スケジュール組み込み状況 */}
+      {/* 新プラン (2026-06-10): この教材のプラン状況。
+          旧「学習スケジュール組み込み状況」(モック集計 + 信号機色) を置換。 */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-sm">
-            <CalendarClock className="size-4 text-primary" />
-            <span>学習スケジュール組み込み状況</span>
+            <Compass className="size-4 text-primary" />
+            <span>プラン</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">
-          {scheduleInfo.activePlan ? (
+          {activePlan && planProgress ? (
             <>
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-xs text-muted-foreground">計画</span>
-                <span className="truncate font-medium text-foreground">
-                  {scheduleInfo.activePlan.title}
-                </span>
-              </div>
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-xs text-muted-foreground">今月の予定</span>
+                <span className="text-xs text-muted-foreground">進み具合</span>
                 <span className="text-foreground">
-                  {scheduleInfo.doneCount} / {scheduleInfo.totalCount} 件 完了 (
-                  <span className="font-medium text-primary">
-                    {scheduleInfo.progressPct}%
-                  </span>
-                  )
+                  {planProgress.doneCount} / {planProgress.total} まとまり
                 </span>
               </div>
-              {/* C49 進捗 信号機表示 (ito19 さん意見、暫定閾値、Phase 6/7 で要件 grill) */}
-              {signalConfig && (
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                 <div
-                  className={cn(
-                    "flex items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 ring-1 ring-inset",
-                    signalConfig.ring,
-                  )}
-                >
-                  <span className="text-xs text-muted-foreground">進捗状況</span>
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1.5 text-sm font-medium",
-                      signalConfig.text,
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "size-2.5 rounded-full",
-                        signalConfig.dot,
-                      )}
-                    />
-                    {signalConfig.label}
+                  className="h-full bg-primary transition-all"
+                  style={{
+                    width: `${
+                      planProgress.total > 0
+                        ? Math.round(
+                            (planProgress.doneCount / planProgress.total) * 100,
+                          )
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <CalendarClock className="size-3" />
+                {daysUntilEnd(activePlan) < 0 ? (
+                  <span className="font-semibold text-violet-700 dark:text-violet-300">
+                    チェックポイントが来たよ（プランで選ぼう）
                   </span>
-                </div>
-              )}
-              {scheduleInfo.totalCount > 0 && (
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn(
-                      "h-full transition-all",
-                      signalConfig?.bar ?? "bg-primary",
-                    )}
-                    style={{ width: `${scheduleInfo.progressPct}%` }}
-                  />
-                </div>
-              )}
-              {scheduleInfo.unfinished.length > 0 && (
-                <div className="flex flex-col gap-1 rounded-md border border-border bg-muted/30 p-2">
-                  <div className="text-[11px] font-medium text-muted-foreground">
-                    未着手 (上位 {scheduleInfo.unfinished.length} 件)
-                  </div>
-                  <ul className="flex flex-col gap-0.5">
-                    {scheduleInfo.unfinished.map((si) => (
-                      <li
-                        key={si.id}
-                        className="flex items-baseline justify-between gap-2 text-xs"
-                      >
-                        <span className="truncate text-foreground">
-                          • {si.title}
-                        </span>
-                        <span className="shrink-0 text-muted-foreground">
-                          {si.date} 予定
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {/* C51 ito19 さん意見: 「学習スケジュールに組み込まれていない場合は
-                  予定の画面に遷移できなくていい」 → 今月の SI が 0 件 (= 計画には
-                  紐付くが今月分は未展開 or 未生成) の時はボタン非表示、代わりに
-                  「今月の予定はまだありません」テキストを出す */}
-              {scheduleInfo.totalCount > 0 ? (
-                <div className="flex justify-end">
+                ) : (
+                  <span>
+                    {activePlan.endsAt.slice(5).replace("-", "/")} まで・あと{" "}
+                    {daysUntilEnd(activePlan)} 日
+                  </span>
+                )}
+              </div>
+              {planProgress.head && (
+                <div className="flex items-center gap-2.5 rounded-md border border-primary/40 bg-primary/5 px-3 py-2">
+                  <span className="shrink-0 text-[10px] font-semibold text-primary">
+                    つぎ
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                    {planProgress.head.conceptName}
+                  </span>
                   <Button
                     size="sm"
-                    variant="outline"
-                    onClick={() => router.push("/tutor?view=today-tasks")}
-                    className="gap-1.5"
+                    onClick={() =>
+                      router.push(
+                        `/tutor?view=material-read&id=${material.id}&page=${planProgress.head!.startPdfPage}&unit=1`,
+                      )
+                    }
+                    className="h-7 shrink-0 gap-1 px-2 text-xs"
                   >
-                    <span>今月の予定を見る</span>
-                    <ArrowRight className="size-3.5" />
+                    <BookOpen className="size-3.5" />
+                    <span>学習する</span>
                   </Button>
                 </div>
-              ) : (
-                <p className="text-xs italic text-muted-foreground">
-                  今月の予定はまだありません。
-                </p>
               )}
-            </>
-          ) : (
-            <>
-              <p className="text-muted-foreground">
-                この教材はまだ学習計画に組み込まれていません。
-              </p>
               <div className="flex justify-end">
                 <Button
                   size="sm"
@@ -471,10 +386,37 @@ export function MaterialDetailView({
                   onClick={() => router.push("/tutor?view=plans")}
                   className="gap-1.5"
                 >
-                  <span>計画を立てる</span>
+                  <span>プランを見る</span>
                   <ArrowRight className="size-3.5" />
                 </Button>
               </div>
+            </>
+          ) : (
+            <>
+              <p className="text-muted-foreground">
+                この教材はまだプランに入っていません。組み込むと、まとまりが上から順に今日のタスクに出てくるよ。
+              </p>
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={() => setPlanDialogOpen(true)}
+                  disabled={!canAddToPlan}
+                  className="gap-1.5"
+                  title={
+                    canAddToPlan
+                      ? "期間を選ぶだけで組み込めるよ"
+                      : "先に「一緒に読む」で開いて、まとまりを作ってね"
+                  }
+                >
+                  <Compass className="size-3.5" />
+                  <span>プランに組み込む</span>
+                </Button>
+              </div>
+              {!canAddToPlan && (
+                <p className="text-[11px] italic text-muted-foreground">
+                  まだ「まとまり」が無いので組み込めません。先に「一緒に読む」で一度開いてね。
+                </p>
+              )}
             </>
           )}
         </CardContent>
@@ -566,6 +508,13 @@ export function MaterialDetailView({
         material={material}
         onSave={onMaterialUpdated}
         onDelete={onMaterialDeleted}
+      />
+
+      <PlanAddDialog
+        open={planDialogOpen}
+        onOpenChange={setPlanDialogOpen}
+        material={material}
+        onCreate={(endsAt) => onCreatePlan(material, endsAt)}
       />
         </div>
       </div>

@@ -937,53 +937,7 @@ function getUntriggeredInterrupt() {
   return MOCK_INTERRUPT_EVENTS.find((e) => !e.replanTriggered);
 }
 
-/**
- * C17 Phase 5 P5-Q5: 発話から PlanType を判定。
- *
- * 明示発話で PlanType を起動するための簡易キーワードマッチ:
- *   - exam-prep:        試験対策 / 期末 / 中間 / テスト前 / exam
- *   - weakness-grind:   苦手克服 / 弱いところ集中 / 弱点
- *   - review:           復習 だけ / 復習計画 / 復習中心
- *   - long-term-memory: 長期記憶 / 定着 / 忘れない
- *   - regular-study:    一致なし (デフォルト、明示発話分岐の対象外)
- *
- * Phase 6 で LLM ベース分類に置換。
- */
-function detectPlanTypeFromUtterance(lower: string): PlanType | null {
-  if (
-    lower.includes("試験対策") ||
-    lower.includes("期末") ||
-    lower.includes("中間") ||
-    lower.includes("テスト前") ||
-    lower.includes("exam")
-  ) {
-    return "exam-prep";
-  }
-  if (
-    lower.includes("苦手克服") ||
-    lower.includes("苦手をなくす") ||
-    lower.includes("弱いところ集中") ||
-    lower.includes("弱点克服")
-  ) {
-    return "weakness-grind";
-  }
-  // 「復習だけ」「復習中心」「復習計画」 (「復習する」だけだと広すぎるので限定)
-  if (
-    lower.includes("復習だけ") ||
-    lower.includes("復習中心") ||
-    lower.includes("復習計画")
-  ) {
-    return "review";
-  }
-  if (
-    lower.includes("長期記憶") ||
-    lower.includes("忘れない") ||
-    lower.includes("定着させ")
-  ) {
-    return "long-term-memory";
-  }
-  return null;
-}
+// (旧 C17 P5-Q5 detectPlanTypeFromUtterance は新プラン移行で削除。PlanType 概念ごと廃止)
 
 /**
  * LearningPlan の指定月を ScheduleItem に展開して MOCK_SCHEDULE_TODAY に push、
@@ -2023,69 +1977,14 @@ function buildNextTutorReplyInner(args: {
     }
   }
 
-  // C21 Phase 5 P5-Q6: Plan Engine ダッシュボードを開く発話
-  // 「プラン見せて」「計画一覧」「Plan Engine」 → 右ペインに /tutor?view=plans
-  // 「計画立て」「計画作る」等の立案系より先置き (具体的キーワード優先)
+  // 新プラン (2026-06-10、grill 確定): 計画系の発話はすべて新プラン画面へ案内する。
+  // 旧 Phase 5 の chat 内立案フロー (subject-picker → duration → weak-nodes → confirm) は
+  // 廃止 (ザックリ方針: プラン作成は教材の「プランに組み込む」で期間を選ぶだけ)。
   if (
     lower.includes("プラン見せ") ||
     lower.includes("プラン一覧") ||
     lower.includes("計画一覧") ||
     lower.includes("計画見せ") ||
-    lower.includes("plan engine") ||
-    lower.includes("plan-engine")
-  ) {
-    return {
-      nextState: state,
-      reply: {
-        id: makeId(),
-        role: "tutor",
-        text: "**Plan Engine ダッシュボード** を右に出したよ。一覧から計画を選んで詳細見れる。新規立案は右上の [新しい計画 +] から。",
-        rightPaneAction: { kind: "open-plans" },
-        quickReplies: ["新しい計画立てる", "別の話"],
-        createdAt: now,
-      },
-    };
-  }
-
-  // C17 Phase 5 P5-Q5: PlanType 明示発話分岐
-  // 「計画立て」一般発話より具体的なキーワードを先にマッチ
-  // 該当した PlanType を state.proposedPlanType にセットして立案開始
-  const planTypeFromUtterance = detectPlanTypeFromUtterance(lower);
-  if (planTypeFromUtterance) {
-    const typeLabel =
-      planTypeFromUtterance === "exam-prep"
-        ? "試験対策"
-        : planTypeFromUtterance === "weakness-grind"
-          ? "苦手克服"
-          : planTypeFromUtterance === "review"
-            ? "復習"
-            : planTypeFromUtterance === "long-term-memory"
-              ? "長期記憶化"
-              : "通常学習";
-    return {
-      nextState: {
-        ...state,
-        state: "plan-await-subject",
-        proposedPlanType: planTypeFromUtterance,
-      },
-      reply: {
-        id: makeId(),
-        role: "tutor",
-        text: `OK、**${typeLabel}** の計画立てよう! まず科目から。`,
-        card: {
-          kind: "subject-picker",
-          options: MOCK_SUBJECTS.map((s) => ({ subjectId: s.id, label: s.name })),
-        },
-        createdAt: now,
-      },
-    };
-  }
-
-  // C8: 「計画立て」「学習計画」 → 計画立案フロー開始 (subject-picker 表示)
-  // chat 内完結フロー (Q11 ハイブリッド: ゆい対話 + カード)
-  // C17 Phase 5: デフォルト planType: "regular-study" がセットされる
-  // C21 Phase 5: 「新しい計画立てる」も同フローに入る (Plan Engine ダッシュボードからの導線)
-  if (
     lower.includes("計画立て") ||
     lower.includes("計画作") ||
     lower.includes("学習計画") ||
@@ -2094,19 +1993,13 @@ function buildNextTutorReplyInner(args: {
     lower.includes("plan")
   ) {
     return {
-      nextState: {
-        ...state,
-        state: "plan-await-subject",
-        proposedPlanType: "regular-study",
-      },
+      nextState: state,
       reply: {
         id: makeId(),
         role: "tutor",
-        text: "OK、学習計画立てよう! まず科目から。\n（教材を 3 回まわす計画を立てるよ）",
-        card: {
-          kind: "subject-picker",
-          options: MOCK_SUBJECTS.map((s) => ({ subjectId: s.id, label: s.name })),
-        },
+        text: "**プラン** を右に出したよ。\n新しく始めるなら、教材を開いて「プランに組み込む」を押すだけ。まとまりが上から順に今日のタスクに出てくるよ。終わらなくても大丈夫、自分のペースでね。",
+        rightPaneAction: { kind: "open-plans" },
+        quickReplies: ["教材一覧", "別の話"],
         createdAt: now,
       },
     };

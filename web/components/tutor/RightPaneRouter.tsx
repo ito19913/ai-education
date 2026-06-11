@@ -12,25 +12,29 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { NewAssignmentInput } from "@/lib/materials/materials-repo";
 import type {
+  AssignmentStatus,
   ChatMessage,
-  ExamPrep,
-  Homework,
   Issue,
   IssueChatMessage,
   KnowledgeNode,
-  LearningSession,
-  LessonReview,
+  LearningLog,
   NoteEntry,
+  StudyMinutesBucket,
   Resume,
   RightPaneView,
   ScheduleItem,
+  StudyPlan,
   Subject,
 } from "@/lib/learn/types";
 import { IssueListView } from "@/components/issues/IssueListView";
 import { IssueChat } from "@/components/issues/IssueChat";
-import { TodayTaskDashboard } from "@/components/today-tasks/TodayTaskDashboard";
-import { HistoryView } from "@/components/history/HistoryView";
+import {
+  DashboardPane,
+} from "@/components/today-tasks/DashboardPane";
+import type { CalendarApi } from "@/components/today-tasks/SchedulePanel";
+import { LearningHistoryView } from "@/components/history/LearningHistoryView";
 import { MaterialEditWizard } from "@/components/admin/MaterialEditWizard";
 import { MaterialDetailView } from "@/components/materials/MaterialDetailView";
 import { MaterialsListPane } from "@/components/materials/MaterialsListPane";
@@ -42,7 +46,7 @@ import {
 import { TutorArchiveView } from "@/components/tutor/TutorArchiveView";
 import { ReflectionListView } from "@/components/reflections/ReflectionListView";
 import { WeeklyMonthlyReportView } from "@/components/reports/WeeklyMonthlyReportView";
-import { PlanEngineDashboard } from "@/components/plans/PlanEngineDashboard";
+import { PlansView } from "@/components/plans/PlansView";
 import { NotesHomeView } from "@/components/notes/NotesHomeView";
 // MOCK_MATERIALS は TutorWorkspace 経由で props として渡される (C46: 編集・削除のため state 管理)
 import type { Material } from "@/lib/learn/types";
@@ -58,17 +62,14 @@ type Props = {
   nodes: KnowledgeNode[];
   chatMessages: ChatMessage[];
   scheduleToday: ScheduleItem[];
-  scheduleUpcoming: ScheduleItem[];
-  exams: ExamPrep[];
-  homeworks: Homework[];
-  lessonReviews: LessonReview[];
   subjects: Subject[];
-  sessions: LearningSession[];
+  /** 学習履歴 (出来事ログ + 学習時間、2026-06-10。旧 sessions モックを置換) */
+  learningLogs: LearningLog[];
+  studyMinutes: StudyMinutesBucket[];
   onResolveIssue: (id: string) => void;
   onReopenIssue: (id: string) => void;
   onAppendChatMessages: (issueId: string, msgs: IssueChatMessage[]) => void;
   onSelectIssue: (id: string) => void;
-  onSelectIssueItem: (id: string) => void;
   onBack: () => void;
   /**
    * 教材追加完了時のコールバック（material-new view 用）。
@@ -107,6 +108,37 @@ type Props = {
   onNoteDeleted: (id: string) => void;
   /** ノートの出典「読む」→ 読書ビューの該当ページへ */
   onOpenNoteSource: (materialId: string, page: number) => void;
+  /** ダッシュボードの各カード/セクション → 該当ビューへ (2026-06-09)。navigate を渡す */
+  onNavigate: (
+    view: RightPaneView,
+    params?: {
+      issueId?: string;
+      materialId?: string;
+      tab?: string;
+      page?: number;
+      unit?: boolean;
+    },
+  ) => void;
+  /** ダッシュボードの予定パネル (ラベル + 手動イベント + 操作、2026-06-09) */
+  calendar: CalendarApi;
+  /** 新プラン (ザックリ・まとまりキュー型、2026-06-10) */
+  plans: StudyPlan[];
+  onCreatePlan: (material: Material, endsAt: string, countFrom?: string) => void;
+  onExtendPlan: (planId: string, endsAt: string) => void;
+  onCompletePlan: (planId: string) => void;
+  onRestartPlan: (plan: StudyPlan, endsAt: string) => void;
+  onTogglePlanSkip: (planId: string, segmentId: string) => void;
+  onDeletePlan: (planId: string) => void;
+  /** 宿題・テストの 追加/編集 / 削除 / 状態切替 / 学習する (2026-06-09、教材ペイン用) */
+  onSubmitAssignment: (
+    input: NewAssignmentInput,
+    pdfFile?: File,
+    id?: string,
+  ) => void;
+  onDeleteAssignment: (id: string) => void;
+  onToggleAssignmentStatus: (id: string, status: AssignmentStatus) => void;
+  /** 宿題・テストの「学習する」→ 読書ビューでPDFを開いて葵と解く */
+  onStudyAssignment: (materialId: string) => void;
   /** R10 Phase 2: 冊を追加 (同科目)。作成した Resume を返す (新冊への移動/選択用) */
   onAddResume: (subjectId: string, name: string) => Promise<Resume | null>;
   /** R10 Phase 2: 冊名のリネーム */
@@ -136,17 +168,13 @@ export function RightPaneRouter({
   nodes,
   chatMessages,
   scheduleToday,
-  scheduleUpcoming,
-  exams,
-  homeworks,
-  lessonReviews,
   subjects,
-  sessions,
+  learningLogs,
+  studyMinutes,
   onResolveIssue,
   onReopenIssue,
   onAppendChatMessages,
   onSelectIssue,
-  onSelectIssueItem,
   onBack,
   onMaterialAdded,
   onMaterialUpdated,
@@ -158,6 +186,19 @@ export function RightPaneRouter({
   onNoteUpdated,
   onNoteDeleted,
   onOpenNoteSource,
+  onNavigate,
+  calendar,
+  plans,
+  onCreatePlan,
+  onExtendPlan,
+  onCompletePlan,
+  onRestartPlan,
+  onTogglePlanSkip,
+  onDeletePlan,
+  onSubmitAssignment,
+  onDeleteAssignment,
+  onToggleAssignmentStatus,
+  onStudyAssignment,
   onAddResume,
   onRenameResume,
   onSetDefaultResume,
@@ -166,8 +207,21 @@ export function RightPaneRouter({
   onMoveEntryToSubject,
   onCopyResume,
 }: Props) {
-  if (view === "default") {
-    return <DefaultPane />;
+  // 2026-06-09: トップ (default) と 旧「今日のタスク」(today-tasks、ボタン廃止後も
+  // 既存リンク互換のため alias) はダッシュボードを表示する。
+  if (view === "default" || view === "today-tasks") {
+    return (
+      <DashboardPane
+        calendar={calendar}
+        issues={issues}
+        nodes={nodes}
+        materials={materials}
+        subjects={subjects}
+        noteEntries={noteEntries}
+        plans={plans}
+        onNavigate={onNavigate}
+      />
+    );
   }
 
   if (view === "issues") {
@@ -207,29 +261,14 @@ export function RightPaneRouter({
     );
   }
 
-  if (view === "today-tasks") {
-    return (
-      <TodayTaskDashboard
-        subjects={subjects}
-        initialTodayItems={scheduleToday}
-        upcomingItems={scheduleUpcoming}
-        exams={exams}
-        homeworks={homeworks}
-        lessonReviews={lessonReviews}
-        issues={issues}
-        embedded
-        onSelectIssueItem={onSelectIssueItem}
-      />
-    );
-  }
-
   if (view === "history") {
+    // 2026-06-10: 学習履歴 (出来事ログ + 学習時間、自動・実データ)。
+    // 旧セッション型 HistoryView (モック) を置換。
     return (
-      <HistoryView
-        sessions={sessions}
-        nodes={nodes}
+      <LearningHistoryView
+        logs={learningLogs}
+        studyMinutes={studyMinutes}
         subjects={subjects}
-        embedded
       />
     );
   }
@@ -253,8 +292,24 @@ export function RightPaneRouter({
   }
 
   if (view === "plans") {
-    // C21 Phase 5 P5-Q6: Plan Engine ダッシュボード
-    return <PlanEngineDashboard nodes={nodes} />;
+    // 2026-06-10: 新プラン (ザックリ・まとまりキュー型)。旧 PlanEngineDashboard を置換。
+    return (
+      <PlansView
+        plans={plans}
+        materials={materials}
+        subjects={subjects}
+        noteEntries={noteEntries}
+        onStudy={(materialId, page) =>
+          onNavigate("material-read", { materialId, page, unit: true })
+        }
+        onExtend={onExtendPlan}
+        onComplete={onCompletePlan}
+        onRestart={onRestartPlan}
+        onToggleSkip={onTogglePlanSkip}
+        onDelete={onDeletePlan}
+        onOpenMaterials={() => onNavigate("materials")}
+      />
+    );
   }
 
   if (view === "material-new") {
@@ -272,7 +327,16 @@ export function RightPaneRouter({
     // C44 2026-05-26 (ito19 さん意見、残課題⑤ 解消): 教材一覧ペイン
     // ゆいメニュー「教材」ボタン → 「教材一覧」発話 → tutor-mock 分岐 → 本ペイン
     // C46: materials を props 経由 (state 管理) に変更、編集・削除が即座に反映される
-    return <MaterialsListPane materials={materials} subjects={subjects} />;
+    return (
+      <MaterialsListPane
+        materials={materials}
+        subjects={subjects}
+        onSubmitAssignment={onSubmitAssignment}
+        onDeleteAssignment={onDeleteAssignment}
+        onToggleAssignmentStatus={onToggleAssignmentStatus}
+        onStudyAssignment={onStudyAssignment}
+      />
+    );
   }
 
   if (view === "subjects") {
@@ -301,6 +365,9 @@ export function RightPaneRouter({
         subject={subject}
         nodes={nodes}
         issues={issues}
+        plans={plans}
+        noteEntries={noteEntries}
+        onCreatePlan={onCreatePlan}
         onMaterialUpdated={onMaterialUpdated}
         onMaterialDeleted={onMaterialDeleted}
       />

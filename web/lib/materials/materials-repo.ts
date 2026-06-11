@@ -15,9 +15,12 @@
 import { createClient } from "@/lib/supabase/client";
 import type {
   AiExtractedNode,
+  AssignmentStatus,
+  AssignmentType,
   ConceptSegment,
   GuidedBlock,
   Material,
+  MaterialKind,
   MaterialLabel,
 } from "@/lib/learn/types";
 
@@ -38,6 +41,10 @@ type MaterialRow = {
   guided_plans: Record<string, GuidedBlock[]> | null;
   pdf_path: string | null;
   pdf_size: number | null;
+  kind: string | null;
+  assignment_type: string | null;
+  due_date: string | null;
+  assignment_status: string | null;
   deleted_at: string | null;
 };
 
@@ -52,6 +59,14 @@ function rowToMaterial(row: MaterialRow): Material {
     author: row.author ?? undefined,
     coverThumb: row.cover_thumb ?? undefined,
     gradeLevel: row.grade_level ?? undefined,
+    kind: (row.kind === "assignment" ? "assignment" : "book") as MaterialKind,
+    assignmentType: (row.assignment_type ?? undefined) as
+      | AssignmentType
+      | undefined,
+    dueDate: row.due_date ?? undefined,
+    assignmentStatus: (row.assignment_status ?? undefined) as
+      | AssignmentStatus
+      | undefined,
     coveredNodeIds: row.covered_node_ids ?? [],
     extractedNodes: row.extracted_nodes ?? undefined,
     conceptSegments:
@@ -217,6 +232,79 @@ export async function updateMaterialMeta(
   if (patch.author !== undefined)
     row.author = patch.author?.trim() ? patch.author.trim() : null;
   if (patch.gradeLevel !== undefined) row.grade_level = patch.gradeLevel;
+  if (Object.keys(row).length === 0) return;
+  const { error } = await supabase.from("materials").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+// ============================================================================
+// 宿題・テスト (kind="assignment"、2026-06-09)。本と同じ materials テーブルに、
+// 重い処理 (PDF/まとまり/体系図) なしの軽い行として入れる。
+// ============================================================================
+
+export type NewAssignmentInput = {
+  subjectId: string;
+  name: string;
+  assignmentType: AssignmentType;
+  /** 提出日 / テスト日 (YYYY-MM-DD、任意) */
+  dueDate?: string;
+};
+
+/**
+ * 宿題・テストを登録 (kind="assignment")。label は NOT NULL なので表示に使わない
+ * プレースホルダ ("テキスト") を入れる。状態は todo (=まだ) で開始。
+ */
+export async function insertAssignment(
+  input: NewAssignmentInput,
+  ownerId: string,
+): Promise<Material> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("materials")
+    .insert({
+      owner_id: ownerId,
+      subject_id: input.subjectId,
+      name: input.name,
+      // assignment では未使用だが label は NOT NULL のためプレースホルダ。
+      label: "テキスト",
+      covered_node_ids: [],
+      extracted_nodes: [],
+      kind: "assignment",
+      assignment_type: input.assignmentType,
+      due_date: input.dueDate ?? null,
+      assignment_status: "todo",
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return rowToMaterial(data as MaterialRow);
+}
+
+/** 宿題・テストの状態を更新 (まだ ⇔ やった)。 */
+export async function updateAssignmentStatus(
+  id: string,
+  status: AssignmentStatus,
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("materials")
+    .update({ assignment_status: status })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** 宿題・テストのメタ編集 (名前 / 種類 / 科目 / 提出日)。 */
+export async function updateAssignment(
+  id: string,
+  patch: Partial<NewAssignmentInput>,
+): Promise<void> {
+  const supabase = createClient();
+  const row: Record<string, unknown> = {};
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.subjectId !== undefined) row.subject_id = patch.subjectId;
+  if (patch.assignmentType !== undefined)
+    row.assignment_type = patch.assignmentType;
+  if (patch.dueDate !== undefined) row.due_date = patch.dueDate || null;
   if (Object.keys(row).length === 0) return;
   const { error } = await supabase.from("materials").update(row).eq("id", id);
   if (error) throw error;

@@ -31,6 +31,7 @@ type NoteEntryRow = {
   parent_ref: string | null;
   resume_id: string | null;
   user_note: string | null;
+  updated_at: string | null;
   deleted_at: string | null;
 };
 
@@ -47,6 +48,7 @@ function rowToNoteEntry(row: NoteEntryRow): NoteEntry {
     parentRef: row.parent_ref ?? undefined,
     resumeId: row.resume_id ?? undefined,
     userNote: row.user_note ?? undefined,
+    updatedAt: row.updated_at ?? undefined,
     deletedAt: row.deleted_at ?? undefined,
   };
 }
