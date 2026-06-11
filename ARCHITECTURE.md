@@ -3344,7 +3344,11 @@ ito19 さんの経験則「1〜2 ヶ月先の計画は計画通りに進まな�
 ### 未実装・次の候補 (このブロック起点)
 
 - ~~**Phase B: 勉強開始 chat 儀式**~~ → ✅ 2026-06-11 grill B-1〜B-8 確定 + 実装済 (次節)。
-- 宿題・テストの提出日 → 予定カレンダー自動マーカー (締切/試験ラベル)。
+- ~~宿題・テストの提出日 → 予定カレンダー自動マーカー~~ → ✅ 2026-06-11 実装済 (`e47bc13`):
+  `merge.ts` に `AssignmentMarker` + mergeCalendarEntries 第 4 引数。「まだ」+ dueDate ありの
+  assignment を DashboardPane が導出して SchedulePanel へ (教材側が真実、カレンダーに行は
+  作らない)。テスト = exam ラベル色 + あと◯日、宿題 = 締切/提出ラベル色 + 「（提出）」。
+  編集不可 (編集は宿題・テスト側)、「やった」で消える。
 - 宿題専用「AI と解く」画面 (現状は本用読書ビューを流用)。
 - 旧 today-tasks 系の残骸整理 (`/today-tasks` 独立ページ・ScheduleHeader・ScheduleMiniCalendar・
   TodayTaskList・HistoryView は標準ページ用に残置)。
