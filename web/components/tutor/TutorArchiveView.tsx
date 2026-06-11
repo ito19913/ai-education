@@ -38,6 +38,9 @@ import {
 import { formatLocalDate } from "@/lib/learn/session-storage";
 import { cn } from "@/lib/utils";
 
+// archive は readonly。day-picker カードの選択済みハイライトは出さない (空 Set 固定)
+const EMPTY_DAY_PICKED_KEYS = new Set<string>();
+
 type Props = {
   /** ノード名解決用（RangePreviewCard などが必要とする） */
   nodes: KnowledgeNode[];
@@ -301,6 +304,17 @@ export function TutorArchiveView({ nodes, issues, scheduleItems }: Props) {
                   }}
                   onPickWeakNodes={() => {
                     /* archive: no-op (C17 Phase 5 weak-node-picker) */
+                  }}
+                  // archive: 過去の day-picker は全選択済み扱いにせず空 Set で表示のみ
+                  dayPickedKeys={EMPTY_DAY_PICKED_KEYS}
+                  onPickDayAssignment={() => {
+                    /* archive: no-op (Phase B day-picker) */
+                  }}
+                  onPickDayBook={() => {
+                    /* archive: no-op (Phase B day-picker) */
+                  }}
+                  onPickDaySegment={() => {
+                    /* archive: no-op (Phase B day-segment-picker) */
                   }}
                   onSelectIssue={() => {
                     /* archive: no-op */

@@ -99,6 +99,15 @@ import {
   incrementStudyMinute,
   type NewLearningLogInput,
 } from "@/lib/history/learning-logs-repo";
+import {
+  fetchDailyPicks,
+  insertDailyPick,
+  removeDailyPick,
+  markDailyPickCompleted,
+  clearDailyPickCompleted,
+} from "@/lib/today/daily-picks-repo";
+import { getPlanSegments } from "@/lib/plans/plan-progress";
+import { tutorClaudeRespondToScene } from "@/lib/learn/tutor-claude";
 import { DEFAULT_EVENT_LABELS } from "@/lib/learn/event-colors";
 import {
   buildInitialTutorThread,
@@ -121,6 +130,7 @@ import type {
   CalendarEvent,
   ChatMessage,
   ConceptSegment,
+  DailyPick,
   EventLabel,
   EventLabelColor,
   ExamPrep,
@@ -223,6 +233,11 @@ export function TutorWorkspace({
   const [materials, setMaterials] = useState<Material[]>(
     isSupabaseConfigured() ? [] : MOCK_MATERIALS,
   );
+  // Phase B: 「今日なにやる?」候補カードを出すのは初期 fetch 完了後 (空データで
+  // 候補 0 件と誤判定しないため)。mock モードは即 true。
+  const [materialsLoaded, setMaterialsLoaded] = useState(
+    !isSupabaseConfigured(),
+  );
 
   // 段階1-B: real モードでは起動時に DB から教材一覧を取得して復元する。
   useEffect(() => {
@@ -232,7 +247,10 @@ export function TutorWorkspace({
       .then((rows) => {
         if (!cancelled) setMaterials(rows);
       })
-      .catch((err) => console.error("[教材] 一覧取得失敗:", err));
+      .catch((err) => console.error("[教材] 一覧取得失敗:", err))
+      .finally(() => {
+        if (!cancelled) setMaterialsLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -481,6 +499,7 @@ export function TutorWorkspace({
   // ----- 新プラン (ザックリ・まとまりキュー型、2026-06-10 grill 確定) -----
   // real は DB から。mock は in-memory (リロードで消える)。
   const [plans, setPlans] = useState<StudyPlan[]>([]);
+  const [plansLoaded, setPlansLoaded] = useState(!isSupabaseConfigured());
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
     let cancelled = false;
@@ -488,11 +507,83 @@ export function TutorWorkspace({
       .then((rows) => {
         if (!cancelled) setPlans(rows);
       })
-      .catch((err) => console.error("[プラン] 一覧取得失敗:", err));
+      .catch((err) => console.error("[プラン] 一覧取得失敗:", err))
+      .finally(() => {
+        if (!cancelled) setPlansLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // ----- 「その日決める枠」の pick (Phase B、2026-06-11 grill B-1〜B-8) -----
+  // real は DB から (完了→翌日の自動掃除も fetch 内)。mock は in-memory。
+  const [dayPicks, setDayPicks] = useState<DailyPick[]>([]);
+  const [dayPicksLoaded, setDayPicksLoaded] = useState(!isSupabaseConfigured());
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+    fetchDailyPicks()
+      .then((rows) => {
+        if (!cancelled) setDayPicks(rows);
+      })
+      .catch((err) => console.error("[今日の枠] 一覧取得失敗:", err))
+      .finally(() => {
+        if (!cancelled) setDayPicksLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // pick の完了観測 (B-4/B-5): 完了フラグは導出が真実だが、「✓ を完了当日だけ見せて
+  // 翌日消す」ために観測時刻 (completedAt) をキャッシュする。learning_logs と同じく
+  // 実アクション (宿題トグル / レジュメ understood) へのフックで記録する。
+  const observeDayPickDone = useCallback(
+    (materialId: string, segmentId?: string) => {
+      const target = dayPicks.find(
+        (p) =>
+          p.materialId === materialId &&
+          (p.segmentId ?? undefined) === (segmentId ?? undefined) &&
+          !p.completedAt,
+      );
+      if (!target) return;
+      setDayPicks((prev) =>
+        prev.map((p) =>
+          p.id === target.id
+            ? { ...p, completedAt: new Date().toISOString() }
+            : p,
+        ),
+      );
+      if (isSupabaseConfigured() && !target.id.startsWith("pick-local-")) {
+        void markDailyPickCompleted(target.id).catch((err) =>
+          console.error("[今日の枠] 完了記録失敗:", err),
+        );
+      }
+    },
+    [dayPicks],
+  );
+
+  // 宿題の「やった」を「まだ」に戻した時の取り消し (翌日に消えてしまわないように)
+  const observeDayPickUndone = useCallback(
+    (materialId: string) => {
+      const target = dayPicks.find(
+        (p) => p.materialId === materialId && !p.segmentId && p.completedAt,
+      );
+      if (!target) return;
+      setDayPicks((prev) =>
+        prev.map((p) =>
+          p.id === target.id ? { ...p, completedAt: undefined } : p,
+        ),
+      );
+      if (isSupabaseConfigured() && !target.id.startsWith("pick-local-")) {
+        void clearDailyPickCompleted(target.id).catch((err) =>
+          console.error("[今日の枠] 完了取消失敗:", err),
+        );
+      }
+    },
+    [dayPicks],
+  );
 
   /** 「プランに組み込む」。countFrom 指定は 2 周目 (最初からやり直す) 用。 */
   const handleCreatePlan = useCallback(
@@ -752,6 +843,7 @@ export function TutorWorkspace({
         messages: [...existingMessages, ...endingGreeting],
         state: "ending-vent" as const,
         endingVentItems: [] as string[],
+        freshToday: false,
       };
     }
 
@@ -761,6 +853,7 @@ export function TutorWorkspace({
         messages: existingMessages,
         state: (stored?.state ?? "reflection-yesterday") as TutorStep["state"],
         endingVentItems: stored?.endingVentItems ?? [],
+        freshToday: false,
       };
     }
 
@@ -780,6 +873,7 @@ export function TutorWorkspace({
         messages: eveningMessages,
         state: "evening-await-period-count" as TutorStep["state"],
         endingVentItems: [] as string[],
+        freshToday: false,
       };
     }
 
@@ -787,12 +881,15 @@ export function TutorWorkspace({
     // D5 (2026-05-27 確定): 中学生向け朝振り返り廃止。MORNING_MODE_ENABLED=false の
     // 時は morning モードのハブ挨拶のみ + state を reflection-plan (振り返り完了相当 =
     // 通常 chat 受付状態) で起動 = 5 セクション質問に巻き込まれずに本人がメニュー操作できる
+    // Phase B (grill B-8): 今日の thread がまだ無い = その日最初。
+    // データロード後に「今日なにやる?」候補カードを続けて append する。
     return {
       messages: buildInitialTutorThread(new Date(), "morning").messages,
       state: (MORNING_MODE_ENABLED
         ? "reflection-yesterday"
         : "reflection-plan") as TutorStep["state"],
       endingVentItems: [] as string[],
+      freshToday: true,
     };
   });
 
@@ -1120,6 +1217,9 @@ export function TutorWorkspace({
           });
         }
       }
+      // Phase B: 今日の枠 (pick) に入っていれば完了/取消を観測する
+      if (status === "done") observeDayPickDone(id);
+      else observeDayPickUndone(id);
       setMaterials((prev) =>
         prev.map((m) =>
           m.id === id ? { ...m, assignmentStatus: status } : m,
@@ -1131,7 +1231,7 @@ export function TutorWorkspace({
         );
       }
     },
-    [materials, addLearningLog],
+    [materials, addLearningLog, observeDayPickDone, observeDayPickUndone],
   );
 
   // ----- まとめノート N9①: 能動ゲート通過でエントリが刻まれた時 -----
@@ -1145,6 +1245,14 @@ export function TutorWorkspace({
         segmentId: entry.sourceSegmentId,
         title: entry.conceptName,
       });
+      // Phase B: 今日の枠 (pick) のまとまりを仕上げたら完了を観測する
+      if (
+        entry.status === "understood" &&
+        entry.sourceMaterialId &&
+        entry.sourceSegmentId
+      ) {
+        observeDayPickDone(entry.sourceMaterialId, entry.sourceSegmentId);
+      }
       // upsert: 2 周目の深化更新 (同じ id) は置換、新規は追加 (G-C で重複を防ぐ)。
       setNoteEntries((prev) =>
         prev.some((e) => e.id === entry.id)
@@ -1163,7 +1271,7 @@ export function TutorWorkspace({
       };
       setTutorMessages((prev) => [...prev, reply]);
     },
-    [addLearningLog],
+    [addLearningLog, observeDayPickDone],
   );
 
   const handleNoteUpdated = useCallback(
@@ -1180,6 +1288,10 @@ export function TutorWorkspace({
             title: entry.conceptName,
           });
         }
+        // Phase B: 今日の枠 (pick) のまとまりが昇格で済みになったら完了を観測する
+        if (entry?.sourceMaterialId && entry.sourceSegmentId) {
+          observeDayPickDone(entry.sourceMaterialId, entry.sourceSegmentId);
+        }
       }
       setNoteEntries((prev) =>
         prev.map((e) => (e.id === id ? { ...e, ...patch } : e)),
@@ -1190,7 +1302,7 @@ export function TutorWorkspace({
         );
       }
     },
-    [noteEntries, addLearningLog],
+    [noteEntries, addLearningLog, observeDayPickDone],
   );
 
   const handleNoteDeleted = useCallback((id: string) => {
@@ -1663,11 +1775,378 @@ export function TutorWorkspace({
     [navigate],
   );
 
+  // ----- Phase B: 「おかえり、今日なにやる?」儀式 (2026-06-11 grill B-1〜B-8) -----
+  //
+  // 候補 = 宿題・テスト (まだ、提出日近い順、上位 5) + プラン外の本 (まとまり生成済み)。
+  // 候補は Supabase 由来の workspace state から作るので、tutor-mock の state machine は
+  // 通さない (intercept でゆいの state も進めない)。選んだ pick はダッシュボード
+  // 「今日のタスク」下段「きょう決めたこと」に出る。
+
+  // 既に今日の枠に入っている対象のキー (宿題 = materialId、まとまり = mat:seg)
+  const dayPickedKeys = useMemo(
+    () =>
+      new Set(
+        dayPicks.map((p) =>
+          p.segmentId ? `${p.materialId}:${p.segmentId}` : p.materialId,
+        ),
+      ),
+    [dayPicks],
+  );
+
+  const computeDayCandidates = useCallback(() => {
+    const subjectLabelOf = (id: string) =>
+      subjects.find((s) => s.id === id)?.name ?? "—";
+    const activePlanMaterialIds = new Set(
+      plans
+        .filter((p) => p.status === "active" && !p.deletedAt)
+        .map((p) => p.materialId),
+    );
+    const assignments = materials
+      .filter(
+        (m) =>
+          m.kind === "assignment" &&
+          (m.assignmentStatus ?? "todo") === "todo" &&
+          !m.deletedAt &&
+          !dayPickedKeys.has(m.id),
+      )
+      .sort((a, b) => {
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return a.dueDate.localeCompare(b.dueDate);
+      })
+      .slice(0, 5)
+      .map((m) => ({
+        materialId: m.id,
+        label: m.name,
+        subjectLabel: subjectLabelOf(m.subjectId),
+        dueDate: m.dueDate,
+        isTest: m.assignmentType === "test",
+      }));
+    // 本はプラン外 (自動枠と競合しない) + まとまり生成済みのみ (B-2/B-3)
+    const books = materials
+      .filter(
+        (m) =>
+          (m.kind ?? "book") === "book" &&
+          !m.deletedAt &&
+          !activePlanMaterialIds.has(m.id) &&
+          getPlanSegments(m).length > 0,
+      )
+      .map((m) => ({
+        materialId: m.id,
+        label: m.name,
+        subjectLabel: subjectLabelOf(m.subjectId),
+      }));
+    return { assignments, books };
+  }, [materials, plans, subjects, dayPickedKeys]);
+
+  /** pick を追加 (real は DB、失敗/mock は in-memory)。 */
+  const addDayPick = useCallback(
+    async (materialId: string, segmentId?: string) => {
+      if (isSupabaseConfigured()) {
+        try {
+          const ownerId = await getCurrentUserId();
+          const created = await insertDailyPick(materialId, segmentId, ownerId);
+          setDayPicks((prev) => [...prev, created]);
+          return;
+        } catch (err) {
+          console.error("[今日の枠] 追加失敗、in-memory にフォールバック:", err);
+        }
+      }
+      setDayPicks((prev) => [
+        ...prev,
+        {
+          id: `pick-local-${Date.now()}`,
+          materialId,
+          segmentId,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    },
+    [],
+  );
+
+  /** pick を外す (「やめとく」、B-5)。 */
+  const handleRemoveDayPick = useCallback((id: string) => {
+    setDayPicks((prev) => prev.filter((p) => p.id !== id));
+    if (isSupabaseConfigured() && !id.startsWith("pick-local-")) {
+      void removeDailyPick(id).catch((err) =>
+        console.error("[今日の枠] 削除失敗:", err),
+      );
+    }
+  }, []);
+
+  /** 儀式の入口発話 (候補ピッカーカード付き)。Claude flag on なら text を言い換え。 */
+  const buildDayRitualReply = useCallback(
+    async (userInput: string): Promise<TutorMessage> => {
+      const { assignments, books } = computeDayCandidates();
+      const now = new Date().toISOString();
+      if (assignments.length === 0 && books.length === 0) {
+        return {
+          id: `t-day-${Date.now()}`,
+          role: "tutor",
+          text: "今日は選べる宿題や本がないみたい。プランの「つぎのまとまり」を進めよう💪 ダッシュボードに出てるよ。",
+          createdAt: now,
+        };
+      }
+      let text =
+        "いいね、今日やること決めよう! 候補はこのへんだよ👇 やるやつをタップしてね。\n\nもちろん「今日はプランだけ」でも全然 OK だよ。";
+      if (process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true") {
+        try {
+          const aiText = await tutorClaudeRespondToScene({
+            scene: "day-start",
+            sceneContext: {
+              assignmentCount: assignments.length,
+              assignmentNames: assignments.map((a) => a.label),
+              bookCount: books.length,
+              note: "この発話の直後に候補ピッカーカードが表示される。タップで選べること、選ばなくても (プランだけでも) 良いことを短く伝える",
+            },
+            userInput,
+            fallbackText: text,
+          });
+          if (aiText && aiText.trim().length > 0) text = aiText.trim();
+        } catch (err) {
+          console.error(
+            '[Phase B] Claude scene "day-start" failed, mock text 維持:',
+            err,
+          );
+        }
+      }
+      return {
+        id: `t-day-${Date.now()}`,
+        role: "tutor",
+        text,
+        card: { kind: "day-picker", assignments, books },
+        quickReplies: ["今日はプランだけでいい"],
+        createdAt: now,
+      };
+    },
+    [computeDayCandidates],
+  );
+
+  /** 儀式の締め (「今日はプランだけ」「これで OK」)。 */
+  const buildDayCloseReply = useCallback(
+    async (userInput: string): Promise<TutorMessage> => {
+      const pickedCount = dayPicks.filter((p) => !p.completedAt).length;
+      const now = new Date().toISOString();
+      let text =
+        pickedCount > 0
+          ? "OK! 今日の分はダッシュボードの「きょう決めたこと」に出てるよ📌 さっそく始めよう🔥"
+          : "OK! 今日はプランの「つぎのまとまり」を進めよう💪 ダッシュボードから始めてね。";
+      if (process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true") {
+        try {
+          const aiText = await tutorClaudeRespondToScene({
+            scene: "day-close",
+            sceneContext: {
+              pickedCount,
+              note: "「今日なにやる?」儀式の締め。決めた分 (pickedCount 件) はダッシュボードに出ていることを短く伝えて送り出す",
+            },
+            userInput,
+            fallbackText: text,
+          });
+          if (aiText && aiText.trim().length > 0) text = aiText.trim();
+        } catch (err) {
+          console.error(
+            '[Phase B] Claude scene "day-close" failed, mock text 維持:',
+            err,
+          );
+        }
+      }
+      return {
+        id: `t-dayclose-${Date.now()}`,
+        role: "tutor",
+        text,
+        createdAt: now,
+      };
+    },
+    [dayPicks],
+  );
+
+  // 宿題・テストをタップ → pick 追加 + 「他にもやる?」(B-6)
+  const onPickDayAssignment = useCallback(
+    async (materialId: string, label: string): Promise<TutorMessage> => {
+      const now = new Date().toISOString();
+      if (dayPickedKeys.has(materialId)) {
+        return {
+          id: `t-daypick-${Date.now()}`,
+          role: "tutor",
+          text: `「${label}」はもう今日の分に入ってるよ〜👍`,
+          quickReplies: ["他にもやる", "今日はこれでOK"],
+          createdAt: now,
+        };
+      }
+      await addDayPick(materialId);
+      return {
+        id: `t-daypick-${Date.now()}`,
+        role: "tutor",
+        text: `OK!「${label}」を今日のタスクに入れたよ📌 ダッシュボードの「きょう決めたこと」に出てるからね。\n\n**他にもやる?**`,
+        quickReplies: ["他にもやる", "今日はこれでOK"],
+        createdAt: now,
+      };
+    },
+    [dayPickedKeys, addDayPick],
+  );
+
+  // 本をタップ → まとまりピッカー (B-3: 済み ✓ + おすすめ = 最初の未済)
+  const onPickDayBook = useCallback(
+    async (materialId: string, label: string): Promise<TutorMessage> => {
+      const now = new Date().toISOString();
+      const material = materials.find((m) => m.id === materialId);
+      if (!material) {
+        return {
+          id: `t-dayseg-${Date.now()}`,
+          role: "tutor",
+          text: "あれ、その本が見つからなかった…もう一回選んでみて。",
+          createdAt: now,
+        };
+      }
+      const segs = getPlanSegments(material);
+      const doneIds = new Set(
+        noteEntries
+          .filter(
+            (n) =>
+              !n.deletedAt &&
+              n.status === "understood" &&
+              n.sourceMaterialId === materialId &&
+              n.sourceSegmentId,
+          )
+          .map((n) => n.sourceSegmentId as string),
+      );
+      const firstPending = segs.find((s) => !doneIds.has(s.id));
+      return {
+        id: `t-dayseg-${Date.now()}`,
+        role: "tutor",
+        text: `「${label}」だね! どのまとまりやる? ⭐がつぎのおすすめだよ。`,
+        card: {
+          kind: "day-segment-picker",
+          materialId,
+          materialLabel: material.name,
+          options: segs.map((s) => ({
+            segmentId: s.id,
+            label: s.conceptName,
+            pageRange: `p.${s.startPdfPage}–${s.endPdfPage}`,
+            done: doneIds.has(s.id),
+            recommended: firstPending?.id === s.id,
+          })),
+        },
+        createdAt: now,
+      };
+    },
+    [materials, noteEntries],
+  );
+
+  // まとまりをタップ → pick 追加 + 「他にもやる?」
+  const onPickDaySegment = useCallback(
+    async (
+      materialId: string,
+      segmentId: string,
+      label: string,
+    ): Promise<TutorMessage> => {
+      const now = new Date().toISOString();
+      if (dayPickedKeys.has(`${materialId}:${segmentId}`)) {
+        return {
+          id: `t-daypick-${Date.now()}`,
+          role: "tutor",
+          text: `「${label}」はもう今日の分に入ってるよ〜👍`,
+          quickReplies: ["他にもやる", "今日はこれでOK"],
+          createdAt: now,
+        };
+      }
+      await addDayPick(materialId, segmentId);
+      return {
+        id: `t-daypick-${Date.now()}`,
+        role: "tutor",
+        text: `OK!「${label}」を今日のタスクに入れたよ📌 ダッシュボードの「きょう決めたこと」に出てるからね。\n\n**他にもやる?**`,
+        quickReplies: ["他にもやる", "今日はこれでOK"],
+        createdAt: now,
+      };
+    },
+    [dayPickedKeys, addDayPick],
+  );
+
+  // ダッシュボード「＋ゆいと決める」ボタン → 左の chat に儀式カードを出す (B-1/B-8)。
+  // 2 回目以降も同じ儀式 (候補は選択済みを除いた最新)。
+  const handleStartDayRitual = useCallback(() => {
+    const { assignments, books } = computeDayCandidates();
+    const now = new Date().toISOString();
+    const msg: TutorMessage =
+      assignments.length === 0 && books.length === 0
+        ? {
+            id: `t-day-${Date.now()}`,
+            role: "tutor",
+            text: "今日は選べる宿題や本がないみたい。プランの「つぎのまとまり」を進めよう💪",
+            createdAt: now,
+          }
+        : {
+            id: `t-day-${Date.now()}`,
+            role: "tutor",
+            text: "今日やること決めよう! 候補はこのへんだよ👇 やるやつをタップしてね。",
+            card: { kind: "day-picker", assignments, books },
+            quickReplies: ["今日はプランだけでいい"],
+            createdAt: now,
+          };
+    setTutorMessages((prev) => [...prev, msg]);
+  }, [computeDayCandidates]);
+
+  // その日最初 (今日の thread が新規 = B-8) は、データロード後にゆいの挨拶へ続けて
+  // 候補ピッカーカードを 1 回だけ append する (B-1)。候補 0 件なら出さない =
+  // 通常挨拶フォールバック。少しタメる (人間味 + setState-in-effect 回避)。
+  const dayCardAppendedRef = useRef(false);
+  useEffect(() => {
+    if (!tutorInit.freshToday) return;
+    if (!materialsLoaded || !plansLoaded || !dayPicksLoaded) return;
+    if (dayCardAppendedRef.current) return;
+    const timer = window.setTimeout(() => {
+      if (dayCardAppendedRef.current) return;
+      dayCardAppendedRef.current = true;
+      const { assignments, books } = computeDayCandidates();
+      if (assignments.length === 0 && books.length === 0) return;
+      setTutorMessages((prev) => {
+        if (prev.some((m) => m.card?.kind === "day-picker")) return prev;
+        return [
+          ...prev,
+          {
+            id: `t-day-${Date.now()}`,
+            role: "tutor",
+            topic: "morning-reflection",
+            text: "今日の候補はこのへんだよ👇 やるやつあったらタップしてね。",
+            card: { kind: "day-picker", assignments, books },
+            quickReplies: ["今日はプランだけでいい"],
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      });
+    }, 900);
+    return () => window.clearTimeout(timer);
+    // computeDayCandidates はタイマー発火時点の最新を使いたいだけなので deps に入れない
+    // (loaded フラグ 3 つが揃った 1 回だけ発火させる)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutorInit.freshToday, materialsLoaded, plansLoaded, dayPicksLoaded]);
+
   // ----- ゆい chat: 返信生成（mock + rightPaneAction 適用） -----
   // Phase 6 smoke test: buildNextTutorReplyAsync 経由で「計画立てよう」入口だけ Claude Opus 4.8 化。
   // フラグ off / それ以外 keyword は内部で同期 buildNextTutorReply に委譲、Claude 失敗時も mock fallback。
   const generateReply = useCallback(
     async ({ userInput }: { userInput: string; history: TutorMessage[] }): Promise<TutorMessage> => {
+      // Phase B: 「今日なにやる?」儀式はゆいの state machine を通さない intercept。
+      // 候補が workspace の実データ (Supabase 由来) からしか作れないため tutor-mock では
+      // 扱えない。state も進めない (儀式の前後で会話の文脈を壊さない)。
+      const t = userInput.trim();
+      if (
+        t.includes("今日やること") ||
+        t.includes("今日なにやる") ||
+        t.includes("今日何やる") ||
+        t.includes("他にもやる")
+      ) {
+        return buildDayRitualReply(userInput);
+      }
+      if (
+        t.includes("今日はプランだけ") ||
+        t.includes("今日はこれでOK") ||
+        t.includes("今日はこれで OK")
+      ) {
+        return buildDayCloseReply(userInput);
+      }
       const result = await buildNextTutorReplyAsync({
         state: tutorStepRef.current,
         userInput,
@@ -1678,7 +2157,7 @@ export function TutorWorkspace({
       }
       return result.reply;
     },
-    [applyRightPaneAction],
+    [applyRightPaneAction, buildDayRitualReply, buildDayCloseReply],
   );
 
   const onPickSubject = useCallback(
@@ -1912,6 +2391,10 @@ export function TutorWorkspace({
             onPickMaterial={onPickMaterial}
             onPickDuration={onPickDuration}
             onPickWeakNodes={onPickWeakNodes}
+            dayPickedKeys={dayPickedKeys}
+            onPickDayAssignment={onPickDayAssignment}
+            onPickDayBook={onPickDayBook}
+            onPickDaySegment={onPickDaySegment}
             externallyLocked={tutorLocked}
             externalLockMessage={
               tutorLocked
@@ -1962,6 +2445,9 @@ export function TutorWorkspace({
             onNavigate={navigate}
             calendar={calendarApi}
             plans={plans}
+            dayPicks={dayPicks}
+            onRemoveDayPick={handleRemoveDayPick}
+            onStartDayRitual={handleStartDayRitual}
             onCreatePlan={handleCreatePlan}
             onExtendPlan={handleExtendPlan}
             onCompletePlan={handleCompletePlan}

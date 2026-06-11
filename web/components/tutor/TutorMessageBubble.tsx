@@ -27,6 +27,8 @@ import { RoadmapPreviewCard } from "./cards/RoadmapPreviewCard";
 import { WeakNodePickerCard } from "./cards/WeakNodePickerCard";
 import { NodeReviewSuggestionCard } from "./cards/NodeReviewSuggestionCard";
 import { ReplanDraftCard } from "./cards/ReplanDraftCard";
+import { DayPickerCard } from "./cards/DayPickerCard";
+import { DaySegmentPickerCard } from "./cards/DaySegmentPickerCard";
 import { TopicChip } from "./topic-display";
 
 type Props = {
@@ -45,6 +47,15 @@ type Props = {
   onSeeAllIssues: () => void;
   onSelectIssueItem: (issueId: string) => void;
   onSeeAllSchedule: () => void;
+  /** Phase B (2026-06-11): 「今日なにやる?」儀式のピッカー操作 */
+  dayPickedKeys: Set<string>;
+  onPickDayAssignment: (materialId: string, label: string) => void;
+  onPickDayBook: (materialId: string, label: string) => void;
+  onPickDaySegment: (
+    materialId: string,
+    segmentId: string,
+    label: string,
+  ) => void;
 };
 
 export function TutorMessageBubble({
@@ -60,6 +71,10 @@ export function TutorMessageBubble({
   onSeeAllIssues,
   onSelectIssueItem,
   onSeeAllSchedule,
+  dayPickedKeys,
+  onPickDayAssignment,
+  onPickDayBook,
+  onPickDaySegment,
 }: Props) {
   // セクションヘッダー (話題区切り)
   if (message.role === "section") {
@@ -139,6 +154,21 @@ export function TutorMessageBubble({
               )}
               {message.card.kind === "replan-draft" && (
                 <ReplanDraftCard card={message.card} />
+              )}
+              {message.card.kind === "day-picker" && (
+                <DayPickerCard
+                  card={message.card}
+                  pickedKeys={dayPickedKeys}
+                  onPickAssignment={onPickDayAssignment}
+                  onPickBook={onPickDayBook}
+                />
+              )}
+              {message.card.kind === "day-segment-picker" && (
+                <DaySegmentPickerCard
+                  card={message.card}
+                  pickedKeys={dayPickedKeys}
+                  onPickSegment={onPickDaySegment}
+                />
               )}
             </div>
           )}

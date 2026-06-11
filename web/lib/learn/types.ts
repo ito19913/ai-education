@@ -297,6 +297,30 @@ export type StudyPlan = {
 };
 
 /**
+ * 「その日決める枠」の pick (Phase B 勉強開始 chat 儀式、2026-06-11 grill B-1〜B-8)。
+ *
+ * 「おかえり、今日なにやる?」儀式で子が選んだ 1 件。今日のタスクの下段
+ * 「きょう決めたこと」に出る。完了フラグは持たず導出する (B-4):
+ *   宿題 (segmentId なし) → materials.assignmentStatus === "done"
+ *   まとまり (segmentId あり) → そのまとまりのレジュメが understood
+ * 完了するか子が「やめとく」で外すまで残る (B-5、否定バッジなし)。
+ * Supabase daily_picks に永続化 (mock モードは in-memory)。
+ */
+export type DailyPick = {
+  id: string;
+  /** 選んだ対象 (宿題・テスト or 本) */
+  materialId: string;
+  /** 本のまとまり (ConceptSegment.id)。undefined = 宿題・テスト pick */
+  segmentId?: string;
+  /**
+   * 完了を観測した時刻 (ISO、表示用キャッシュ)。✓ を完了当日だけ見せて
+   * 翌日消すために使う。真実の情報源は宿題 status / レジュメ。
+   */
+  completedAt?: string;
+  createdAt: string;
+};
+
+/**
  * Phase 4 拡張: ScheduleItem の出処を識別 (Q7 確定)。
  * - "plan"       = LearningPlan の月次バッチ展開で生成された分
  * - "carry-over" = 前日できなかった繰り越し
@@ -586,6 +610,49 @@ export type TutorCard =
       proposedChange: string;
       /** ゆいの所感 (なぜこの提案か) */
       rationale: string;
+    }
+  | {
+      /**
+       * Phase B (2026-06-11 grill B-2/B-6): 「おかえり、今日なにやる?」儀式の
+       * 候補ピッカー。上段 = 宿題・テスト (まだ、提出日近い順、上位 5)、
+       * 下段 = プラン外の本 (まとまり生成済みのみ)。
+       * 選ぶたび pick が追加され「他にもやる?」、断っても OK (quickReplies 側)。
+       * 候補はカード作成時に確定して埋め込む (既存ピッカーと同型)。
+       */
+      kind: "day-picker";
+      assignments: Array<{
+        materialId: string;
+        label: string;
+        subjectLabel: string;
+        /** 提出日 / テスト日 (YYYY-MM-DD、任意) */
+        dueDate?: string;
+        isTest: boolean;
+      }>;
+      books: Array<{
+        materialId: string;
+        label: string;
+        subjectLabel: string;
+      }>;
+    }
+  | {
+      /**
+       * Phase B (grill B-3): 本を選んだ後の「どのまとまりやる?」ピッカー。
+       * 済み ✓ バッジ付き一覧、おすすめ = 次のまとまり (最初の未済) を
+       * 先頭ハイライト。どれでも選べる (順不同 OK のキュー思想と同じ)。
+       */
+      kind: "day-segment-picker";
+      materialId: string;
+      materialLabel: string;
+      options: Array<{
+        segmentId: string;
+        label: string;
+        /** "p.12–18" 形式の表示用ページ範囲 */
+        pageRange: string;
+        /** レジュメ understood で済んでいるか */
+        done: boolean;
+        /** おすすめ (= 最初の未済) か */
+        recommended: boolean;
+      }>;
     }
   | {
       /** Phase 3 拡張: 「あの話したよね?」検索ヒット候補のリスト */

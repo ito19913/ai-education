@@ -52,6 +52,19 @@ type Props = {
   ) => TutorMessage;
   /** C17 Phase 5 P5-Q2: 計画立案の weak-node-picker 選択ハンドラ */
   onPickWeakNodes: (selectedNodeIds: string[]) => TutorMessage;
+  /** Phase B (2026-06-11): 「今日なにやる?」儀式のピッカー選択ハンドラ。
+   *  pick の DB 書込みを伴うため async (Promise<TutorMessage>) を許容する。 */
+  dayPickedKeys: Set<string>;
+  onPickDayAssignment: (
+    materialId: string,
+    label: string,
+  ) => Promise<TutorMessage>;
+  onPickDayBook: (materialId: string, label: string) => Promise<TutorMessage>;
+  onPickDaySegment: (
+    materialId: string,
+    segmentId: string,
+    label: string,
+  ) => Promise<TutorMessage>;
   /** Phase 3: 課題カードクリック → 右ペインに IssueChat / IssueListView を出す */
   onSelectIssue?: (issueId: string) => void;
   onSeeAllIssues?: () => void;
@@ -77,6 +90,10 @@ export function TutorChat({
   onPickMaterial,
   onPickDuration,
   onPickWeakNodes,
+  dayPickedKeys,
+  onPickDayAssignment,
+  onPickDayBook,
+  onPickDaySegment,
   onSelectIssue,
   onSeeAllIssues,
   onSelectIssueItem,
@@ -189,6 +206,31 @@ export function TutorChat({
     }, 600);
   };
 
+  // Phase B (2026-06-11): 「今日なにやる?」儀式のピッカー。選択を本人発話として
+  // 履歴に残し、async ハンドラ (pick の DB 書込みあり) の返信を append する共通形。
+  const handleDayPick = (
+    label: string,
+    run: () => Promise<TutorMessage>,
+  ) => {
+    const userMsg: TutorMessage = {
+      // eslint-disable-next-line react-hooks/purity -- 既存ハンドラ (handlePickSubject 等) と同じ Date.now() id 採番。イベントハンドラ内でしか呼ばれない
+      id: `u-${Date.now()}`,
+      role: "learner",
+      text: label,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setIsThinking(true);
+    window.setTimeout(async () => {
+      try {
+        const reply = await run();
+        setMessages((prev) => appendReplyWithSection(prev, reply));
+      } finally {
+        setIsThinking(false);
+      }
+    }, 600);
+  };
+
   // C17 Phase 5 P5-Q2: weak-node-picker ハンドラ
   const handlePickWeakNodes = (selectedNodeIds: string[]) => {
     const label =
@@ -247,6 +289,20 @@ export function TutorChat({
               onPickMaterial={handlePickMaterial}
               onPickDuration={handlePickDuration}
               onPickWeakNodes={handlePickWeakNodes}
+              dayPickedKeys={dayPickedKeys}
+              onPickDayAssignment={(materialId, label) =>
+                handleDayPick(label, () =>
+                  onPickDayAssignment(materialId, label),
+                )
+              }
+              onPickDayBook={(materialId, label) =>
+                handleDayPick(label, () => onPickDayBook(materialId, label))
+              }
+              onPickDaySegment={(materialId, segmentId, label) =>
+                handleDayPick(label, () =>
+                  onPickDaySegment(materialId, segmentId, label),
+                )
+              }
               issues={issues}
               scheduleItems={scheduleItems}
               onSelectIssue={onSelectIssue ?? noop}

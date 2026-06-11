@@ -16,6 +16,7 @@ import type { NewAssignmentInput } from "@/lib/materials/materials-repo";
 import type {
   AssignmentStatus,
   ChatMessage,
+  DailyPick,
   Issue,
   IssueChatMessage,
   KnowledgeNode,
@@ -123,6 +124,12 @@ type Props = {
   calendar: CalendarApi;
   /** 新プラン (ザックリ・まとまりキュー型、2026-06-10) */
   plans: StudyPlan[];
+  /** Phase B (2026-06-11): 「その日決める枠」の pick (ダッシュボード下段用) */
+  dayPicks: DailyPick[];
+  /** pick を外す (「やめとく」) */
+  onRemoveDayPick: (id: string) => void;
+  /** 「＋ゆいと決める」→ 左の chat に儀式カードを出す */
+  onStartDayRitual: () => void;
   onCreatePlan: (material: Material, endsAt: string, countFrom?: string) => void;
   onExtendPlan: (planId: string, endsAt: string) => void;
   onCompletePlan: (planId: string) => void;
@@ -189,6 +196,9 @@ export function RightPaneRouter({
   onNavigate,
   calendar,
   plans,
+  dayPicks,
+  onRemoveDayPick,
+  onStartDayRitual,
   onCreatePlan,
   onExtendPlan,
   onCompletePlan,
@@ -219,6 +229,10 @@ export function RightPaneRouter({
         subjects={subjects}
         noteEntries={noteEntries}
         plans={plans}
+        dayPicks={dayPicks}
+        onRemoveDayPick={onRemoveDayPick}
+        onStartDayRitual={onStartDayRitual}
+        onToggleAssignmentStatus={onToggleAssignmentStatus}
         onNavigate={onNavigate}
       />
     );

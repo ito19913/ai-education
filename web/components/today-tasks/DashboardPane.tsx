@@ -11,10 +11,16 @@
  *   - モックの今日のタスク (TodayTaskList/進捗バー/AIと相談) は撤去。画面に出るのは実物だけ。
  *   - 今日のタスク = 各アクティブプランの「先頭まとまり」が常駐 (完了で即次、溜まらない)。
  *   - 予定の「勉強」モックマージも撤去 (手動イベントだけの正直な表示)。
- *   - その日決める枠 (勉強開始 chat で宿題を選ぶ) は Phase B。
+ *
+ * ★2026-06-11 Phase B (grill B-7): 今日のタスクを 2 段に★:
+ *   - 上段 = プランの「つぎのまとまり」(自動枠、従来どおり)。
+ *   - 下段 = 「きょう決めたこと」(その日決める枠 = pick)。儀式で選んだ宿題・まとまり。
+ *     完了は導出 (宿題 status / レジュメ understood)、完了日は ✓ → 翌日消える。
+ *     「やめとく」で外せる。0 件の日は下段ごと非表示 (実データだけ規律)。
+ *   - ヘッダー右「＋ゆいと決める」→ 左の chat で儀式開始。
  *
  * 構成 (上から、全て同じ中央寄せ幅):
- *   今日のタスク (プラン先頭) → 宿題・テスト → 予定 → 課題 → 教材 → レジュメ → プラン → 記録
+ *   今日のタスク (プラン先頭 + きょう決めたこと) → 宿題・テスト → 予定 → 課題 → 教材 → レジュメ → プラン → 記録
  */
 import { useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -24,6 +30,7 @@ import {
   Book,
   BookOpen,
   BookText,
+  Check,
   ClipboardList,
   Compass,
   GraduationCap,
@@ -33,11 +40,15 @@ import {
   NotebookPen,
   Paperclip,
   RotateCcw,
+  Sparkles,
   Target,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { computePlanProgress, daysUntilEnd } from "@/lib/plans/plan-progress";
 import type {
+  AssignmentStatus,
+  DailyPick,
   Issue,
   KnowledgeNode,
   Material,
@@ -62,6 +73,14 @@ type Props = {
   noteEntries: NoteEntry[];
   /** 新プラン (今日のタスク = 各プランの先頭まとまり) */
   plans: StudyPlan[];
+  /** Phase B: 「その日決める枠」の pick (きょう決めたこと) */
+  dayPicks: DailyPick[];
+  /** pick を外す (「やめとく」、B-5) */
+  onRemoveDayPick: (id: string) => void;
+  /** 「＋ゆいと決める」→ 左の chat で儀式開始 (B-1) */
+  onStartDayRitual: () => void;
+  /** 宿題 pick の「やった」チェック (既存宿題トグルと同じハンドラ) */
+  onToggleAssignmentStatus: (id: string, status: AssignmentStatus) => void;
   /** ダッシュボード各カード/セクション → 該当ビューへ。TutorWorkspace の navigate を渡す */
   onNavigate: (
     view: RightPaneView,
@@ -91,6 +110,10 @@ export function DashboardPane({
   subjects,
   noteEntries,
   plans,
+  dayPicks,
+  onRemoveDayPick,
+  onStartDayRitual,
+  onToggleAssignmentStatus,
   onNavigate,
 }: Props) {
   const subjectName = (id: string) =>
@@ -108,6 +131,49 @@ export function DashboardPane({
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
   }, [plans, materials, noteEntries]);
+
+  // きょう決めたこと (Phase B): pick → 表示行。完了は導出 (B-4: 宿題 status /
+  // レジュメ understood)。完了行も当日は ✓ で見せる (翌日 fetch 掃除で消える)。
+  const dayPickRows = useMemo(() => {
+    return dayPicks
+      .map((pick) => {
+        const material = materials.find((m) => m.id === pick.materialId);
+        if (!material || material.deletedAt) return null;
+        if (pick.segmentId) {
+          const seg = material.conceptSegments?.find(
+            (s) => s.id === pick.segmentId,
+          );
+          if (!seg) return null;
+          const done = noteEntries.some(
+            (n) =>
+              !n.deletedAt &&
+              n.status === "understood" &&
+              n.sourceMaterialId === material.id &&
+              n.sourceSegmentId === pick.segmentId,
+          );
+          return {
+            pick,
+            material,
+            kind: "segment" as const,
+            title: seg.conceptName,
+            detail: `${material.name}・p.${seg.startPdfPage}–${seg.endPdfPage}`,
+            page: seg.startPdfPage,
+            done,
+          };
+        }
+        const done = (material.assignmentStatus ?? "todo") === "done";
+        return {
+          pick,
+          material,
+          kind: "assignment" as const,
+          isTest: material.assignmentType === "test",
+          title: material.name,
+          dueDate: material.dueDate,
+          done,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }, [dayPicks, materials, noteEntries]);
 
   // レジュメの手応え (北極星)
   const resumeStats = useMemo(() => {
@@ -163,22 +229,29 @@ export function DashboardPane({
     <div className="h-full w-full overflow-y-auto bg-canvas">
       {/* 全ブロックを同じ中央寄せ幅 (max-w-5xl) に収めて左右・余白を揃える */}
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-6">
-        {/* 🔄 今日のタスク = 各プランの先頭まとまり (実データ。完了で即次、溜まらない) */}
+        {/* 🔄 今日のタスク = 上段: 各プランの先頭まとまり (自動枠) + 下段: きょう決めたこと (Phase B) */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
             <CardTitle className="flex items-center gap-2 text-sm">
               <ListTodo className="size-4 text-primary" />
               <span>今日のタスク</span>
             </CardTitle>
-            <span className="text-[11px] text-muted-foreground">
-              プランの「つぎのまとまり」が出てくるよ
-            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onStartDayRitual}
+              className="h-7 gap-1.5 px-2 text-xs"
+              title="ゆいと「今日なにやる?」を決める (左の chat に出るよ)"
+            >
+              <Sparkles className="size-3.5 text-amber-500" />
+              <span>＋ゆいと決める</span>
+            </Button>
           </CardHeader>
-          <CardContent>
-            {planTasks.length === 0 ? (
+          <CardContent className="flex flex-col gap-3">
+            {planTasks.length === 0 && dayPickRows.length === 0 ? (
               <div className="flex flex-col items-start gap-2">
                 <p className="text-sm text-muted-foreground">
-                  プランに教材を組み込むと、ここに「つぎにやるまとまり」が出てくるよ。
+                  プランに教材を組み込むと、ここに「つぎにやるまとまり」が出てくるよ。「＋ゆいと決める」で今日やる宿題を選ぶこともできるよ。
                 </p>
                 <Button
                   variant="outline"
@@ -190,7 +263,7 @@ export function DashboardPane({
                   <span>教材を見る</span>
                 </Button>
               </div>
-            ) : (
+            ) : planTasks.length === 0 ? null : (
               <ul className="flex flex-col gap-1.5">
                 {planTasks.map(({ plan, material, progress, overdue }) => (
                   <li
@@ -250,6 +323,140 @@ export function DashboardPane({
                   </li>
                 ))}
               </ul>
+            )}
+
+            {/* 下段: きょう決めたこと (Phase B grill B-7。0 件の日は出さない = 実データだけ) */}
+            {dayPickRows.length > 0 && (
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                  <Sparkles className="size-3 text-amber-500" />
+                  <span>きょう決めたこと</span>
+                </div>
+                <ul className="flex flex-col gap-1.5">
+                  {dayPickRows.map((row) => (
+                    <li
+                      key={row.pick.id}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-md border px-3 py-2",
+                        row.done
+                          ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/20"
+                          : "border-border bg-card",
+                      )}
+                    >
+                      <span className="inline-flex w-14 shrink-0 items-center justify-center truncate rounded border border-border bg-muted px-1 py-0.5 text-[10px] font-medium text-foreground">
+                        {subjectName(row.material.subjectId) || "—"}
+                      </span>
+                      {row.kind === "assignment" && (
+                        <span
+                          className={cn(
+                            "inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                            row.isTest
+                              ? "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300"
+                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+                          )}
+                        >
+                          {row.isTest ? (
+                            <GraduationCap className="size-3" />
+                          ) : (
+                            <ClipboardList className="size-3" />
+                          )}
+                          {row.isTest ? "テスト" : "宿題"}
+                        </span>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div
+                          className={cn(
+                            "truncate text-sm font-medium",
+                            row.done
+                              ? "text-emerald-700 dark:text-emerald-300"
+                              : "text-foreground",
+                          )}
+                        >
+                          {row.done && (
+                            <Check
+                              className="mr-1 inline size-3.5"
+                              strokeWidth={3}
+                            />
+                          )}
+                          {row.title}
+                        </div>
+                        {row.kind === "segment" && (
+                          <div className="truncate text-[11px] text-muted-foreground">
+                            {row.detail}
+                          </div>
+                        )}
+                      </div>
+                      {row.kind === "assignment" && row.dueDate && !row.done && (
+                        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                          {row.dueDate.slice(5).replace("-", "/")}まで
+                        </span>
+                      )}
+                      {!row.done && (
+                        <>
+                          {row.kind === "segment" ? (
+                            <Button
+                              size="sm"
+                              onClick={() =>
+                                onNavigate("material-read", {
+                                  materialId: row.material.id,
+                                  page: row.page,
+                                  unit: true,
+                                })
+                              }
+                              className="h-7 shrink-0 gap-1 px-2 text-xs"
+                              title="このまとまりを葵先生と読む"
+                            >
+                              <BookOpen className="size-3.5" />
+                              <span>学習する</span>
+                            </Button>
+                          ) : (
+                            <>
+                              {row.material.pdfPath && (
+                                <Button
+                                  size="sm"
+                                  onClick={() =>
+                                    onNavigate("material-read", {
+                                      materialId: row.material.id,
+                                    })
+                                  }
+                                  className="h-7 shrink-0 gap-1 px-2 text-xs"
+                                  title="葵先生と一緒に解く"
+                                >
+                                  <BookOpen className="size-3.5" />
+                                  <span>学習する</span>
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  onToggleAssignmentStatus(
+                                    row.material.id,
+                                    "done",
+                                  )
+                                }
+                                className="h-7 shrink-0 gap-1 px-2 text-xs"
+                                title="やったことにする"
+                              >
+                                <Check className="size-3.5" />
+                                <span>やった</span>
+                              </Button>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onRemoveDayPick(row.pick.id)}
+                            className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            title="今日はやめとく (リストから外すだけ)"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </CardContent>
         </Card>

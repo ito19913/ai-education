@@ -155,14 +155,17 @@ export function buildInitialTutorThread(
 
   // D5 (2026-05-27 確定): 中学生向け朝振り返り廃止 = flag 経由でハブ挨拶に置換。
   // Interrupt / Suggestion の冒頭付与は廃止モードでも残す (緊急情報なので飛ばさない)。
+  // Phase B (2026-06-11 grill B-1/B-8): その日最初の挨拶を「今日なにやる?」化。
+  // 候補ピッカー (day-picker カード) はデータロード後に TutorWorkspace 側が
+  // 続けて append する (候補 0 件なら出さない = 通常挨拶フォールバック)。
   const messages: TutorMessage[] = !MORNING_MODE_ENABLED
     ? [
         {
           id: "t-1",
           role: "tutor",
           topic: "morning-reflection",
-          text: `${greeting}\n\n今日はどうする?\n- **計画を立てる**\n- **教材** を確認・追加する\n- **課題** を見せる\n- **今日のタスク** をやる\n\n上のメニューからもすぐ始められるよ。`,
-          quickReplies: ["計画を立てる", "教材", "今日のタスク"],
+          text: `${greeting}\n\n**今日なにやる?** 🙌\n\nプランの「つぎのまとまり」はダッシュボードに出てるよ。それとは別に、宿題とか「今日はこれやりたい」があったら一緒に決めよう。\n\nもちろん今日はプランだけでも全然 OK!`,
+          quickReplies: ["今日やることを決める", "計画を立てる", "教材"],
           createdAt: now.toISOString(),
         },
       ]
