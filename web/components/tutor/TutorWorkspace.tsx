@@ -1675,17 +1675,25 @@ export function TutorWorkspace({
     if (!firstOpen) return;
     openNudgeRef.current = true;
     // open があれば 1 回だけ提案を append (定期振り返りトリガー、N9② Q3)。
+    // ★重複表示バグ修正 (2026-06-11 実機報告): 同日 thread は localStorage に保存・
+    // 復元されるため、リロードのたびに「復元済みナッジ + 新規ナッジ」が積み重なって
+    // いた (openNudgeRef はマウント毎にリセットされる)。thread 内に既にナッジが
+    // あれば append しない = 1 日 1 回に揃える。
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTutorMessages((prev) => [
-      ...prev,
-      {
-        id: `t-note-nudge-${Date.now()}`,
-        role: "tutor",
-        text: `そういえば、前に「まだ」だった「${firstOpen.conceptName}」があるよ。\n気が向いたら、もう一回説明してみる? できそうなら理解済みにできるよ。`,
-        quickReplies: ["レジュメを見る"],
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+    setTutorMessages((prev) =>
+      prev.some((m) => m.id.startsWith("t-note-nudge-"))
+        ? prev
+        : [
+            ...prev,
+            {
+              id: `t-note-nudge-${Date.now()}`,
+              role: "tutor",
+              text: `そういえば、前に「まだ」だった「${firstOpen.conceptName}」があるよ。\n気が向いたら、もう一回説明してみる? できそうなら理解済みにできるよ。`,
+              quickReplies: ["レジュメを見る"],
+              createdAt: new Date().toISOString(),
+            },
+          ],
+    );
   }, [noteEntries]);
 
   // ----- 教材追加完了時: materials state に push + ゆい発話 + 新教材の詳細へ遷移 -----
