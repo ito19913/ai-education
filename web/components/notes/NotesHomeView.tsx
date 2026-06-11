@@ -31,7 +31,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   BookOpen,
+  FileText,
   List,
+  Loader2,
   Map as MapIcon,
   NotebookPen,
   PencilLine,
@@ -41,6 +43,7 @@ import {
   RefreshCw,
   Plus,
   MoreVertical,
+  Sparkles,
   Star,
   FolderInput,
   GraduationCap,
@@ -51,6 +54,7 @@ import { MarkdownText } from "@/components/chat/MarkdownText";
 import { NoteGateDialog } from "@/components/notes/NoteGateDialog";
 import { parsePageRange } from "@/lib/notes/concept-for-page";
 import { defaultResumeName } from "@/lib/notes/resumes-repo";
+import { toRoman, unplacedEntries } from "@/lib/notes/resume-outline";
 import type {
   KnowledgeNode,
   Material,
@@ -94,6 +98,8 @@ type Props = {
     sourceSubjectId: string,
     newName: string,
   ) => void;
+  /** R11-①: 冊のアウトラインを AI 下書き / 言葉で修正 (instruction 任意) */
+  onGenerateOutline: (resume: Resume, instruction?: string) => Promise<void>;
 };
 
 export function NotesHomeView({
@@ -112,8 +118,13 @@ export function NotesHomeView({
   onMoveEntryToResume,
   onMoveEntryToSubject,
   onCopyResume,
+  onGenerateOutline,
 }: Props) {
-  const [mode, setMode] = useState<"list" | "map">("list");
+  // R11-①: デフォルト = 通し文書 (会計士レジュメと同じ「1 冊の文書」が開いた瞬間に見える)
+  const [mode, setMode] = useState<"doc" | "list" | "map">("doc");
+  // R11-①: アウトライン生成/修正の実行中 + 言葉で直す入力
+  const [outlineBusy, setOutlineBusy] = useState(false);
+  const [outlineInstruction, setOutlineInstruction] = useState("");
   // N9②: 振り返り (open→理解済み 昇格) の review ダイアログ対象
   const [reviewEntry, setReviewEntry] = useState<NoteEntry | null>(null);
   // R10 Phase 2: 冊の 追加/リネーム ダイアログ + 削除確認
@@ -275,6 +286,28 @@ export function NotesHomeView({
     ? entries.filter((e) => e.resumeId === deleteTarget.id).length
     : 0;
 
+  // ----- R11-①: 通し文書 (アウトライン + 配置済みピース + 未整理) -----
+  const outline = selectedBook?.outline;
+  const entryById = useMemo(
+    () => new Map(scopedEntries.map((e) => [e.id, e])),
+    [scopedEntries],
+  );
+  const docUnplaced = useMemo(
+    () => unplacedEntries(outline, scopedEntries),
+    [outline, scopedEntries],
+  );
+
+  const runGenerateOutline = async (instruction?: string) => {
+    if (!selectedBook || outlineBusy) return;
+    setOutlineBusy(true);
+    try {
+      await onGenerateOutline(selectedBook, instruction);
+      setOutlineInstruction("");
+    } finally {
+      setOutlineBusy(false);
+    }
+  };
+
   return (
     <div className="flex h-full w-full flex-col bg-canvas">
       {/* ヘッダー */}
@@ -289,6 +322,19 @@ export function NotesHomeView({
           </span>
         )}
         <div className="ml-auto flex items-center gap-1 rounded-md border border-border p-0.5">
+          <button
+            type="button"
+            onClick={() => setMode("doc")}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
+              mode === "doc"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            title="Ⅰ→1 の見出し付きで 1 本の文書として読む (R11)"
+          >
+            <FileText className="size-3.5" />
+            通し
+          </button>
           <button
             type="button"
             onClick={() => setMode("list")}
@@ -457,6 +503,145 @@ export function NotesHomeView({
               から始めよう。
             </p>
           </div>
+        ) : mode === "doc" ? (
+          // R11-①: 通し文書ビュー (デフォルト)。Ⅰ→1 の固定番号で 1 本の文書に見える
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
+            {/* アウトラインの生成 / 言葉で直すバー */}
+            {selectedBook &&
+              (outline && outline.length > 0 ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={outlineInstruction}
+                    onChange={(ev) => setOutlineInstruction(ev.target.value)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter" && outlineInstruction.trim()) {
+                        void runGenerateOutline(outlineInstruction.trim());
+                      }
+                    }}
+                    placeholder="アウトラインを言葉で直す（例: Ⅰ と Ⅱ を入れ替えて / 時制の章を分けて）"
+                    className="h-8 flex-1 text-xs"
+                    disabled={outlineBusy}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-3 text-xs"
+                    disabled={outlineBusy || !outlineInstruction.trim()}
+                    onClick={() =>
+                      void runGenerateOutline(outlineInstruction.trim())
+                    }
+                  >
+                    直す
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 gap-1 px-2 text-xs"
+                    disabled={outlineBusy}
+                    onClick={() => void runGenerateOutline()}
+                    title="章立てを最初から作り直して、全ピースを配置し直す"
+                  >
+                    {outlineBusy ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="size-3.5 text-amber-500" />
+                    )}
+                    作り直す
+                  </Button>
+                </div>
+              ) : (
+                <Card>
+                  <CardContent className="flex flex-col items-start gap-2 py-4">
+                    <p className="text-sm text-muted-foreground">
+                      葵がこの冊の<strong>アウトライン（Ⅰ・1 の章立て）</strong>
+                      を作って、今あるレジュメを配置するよ。あとから言葉で直せるよ。
+                    </p>
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={outlineBusy}
+                      onClick={() => void runGenerateOutline()}
+                    >
+                      {outlineBusy ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="size-4" />
+                      )}
+                      アウトラインを作る
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+
+            {/* 章 (Ⅰ レベル) */}
+            {outline?.map((sec, i) => {
+              const secEntries = sec.entryIds
+                .map((id) => entryById.get(id))
+                .filter((e): e is NoteEntry => !!e);
+              return (
+                <section key={sec.id}>
+                  <div className="mb-2 flex items-baseline gap-2 border-b-2 border-foreground/60 pb-1">
+                    <span className="text-base font-bold">
+                      {toRoman(i + 1)}
+                    </span>
+                    <span className="text-base font-bold">{sec.title}</span>
+                  </div>
+                  {secEntries.length === 0 ? (
+                    <p className="pl-1 text-xs text-muted-foreground">
+                      （この章はまだ空だよ）
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {secEntries.map((e, j) => (
+                        <DocPiece
+                          key={e.id}
+                          entry={e}
+                          number={j + 1}
+                          materialName={
+                            materials.find((m) => m.id === e.sourceMaterialId)
+                              ?.name ?? null
+                          }
+                          onOpenSource={onOpenSource}
+                          onStartReview={() => setReviewEntry(e)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+
+            {/* 未整理 (どの章にも居ないピース) */}
+            {docUnplaced.length > 0 && (
+              <section>
+                <div className="mb-2 flex items-baseline gap-2 border-b-2 border-dashed border-border pb-1">
+                  <span className="text-base font-bold text-muted-foreground">
+                    未整理
+                  </span>
+                  {outline && outline.length > 0 && (
+                    <span className="text-[11px] text-muted-foreground">
+                      （「作り直す」か言葉で直すと章に入るよ）
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-col gap-3">
+                  {docUnplaced.map((e, j) => (
+                    <DocPiece
+                      key={e.id}
+                      entry={e}
+                      number={j + 1}
+                      materialName={
+                        materials.find((m) => m.id === e.sourceMaterialId)
+                          ?.name ?? null
+                      }
+                      onOpenSource={onOpenSource}
+                      onStartReview={() => setReviewEntry(e)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
         ) : mode === "map" ? (
           <div className="h-[600px]">
             <MindMapPane
@@ -598,6 +783,83 @@ export function NotesHomeView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/**
+ * 通し文書の 1 ピース (R11-①)。「1 概念名」の見出し + 本文。
+ * 番号は表示時レンダリングで固定 (R11-3: 章=Ⅰ、ピース=1、本文内は (1)・①)。
+ * 操作 (メモ編集・移動・削除) はカード (リスト) ビュー側に残し、ここは読む体験を優先。
+ */
+function DocPiece({
+  entry,
+  number,
+  materialName,
+  onOpenSource,
+  onStartReview,
+}: {
+  entry: NoteEntry;
+  /** 章内の連番 (1 始まり、アラビア数字) */
+  number: number;
+  materialName: string | null;
+  onOpenSource: (materialId: string, page: number) => void;
+  onStartReview: () => void;
+}) {
+  const startPage = parsePageRange(entry.sourcePageRange)?.start ?? null;
+  const isOpen = entry.status === "open";
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold">{number}</span>
+        <span className="text-sm font-semibold">{entry.conceptName}</span>
+        {isOpen ? (
+          <CircleDashed
+            className="size-3.5 shrink-0 text-amber-500"
+            aria-label="振り返りたい"
+          />
+        ) : (
+          <CheckCircle2
+            className="size-3.5 shrink-0 text-emerald-600"
+            aria-label="理解済み"
+          />
+        )}
+        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+          {materialName ?? ""}
+          {entry.sourcePageRange ? `（${entry.sourcePageRange}）` : ""}
+        </span>
+        {entry.sourceMaterialId && startPage !== null && (
+          <button
+            type="button"
+            onClick={() => onOpenSource(entry.sourceMaterialId!, startPage)}
+            className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+            title="出典の教材ページを開く"
+          >
+            読む
+          </button>
+        )}
+      </div>
+      <div className="pl-5 text-sm text-card-foreground">
+        <MarkdownText text={entry.aiSummary} />
+      </div>
+      {entry.userNote && (
+        <div className="pl-5 text-xs text-muted-foreground">
+          📝 {entry.userNote}
+        </div>
+      )}
+      {isOpen && (
+        <div className="pl-5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 gap-1 px-2 text-xs"
+            onClick={onStartReview}
+          >
+            <RefreshCw className="size-3" />
+            もう一回説明してみる
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

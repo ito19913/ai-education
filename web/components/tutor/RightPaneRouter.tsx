@@ -166,6 +166,8 @@ type Props = {
     sourceSubjectId: string,
     newName: string,
   ) => void;
+  /** R11-①: 冊のアウトラインを AI 下書き / 言葉で修正 (instruction 任意) */
+  onGenerateOutline: (resume: Resume, instruction?: string) => Promise<void>;
 };
 
 export function RightPaneRouter({
@@ -219,6 +221,7 @@ export function RightPaneRouter({
   onMoveEntryToResume,
   onMoveEntryToSubject,
   onCopyResume,
+  onGenerateOutline,
 }: Props) {
   // 2026-06-09: トップ (default) と 旧「今日のタスク」(today-tasks、ボタン廃止後も
   // 既存リンク互換のため alias) はダッシュボードを表示する。
@@ -440,6 +443,7 @@ export function RightPaneRouter({
         onMoveEntryToResume={onMoveEntryToResume}
         onMoveEntryToSubject={onMoveEntryToSubject}
         onCopyResume={onCopyResume}
+        onGenerateOutline={onGenerateOutline}
       />
     );
   }

@@ -67,7 +67,13 @@ import {
   moveEntryToSubject,
   ensureDefaultResume,
   copyResume,
+  updateResumeOutline,
 } from "@/lib/notes/resumes-repo";
+import { buildResumeOutlineViaClaude } from "@/lib/notes/outline-claude";
+import {
+  sanitizeOutline,
+  buildFallbackOutline,
+} from "@/lib/notes/resume-outline";
 import {
   fetchCustomSubjects,
   insertSubject,
@@ -146,6 +152,7 @@ import type {
   Material,
   NoteEntry,
   Resume,
+  ResumeOutlineSection,
   RightPaneView,
   ScheduleItem,
   StudyPlan,
@@ -1466,6 +1473,98 @@ export function TutorWorkspace({
   );
 
   /**
+   * R11-①: 冊のアウトライン (Ⅰ・1 の章立て + ピース一括配置) を AI 下書き / 言葉で修正。
+   * - 新規 (instruction なし or 現アウトラインなし): 教材構造 + 全ピースから下書き
+   * - 修正 (instruction あり + 現アウトラインあり): 最小限の変更。Claude 失敗時は現状維持
+   * - Claude flag off / 新規での失敗: フォールバック (教材ごと 1 章・ページ順)
+   * 保存は resumes.outline (migration 未適用なら in-memory のみで動線は止めない)。
+   */
+  const handleGenerateOutline = useCallback(
+    async (resume: Resume, instruction?: string) => {
+      // この冊のピース (NotesHomeView の scopedEntries と同じ規則:
+      // デフォルト冊は resume_id 未設定の移行漏れも拾う)
+      const bookEntries = noteEntries.filter((e) => {
+        if (e.deletedAt) return false;
+        if (e.subjectId !== resume.subjectId) return false;
+        return e.resumeId === resume.id || (resume.isDefault && !e.resumeId);
+      });
+      const isRevision =
+        !!instruction && !!resume.outline && resume.outline.length > 0;
+
+      let outline: ResumeOutlineSection[] | null = null;
+      if (process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true") {
+        try {
+          const subjectName =
+            subjects.find((s) => s.id === resume.subjectId)?.name ?? "教科";
+          const materialStructures = materials
+            .filter(
+              (m) =>
+                (m.kind ?? "book") === "book" &&
+                m.subjectId === resume.subjectId &&
+                !m.deletedAt,
+            )
+            .map((m) => ({
+              materialName: m.name,
+              segmentNames: getPlanSegments(m)
+                .map((s) => s.conceptName)
+                .slice(0, 60),
+            }))
+            .filter((m) => m.segmentNames.length > 0);
+          const raw = await buildResumeOutlineViaClaude({
+            subjectName,
+            bookName: resume.name,
+            entries: bookEntries.map((e) => ({
+              id: e.id,
+              conceptName: e.conceptName,
+              pageRange: e.sourcePageRange,
+              materialName: e.sourceMaterialId
+                ? materials.find((m) => m.id === e.sourceMaterialId)?.name
+                : undefined,
+            })),
+            materialStructures,
+            currentOutline: isRevision
+              ? resume.outline!.map((s) => ({
+                  title: s.title,
+                  entryIds: s.entryIds,
+                }))
+              : undefined,
+            instruction: instruction || undefined,
+          });
+          const sanitized = sanitizeOutline(raw, bookEntries);
+          if (sanitized.length > 0) outline = sanitized;
+        } catch (err) {
+          console.error("[レジュメ] アウトライン AI 下書き失敗:", err);
+        }
+      }
+      if (!outline) {
+        // 修正モードの失敗は現状維持 (フォールバックで作り直すと子の指示を無視した
+        // 全再編になってしまう)
+        if (isRevision) return;
+        outline = buildFallbackOutline(
+          bookEntries,
+          (materialId) =>
+            materials.find((m) => m.id === materialId)?.name ?? null,
+        );
+      }
+
+      setResumes((prev) =>
+        prev.map((r) => (r.id === resume.id ? { ...r, outline: outline! } : r)),
+      );
+      if (isSupabaseConfigured()) {
+        try {
+          await updateResumeOutline(resume.id, outline);
+        } catch (err) {
+          console.error(
+            "[レジュメ] アウトライン保存失敗 (in-memory のみ。migration 20260611010000 適用要):",
+            err,
+          );
+        }
+      }
+    },
+    [noteEntries, subjects, materials],
+  );
+
+  /**
    * 科目付け間違いの修正: ピースを別の科目へ移す。移動先科目のデフォルト冊に着地させる
    * (ensureDefaultResume で確保)。subjectId + resumeId を更新、出典はそのまま。
    */
@@ -2496,6 +2595,7 @@ export function TutorWorkspace({
             onMoveEntryToResume={handleMoveEntryToResume}
             onMoveEntryToSubject={handleMoveEntryToSubject}
             onCopyResume={handleCopyResume}
+            onGenerateOutline={handleGenerateOutline}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

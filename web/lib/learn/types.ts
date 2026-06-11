@@ -891,6 +891,23 @@ export type NoteEntry = {
 };
 
 /**
+ * 冊アウトラインの章 (R11-① 見出しの完全統一、2026-06-11 grill R11-1〜R11-8)。
+ *
+ * 章 = Ⅰ (ローマ数字) レベル。配下ピース (entryIds) = 1 (アラビア数字) レベルで、
+ * 表示順の置き場でもある (note_entries に配置列は持たない)。
+ * (1)・①②③ はピース本文内の記法。番号は表示時に Ⅰ→1→(1)→①→・ で固定
+ * レンダリングする (R11-3、データはレベルだけ)。
+ */
+export type ResumeOutlineSection = {
+  /** 章のユニーク id ("sec-1" 等、AI 採番) */
+  id: string;
+  /** 章タイトル (例: "文型と文の要素") */
+  title: string;
+  /** 配下ピース (NoteEntry.id) の表示順。どの章にも居ないピースは「未整理」へ */
+  entryIds: string[];
+};
+
+/**
  * レジュメ「冊」(R10 Phase 1、2026-06-08)。
  * 1 科目 1 冊が原則。まとめた概念ピース (NoteEntry) が冊に溜まって体系になる。
  */
@@ -902,6 +919,11 @@ export type Resume = {
   name: string;
   /** デフォルト冊か (「レジュメにする」が自動で付く先、Phase 2 で削除不可保護) */
   isDefault: boolean;
+  /**
+   * 冊のアウトライン (R11-①)。undefined = 未生成 (AI 下書きは子の操作で作る、R11-2)。
+   * 通し文書ビューの章立て + ピース配置の唯一の置き場。
+   */
+  outline?: ResumeOutlineSection[];
   /** 論理削除日時 (ISO)。値あり = 非表示 */
   deletedAt?: string;
 };

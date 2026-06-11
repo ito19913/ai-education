@@ -18,7 +18,11 @@
  */
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentUserId } from "@/lib/materials/materials-repo";
-import type { NoteEntry, Resume } from "@/lib/learn/types";
+import type {
+  NoteEntry,
+  Resume,
+  ResumeOutlineSection,
+} from "@/lib/learn/types";
 
 export { getCurrentUserId };
 
@@ -29,6 +33,7 @@ type ResumeRow = {
   subject_id: string;
   name: string;
   is_default: boolean;
+  outline: ResumeOutlineSection[] | null;
   deleted_at: string | null;
 };
 
@@ -38,6 +43,7 @@ function rowToResume(row: ResumeRow): Resume {
     subjectId: row.subject_id,
     name: row.name,
     isDefault: row.is_default,
+    outline: row.outline ?? undefined,
     deletedAt: row.deleted_at ?? undefined,
   };
 }
@@ -148,6 +154,22 @@ export async function renameResume(id: string, name: string): Promise<void> {
   const { error } = await supabase
     .from("resumes")
     .update({ name })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * 冊のアウトラインを保存 (R11-①)。AI 下書き生成 / 言葉での修正のたびに全量上書き。
+ * migration `20260611010000` 未適用だと失敗する (呼び出し側で in-memory フォールバック)。
+ */
+export async function updateResumeOutline(
+  id: string,
+  outline: ResumeOutlineSection[],
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("resumes")
+    .update({ outline })
     .eq("id", id);
   if (error) throw error;
 }
