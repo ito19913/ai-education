@@ -3515,15 +3515,22 @@ Issue はこれまで in-memory のみ (MOCK_ISSUES + セッション中の追�
 5. **workspace-ui-kit 採用管理サンプル残骸 約 3,900 行削除** (components/workspace + 専用 lib +
    テスト 3 本。primitives は CLAUDE.md 規約が参照する現役のため温存。web/CLAUDE.md 見出し現行化)。
 
-### ★残ロードマップ (未対応、重要度順)
+### ✅ Phase 1 対応済 (`b2c0be9` / `d34ac70` / `4f35227`、2026-06-12)
 
-**Phase 1 — 公開 (Vercel デプロイ) 前必須:**
-- **全 Server Action に認証ガード** (`requireUser()` ヘルパー+全 action 先頭。現状は未認証の
-  第三者が Opus+vision を呼べる = API コスト被害) + **Supabase の新規サインアップ無効化を
-  ダッシュボードで確認** + Anthropic spend limit 設定
-- レジュメ本文の保護 (保存失敗の成功偽装をやめる + localStorage 下書き自動保存)
-- 初期 fetch 失敗の「嘘の空状態」を loading / error / empty に分離
-- 教材削除時の連鎖掃除 (論理削除なので FK cascade 不発 → プラン・daily_picks がゾンビ化)
+- **全 Server Action に認証ガード**: `lib/supabase/require-user.ts` 新規 + 全 13 ファイル・
+  22 action の先頭に `await requireUser()` (mock モードはスキップ = ローカル開発動線不変)。
+- **レジュメ本文の保護**: localStorage 下書き自動退避 (`resume-draft:{materialId}:{segKey}`、
+  debounce 保存・開き直しで復元・確定で削除) + real モードの保存失敗は done にせず
+  「書いた内容は消えていないよ」表示で再試行可能に (in-memory フォールバックは mock 専用に降格)。
+- **嘘の空状態の解消**: `materialsLoadState` (loading/error/ready) を本棚・宿題一覧・
+  ダッシュボード教材カードに通し、読み込み中 / 失敗 (再読み込みボタン) / 本当の 0 件を区別。
+- **教材削除の連鎖掃除**: handleMaterialDeleted が関連プランを論理削除 + daily_picks を除去
+  (論理削除なので FK cascade は発火しない、という前提を明文化)。
+- **★ユーザー側の残作業★**: ①Supabase ダッシュボード → Authentication →
+  「Allow new users to sign up」を**無効化** (REST の /auth/v1/settings で `disable_signup:false`
+  を確認済 = 現在は第三者がサインアップ可能) ②Anthropic Console で spend limit 設定。
+
+### ★残ロードマップ (未対応、重要度順)
 
 **Phase 2 — 運用品質:**
 - `lib/ai/client.ts` 集約 (クライアント 13 重複 / モデル ID 27 箇所 / **`process.cwd()/..` の
