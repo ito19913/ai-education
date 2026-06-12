@@ -25,8 +25,8 @@ import { TutorChat } from "./TutorChat";
 import { RightPaneRouter } from "./RightPaneRouter";
 import { AssignmentDialog } from "@/components/materials/AssignmentDialog";
 import { MaterialReadPane } from "@/components/materials/MaterialReadPane";
-import type { DetectedAssignmentIssue } from "@/lib/admin/assignment-solve-claude";
-import { setSessionPdf } from "@/lib/admin/session-pdf-store";
+import type { DetectedAssignmentIssue } from "@/lib/ai/assignment-solve-claude";
+import { setSessionPdf } from "@/lib/pdf/session-pdf-store";
 import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
 import {
   fetchMaterials,
@@ -47,9 +47,9 @@ import {
   loadPdfDocument,
   renderCoverThumb,
   type LoadedPdf,
-} from "@/lib/admin/pdf-extract-text";
-import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
-import { buildScanSegments } from "@/lib/admin/scan-segment-builder";
+} from "@/lib/pdf/pdf-extract-text";
+import { segmentConceptsFromText } from "@/lib/ai/segment-claude";
+import { buildScanSegments } from "@/lib/ai/scan-segment-builder";
 import {
   uploadMaterialPdf,
   removeMaterialPdf,

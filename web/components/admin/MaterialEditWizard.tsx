@@ -20,8 +20,8 @@ import { Step4Save } from "./steps/Step4Save";
 import {
   matchToExistingNodes,
   mockExtractNodes,
-} from "@/lib/admin/mock-extraction";
-import { extractKnowledgeNodesViaClaude } from "@/lib/admin/extract-claude";
+} from "@/lib/ai/mock-extraction";
+import { extractKnowledgeNodesViaClaude } from "@/lib/ai/extract-claude";
 import type {
   AiExtractedNode,
   KnowledgeNode,

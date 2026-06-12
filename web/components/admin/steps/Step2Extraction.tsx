@@ -7,7 +7,7 @@ import { ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
 import {
   EXTRACTION_STAGE_LABELS,
   type ExtractionStage,
-} from "@/lib/admin/mock-extraction";
+} from "@/lib/ai/mock-extraction";
 import type { MaterialDraft } from "@/lib/learn/types";
 import { cn } from "@/lib/utils";
 

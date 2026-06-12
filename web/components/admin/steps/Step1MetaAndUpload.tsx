@@ -23,8 +23,8 @@ import { cn } from "@/lib/utils";
 import {
   extractIngestionText,
   type IngestionText,
-} from "@/lib/admin/pdf-extract-text";
-import { detectMaterialMetaViaClaude } from "@/lib/admin/detect-meta-claude";
+} from "@/lib/pdf/pdf-extract-text";
+import { detectMaterialMetaViaClaude } from "@/lib/ai/detect-meta-claude";
 
 /** Select で「+ 新規科目を追加…」が選ばれた時の特殊 value。2026-05-25 grill 2 S8 由来 */
 const ADD_NEW_SUBJECT_VALUE = "__ADD_NEW_SUBJECT__";

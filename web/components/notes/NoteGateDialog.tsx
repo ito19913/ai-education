@@ -40,7 +40,7 @@ import {
   updateNoteEntry,
   getCurrentUserId,
 } from "@/lib/notes/notes-repo";
-import type { AokiChatMessage } from "@/lib/admin/aoki-chat-shared";
+import type { AokiChatMessage } from "@/lib/ai/aoki-chat-shared";
 import type {
   AiExtractedNode,
   ConceptSegment,

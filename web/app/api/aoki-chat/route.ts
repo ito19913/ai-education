@@ -16,7 +16,7 @@ import { claudeTextStreamResponse } from "@/lib/ai/stream-route";
 import {
   buildAokiChatRequest,
   type AokiChatInput,
-} from "@/lib/admin/aoki-chat-shared";
+} from "@/lib/ai/aoki-chat-shared";
 
 // Vercel: ストリーミング中も関数が生きている必要がある。長い解説 + Opus の
 // 生成時間を見込んで余裕を持たせる (ローカル dev では無視される)。

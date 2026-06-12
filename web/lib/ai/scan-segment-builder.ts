@@ -16,13 +16,13 @@
  */
 
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { renderPageToJpeg, renderPageToJpegAt } from "@/lib/admin/pdf-extract-text";
+import { renderPageToJpeg, renderPageToJpegAt } from "@/lib/pdf/pdf-extract-text";
 import {
   regroupTocIntoSegments,
   readPrintedPageNumbers,
   segmentScanByVision,
   type ScanVisionSegment,
-} from "@/lib/admin/segment-scan-claude";
+} from "@/lib/ai/segment-scan-claude";
 import { parsePageRange } from "@/lib/notes/concept-for-page";
 import type { ConceptSegment, Material } from "@/lib/learn/types";
 

@@ -18,7 +18,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
   releasePageCanvas,
   renderPageToCanvas,
-} from "@/lib/admin/pdf-extract-text";
+} from "@/lib/pdf/pdf-extract-text";
 import { findSegmentForPage } from "@/lib/notes/concept-for-page";
 import type { ConceptSegment } from "@/lib/learn/types";
 import { Check } from "lucide-react";

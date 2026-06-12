@@ -41,17 +41,17 @@ import {
   renderCoverThumb,
   extractFullPageTextsFromDoc,
   type LoadedPdf,
-} from "@/lib/admin/pdf-extract-text";
-import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
-import { buildScanSegments } from "@/lib/admin/scan-segment-builder";
-import { buildGuidedReadingPlan } from "@/lib/admin/guided-reading-claude";
+} from "@/lib/pdf/pdf-extract-text";
+import { segmentConceptsFromText } from "@/lib/ai/segment-claude";
+import { buildScanSegments } from "@/lib/ai/scan-segment-builder";
+import { buildGuidedReadingPlan } from "@/lib/ai/guided-reading-claude";
 import {
   buildAssignmentProblemPlan,
   detectAssignmentIssues,
   type DetectedAssignmentIssue,
-} from "@/lib/admin/assignment-solve-claude";
+} from "@/lib/ai/assignment-solve-claude";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { getSessionPdf, setSessionPdf } from "@/lib/admin/session-pdf-store";
+import { getSessionPdf, setSessionPdf } from "@/lib/pdf/session-pdf-store";
 import { downloadMaterialPdf } from "@/lib/materials/pdf-storage";
 import {
   updateMaterialGuidedPlans,
@@ -61,8 +61,8 @@ import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
 import type {
   AokiChatInput,
   AokiChatMessage,
-} from "@/lib/admin/aoki-chat-shared";
-import { streamAokiChat } from "@/lib/admin/aoki-chat-stream";
+} from "@/lib/ai/aoki-chat-shared";
+import { streamAokiChat } from "@/lib/ai/aoki-chat-stream";
 import { ResumePane } from "@/components/notes/ResumePane";
 import { PageThumbnailRail } from "@/components/materials/PageThumbnailRail";
 import {
