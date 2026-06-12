@@ -15,7 +15,7 @@
  */
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
+import { getAnthropicClient, MODEL_HAIKU, MODEL_OPUS } from "@/lib/ai/client";
 import { PHILOSOPHY_MD } from "@/lib/ai/docs.generated";
 import { requireUser } from "@/lib/supabase/require-user";
 
@@ -415,7 +415,9 @@ export async function tidyResumeBody(input: TidyResumeInput): Promise<string> {
 - 出力は**整えた本文のみ**。前置き・説明・コードフェンス無し。`;
 
   const res = await getAnthropicClient().messages.create({
-    model: MODEL_OPUS,
+    // 整えるは「言い換え禁止・記法の正規化だけ」の機械的タスクなので Haiku で十分
+    // (レビュー Phase 2-④、2026-06-12)。失敗しても子が見て直せる。
+    model: MODEL_HAIKU,
     max_tokens: 1500,
     system,
     messages: [

@@ -22,7 +22,7 @@
  */
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
+import { getAnthropicClient, MODEL_HAIKU } from "@/lib/ai/client";
 import { requireUser } from "@/lib/supabase/require-user";
 
 const SYSTEM_PROMPT = `あなたは葵 (あおい) 先生、AI-Education プロジェクトの教科の先生 (= ティーチング担当)。
@@ -131,7 +131,9 @@ ${subjectList}
   ];
 
   const res = await getAnthropicClient().messages.create({
-    model: MODEL_OPUS,
+    // メタ検知は子に見えない分類タスクなので Haiku で十分 (レビュー Phase 2-④)。
+    // 検知結果は登録ダイアログで人間が確認・修正できる。
+    model: MODEL_HAIKU,
     max_tokens: 512,
     system: [
       {
