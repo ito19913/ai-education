@@ -3593,9 +3593,13 @@ AI が続きから補える) ④導入 = **2 段階** (第 1 弾 葵 chat 系 �
   **ドメインフック抽出を 1 ドメインずつ・1 コミットずつ** 進める方針。
   - ✅ 課題 (Issue) ドメイン → `web/hooks/use-issues.ts` (`233af86`、state+DB 復元+
     4 mutation を丸ごと移設・挙動同一)
-  - ⏳ 残りの候補 (独立性の高い順): 学習履歴 (logs/minutes) → daily picks →
-    プラン → 科目 → 教材 (最大・最後)。その後 RightPaneRouter の props 解消 →
-    MaterialReadPane のモード分割
+  - ✅ 学習履歴 → `web/hooks/use-learning-history.ts` (`e571b55`、logs/minutes+
+    addLearningLog [read 1 日 1 回丸め]+handleStudyMinute)
+  - ✅ daily picks → `web/hooks/use-daily-picks.ts` (`49f161b`、追加/やめとく/完了観測
+    2 種+dayPickedKeys。教材削除の連鎖掃除は removePicksForMaterial として公開)
+  - ⏳ 残りの候補 (独立性の高い順): プラン → 科目 → 教材 (最大・最後。教材は
+    runPdfBackgroundWork・宿題系・科目/プラン/pick との連鎖があるため要注意)。
+    その後 RightPaneRouter の props 解消 → MaterialReadPane のモード分割
 
 **レビューが挙げた維持すべき設計**: `as any` ゼロ + discriminated union 規律 / RLS 全テーブル同型 /
 「済みは導出、フラグは持たない」/ 子のデータを失わせない削除 / AI 出力を信用しないコード側
