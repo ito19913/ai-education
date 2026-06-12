@@ -3551,11 +3551,30 @@ Issue はこれまで in-memory のみ (MOCK_ISSUES + セッション中の追�
   「整える」(言い換え禁止の機械的整形+子が見て直せる)。**説明ゲート判定 (関所の合否) と
   mock 発話言い換えは Opus 維持** (子の体験に直結。変更は定数 1 行なのでいつでも見直せる)。
 
-### ★残ロードマップ (未対応、重要度順)
+### チャット系ストリーミング化 (Phase 2-⑤、grill 確定 2026-06-12)
 
-**Phase 2 残り:**
-- チャット系ストリーミング化 (Server Action → Route Handler + SSE) — **要 grill**
-  (対象 chat の範囲 / 認証 / エラー UX / 体感速度がどこまで問題かの実機確認から)
+**grill 確定 4 点**: ①対象 = **全対話系** (葵 chat 系 3 動線 + ゆい chat + 課題 chat)。
+添削・ガイドプラン生成・要約など **JSON 返し系は対象外** (途中表示に意味がない)
+②見せ方 = 書かれた端から順次表示・**停止ボタンなし** (最初の文字までは「考え中」、
+送信欄は生成中ロック、画面遷移で自動中断) ③切断時 = **出た分は消さず残し**
+「ごめん、途中で止まっちゃった」を続ける (途中までの文は履歴にも残る = 再質問で
+AI が続きから補える) ④導入 = **2 段階** (第 1 弾 葵 chat 系 → 実機味見 → 第 2 弾
+ゆい chat・課題 chat [mock 層のシーン分岐・カード挿入・thread 保存と絡むため重い])。
+
+**✅ 第 1 弾 実装済 (`4d58f31`、★実機確認待ち★)**: Server Action はストリーミングを
+返せないため Route Handler + NDJSON (`{"t":"delta"|"done"|"error"}`) に移行。
+- `lib/admin/aoki-chat-shared.ts` = プロンプト組み立て (旧 aoki-chat-claude.ts を移設・
+  削除。server 専用 plain モジュール、client からは `import type` のみ可)
+- `app/api/aoki-chat/route.ts` = requireUser + `messages.stream()` を NDJSON 中継、
+  client 切断で生成 abort、完了時 logAiUsage、maxDuration 120 (Vercel 用)
+- `lib/admin/aoki-chat-stream.ts` = client 読み取り (done 未受信 = 切断扱い)
+- `MaterialReadPane` = `streamAokiReply` 共通ヘルパー (3 動線共用) + streamingText
+  state の逐次吹き出し + 自動スクロール追従 + unmount で AbortController 中断
+- 未認証 POST は middleware が /login へ 307 (スモークテスト済)
+
+**残り = 第 2 弾 (ゆい chat・課題 chat)**: 第 1 弾の実機確認後に着手。
+
+### ★残ロードマップ (未対応、重要度順)
 
 **Phase 3 — 構造リファクタ (運用が落ち着いてから):**
 - 三大モノリス分割 (TutorWorkspace 2,775 / MaterialReadPane 2,238 / tutor-mock 3,285 行):
