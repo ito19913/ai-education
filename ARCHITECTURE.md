@@ -3496,6 +3496,54 @@ Issue はこれまで in-memory のみ (MOCK_ISSUES + セッション中の追�
 
 ---
 
+## 全体コードレビュー (2026-06-12、6 観点並列レビュー + Phase 0 修正済)
+
+リリース前品質確認として 6 観点 (アーキテクチャ/セキュリティ/AI 連携/パフォーマンス/UX/
+データ整合性) の並列エージェントレビューを実施。**Phase 0 (即日修正) は対応済**:
+
+### ✅ Phase 0 対応済 (`7168c19` + `a2965c6`)
+
+1. **cache_control 4 個上限超過の 400 (Critical)**: note-gate (要約/添削/ヒント) と aoki-chat が
+   画像全部に cache_control → 4 ページ超のまとまり・オリエン (12 枚) で invalid_request_error。
+   最後の 1 枚だけに修正 (プレフィックスマッチで先行画像もキャッシュされる)。
+2. **guided_plans の stale 全置換 (High)**: 保存口を `persistGuidedPlans` に一本化 +
+   `onGuidedPlansSaved` で親 materials state へ書き戻し。別まとまりの保存が他まとまりの
+   プラン・青枠調整を消すバグを解消。
+3. **2 周目プラン進捗**: in-memory 更新に updatedAt 付与 (countFrom 導出がリロードまで動かなかった)。
+4. **黙って失敗する AI 呼び出し**: ゆい chat 返信生成 (catch 無し)・儀式ピッカー・「ここを解説」
+   「やさしく/詳しく」に子ども向けエラー発話を追加。
+5. **workspace-ui-kit 採用管理サンプル残骸 約 3,900 行削除** (components/workspace + 専用 lib +
+   テスト 3 本。primitives は CLAUDE.md 規約が参照する現役のため温存。web/CLAUDE.md 見出し現行化)。
+
+### ★残ロードマップ (未対応、重要度順)
+
+**Phase 1 — 公開 (Vercel デプロイ) 前必須:**
+- **全 Server Action に認証ガード** (`requireUser()` ヘルパー+全 action 先頭。現状は未認証の
+  第三者が Opus+vision を呼べる = API コスト被害) + **Supabase の新規サインアップ無効化を
+  ダッシュボードで確認** + Anthropic spend limit 設定
+- レジュメ本文の保護 (保存失敗の成功偽装をやめる + localStorage 下書き自動保存)
+- 初期 fetch 失敗の「嘘の空状態」を loading / error / empty に分離
+- 教材削除時の連鎖掃除 (論理削除なので FK cascade 不発 → プラン・daily_picks がゾンビ化)
+
+**Phase 2 — 運用品質:**
+- `lib/ai/client.ts` 集約 (クライアント 13 重複 / モデル ID 27 箇所 / **`process.cwd()/..` の
+  PHILOSOPHY 読み込みは Vercel デプロイで全 AI 機能が死ぬ地雷** → ビルド時コピー等で解消)
+- 登録時 PDF 多重ロード直列化 / session-pdf-store LRU / サムネ canvas 解放 (186MB 本のメモリ)
+- aoki-chat の prompt cache 設計 (履歴 breakpoint) + `res.usage` ログでキャッシュヒット可視化
+- Opus→Haiku 見直し 4 箇所 (メタ検知 / 整える / 説明ゲート判定 / mock 言い換え)
+- チャット系ストリーミング化 (Server Action → Route Handler + SSE)
+
+**Phase 3 — 構造リファクタ (運用が落ち着いてから):**
+- 三大モノリス分割 (TutorWorkspace 2,775 / MaterialReadPane 2,238 / tutor-mock 3,285 行):
+  ドメインフック抽出 → RightPaneRouter の 35 props 解消 → モード分割
+- `lib/admin/` → `lib/ai/` 等のディレクトリ名現行化
+
+**レビューが挙げた維持すべき設計**: `as any` ゼロ + discriminated union 規律 / RLS 全テーブル同型 /
+「済みは導出、フラグは持たない」/ 子のデータを失わせない削除 / AI 出力を信用しないコード側
+安全網 (【pdf:N】タグ・赤バッジ・wrong→resolved 強制 false) / grill ID コメントのトレーサビリティ。
+
+---
+
 ## 設計の核（一行で）
 
 > ログインしたら **ゆい先生（純粋コーチ）** の **司令室（左ペイン chat + 右ペイン動的展開）** に着く。**朝の振り返り** で昨日 / 学校 / 気分 / 疑問 / 今日の計画を語り、**「何が分からないか分からない」を言語化する「掘り起こし」** で課題を発見、**葵先生（科目）への申し送りドキュメント (TutorHandoff)** を介して **IssueChat（課題ごとの個別 chat）** に展開、対話で潰す。**長期 + 週次ゴールのコーチング契約** が学習リズムを支え、**日次 / 週次 / 月次の振り返り** が自走に近づける。**「教えない、引き出す。環境（時間・場・儀式）は決めてあげる、対話の中身はコーチング」**。
