@@ -23,6 +23,7 @@ import {
   Check,
   ClipboardList,
   GraduationCap,
+  Loader2,
   Paperclip,
   Plus,
 } from "lucide-react";
@@ -45,6 +46,8 @@ import { AssignmentDialog } from "./AssignmentDialog";
 
 type Props = {
   materials: Material[];
+  /** 教材データの表示状態 (2026-06-12: fetch 失敗を「0 件」と区別する)。省略時 ready 扱い */
+  materialsLoadState?: "loading" | "error" | "ready";
   subjects: Subject[];
   onSubmitAssignment: (
     input: NewAssignmentInput,
@@ -105,6 +108,7 @@ function Segmented<T extends string>({
 
 export function MaterialsListPane({
   materials,
+  materialsLoadState = "ready",
   subjects,
   onSubmitAssignment,
   onDeleteAssignment,
@@ -281,9 +285,31 @@ export function MaterialsListPane({
               <Card>
                 <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
                   <Book className="size-7 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">
-                    まだ本が登録されていません。「本を追加」から始めよう。
-                  </p>
+                  {/* loading / error / 本当の 0 件 を区別 (2026-06-12 レビュー指摘:
+                      fetch 失敗時に「まだ登録されていません」と嘘をつかない) */}
+                  {materialsLoadState === "loading" ? (
+                    <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />
+                      <span>本を読み込んでいるよ…</span>
+                    </p>
+                  ) : materialsLoadState === "error" ? (
+                    <>
+                      <p className="text-sm text-muted-foreground">
+                        本がうまく読み込めなかった…ネットを確認してみてね。
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.location.reload()}
+                      >
+                        もう一度読み込む
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      まだ本が登録されていません。「本を追加」から始めよう。
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             ) : (
@@ -415,9 +441,13 @@ export function MaterialsListPane({
                 {/* リスト */}
                 {filteredAssignments.length === 0 ? (
                   <p className="py-6 text-center text-xs text-muted-foreground">
-                    {assignments.length === 0
-                      ? "宿題・テストはまだありません。「宿題・テストを追加」から登録しよう。"
-                      : "この条件に合う宿題・テストはありません。"}
+                    {assignments.length > 0
+                      ? "この条件に合う宿題・テストはありません。"
+                      : materialsLoadState === "loading"
+                        ? "読み込んでいるよ…"
+                        : materialsLoadState === "error"
+                          ? "うまく読み込めなかった…ネットを確認して、ページを再読み込みしてみてね。"
+                          : "宿題・テストはまだありません。「宿題・テストを追加」から登録しよう。"}
                   </p>
                 ) : (
                   <ul className="flex flex-col gap-1.5">

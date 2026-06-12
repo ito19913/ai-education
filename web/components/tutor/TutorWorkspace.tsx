@@ -258,6 +258,9 @@ export function TutorWorkspace({
   const [materialsLoaded, setMaterialsLoaded] = useState(
     !isSupabaseConfigured(),
   );
+  // 嘘の空状態を出さない (2026-06-12 レビュー指摘): fetch 失敗を空 (= 「まだ登録されて
+  // いません」) と区別する。データはあるのに「無い」と断言すると子は「消えた!」と混乱する。
+  const [materialsError, setMaterialsError] = useState(false);
 
   // 段階1-B: real モードでは起動時に DB から教材一覧を取得して復元する。
   useEffect(() => {
@@ -267,7 +270,10 @@ export function TutorWorkspace({
       .then((rows) => {
         if (!cancelled) setMaterials(rows);
       })
-      .catch((err) => console.error("[教材] 一覧取得失敗:", err))
+      .catch((err) => {
+        console.error("[教材] 一覧取得失敗:", err);
+        if (!cancelled) setMaterialsError(true);
+      })
       .finally(() => {
         if (!cancelled) setMaterialsLoaded(true);
       });
@@ -275,6 +281,13 @@ export function TutorWorkspace({
       cancelled = true;
     };
   }, []);
+
+  // 教材データの表示状態 (一覧・ダッシュボードの空状態を 3 値で出し分ける)。
+  const materialsLoadState: "loading" | "error" | "ready" = materialsError
+    ? "error"
+    : materialsLoaded
+      ? "ready"
+      : "loading";
 
   // まとめノート N9①: ノートエントリ。real は DB fetch、mock は in-memory。
   const [noteEntries, setNoteEntries] = useState<NoteEntry[]>([]);
@@ -1144,16 +1157,50 @@ export function TutorWorkspace({
           );
         }
       }
+      // ★連鎖掃除 (2026-06-12 レビュー指摘)★: 教材は論理削除なので DB の
+      // on delete cascade は永久に発火しない。掃除しないと、この教材のプランが
+      // 「教材なしのゾンビカード」として残り、きょう決めたこと (daily_picks) も
+      // DB に永久残留していた。プランは論理削除、pick は「やめとく」と同じ扱いで外す。
+      const orphanPlans = plans.filter(
+        (p) => p.materialId === id && !p.deletedAt,
+      );
+      if (orphanPlans.length > 0) {
+        setPlans((prev) => prev.filter((p) => p.materialId !== id));
+        if (isSupabaseConfigured()) {
+          for (const p of orphanPlans) {
+            if (p.id.startsWith("plan-local-")) continue;
+            void softDeletePlan(p.id).catch((err) =>
+              console.error("[教材] 関連プランの削除失敗:", err),
+            );
+          }
+        }
+      }
+      const orphanPicks = dayPicks.filter((p) => p.materialId === id);
+      if (orphanPicks.length > 0) {
+        setDayPicks((prev) => prev.filter((p) => p.materialId !== id));
+        if (isSupabaseConfigured()) {
+          for (const p of orphanPicks) {
+            if (p.id.startsWith("pick-local-")) continue;
+            void removeDailyPick(p.id).catch((err) =>
+              console.error("[教材] 関連 pick の削除失敗:", err),
+            );
+          }
+        }
+      }
       const reply: TutorMessage = {
         id: `t-mat-del-${Date.now()}`,
         role: "tutor",
-        text: `「${deleted?.name ?? id}」を削除したよ。\n（関連する学習計画やスケジュールへの整合は今後対応予定。）`,
+        text: `「${deleted?.name ?? id}」を削除したよ。${
+          orphanPlans.length > 0
+            ? "\nこの教材のプランも一緒に終了したよ。"
+            : ""
+        }`,
         createdAt: new Date().toISOString(),
       };
       setTutorMessages((prev) => [...prev, reply]);
       navigate("materials");
     },
-    [materials, navigate],
+    [materials, plans, dayPicks, navigate],
   );
 
   // ----- 宿題・テスト (kind="assignment"、2026-06-09) -----
@@ -2744,6 +2791,7 @@ export function TutorWorkspace({
             onMaterialDeleted={handleMaterialDeleted}
             onSubjectAdded={handleSubjectAdded}
             materials={materials}
+            materialsLoadState={materialsLoadState}
             noteEntries={noteEntries}
             resumes={resumes}
             onNoteUpdated={handleNoteUpdated}

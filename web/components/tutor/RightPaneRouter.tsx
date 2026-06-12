@@ -96,6 +96,11 @@ type Props = {
    * 全教材リスト (state ベース、C46 F)。MaterialsListPane / MaterialDetailView で参照
    */
   materials: Material[];
+  /**
+   * 教材データの表示状態 (2026-06-12 レビュー指摘: fetch 失敗を空と区別する)。
+   * loading = 初期取得中 / error = 取得失敗 / ready = 取得済み (空なら本当に 0 件)。
+   */
+  materialsLoadState: "loading" | "error" | "ready";
   /** まとめノート N9①: ノートエントリ一覧 (NotesHomeView 用) */
   noteEntries: NoteEntry[];
   /** R10 Phase 2: レジュメ冊一覧 (NotesHomeView の冊タブ用) */
@@ -192,6 +197,7 @@ export function RightPaneRouter({
   onMaterialDeleted,
   onSubjectAdded,
   materials,
+  materialsLoadState,
   noteEntries,
   resumes,
   onNoteUpdated,
@@ -232,6 +238,7 @@ export function RightPaneRouter({
         issues={issues}
         nodes={nodes}
         materials={materials}
+        materialsLoadState={materialsLoadState}
         subjects={subjects}
         noteEntries={noteEntries}
         plans={plans}
@@ -351,6 +358,7 @@ export function RightPaneRouter({
     return (
       <MaterialsListPane
         materials={materials}
+        materialsLoadState={materialsLoadState}
         subjects={subjects}
         onSubmitAssignment={onSubmitAssignment}
         onDeleteAssignment={onDeleteAssignment}

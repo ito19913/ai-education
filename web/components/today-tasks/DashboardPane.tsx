@@ -68,6 +68,8 @@ type Props = {
   nodes: KnowledgeNode[];
   /** 教材セクション (本棚サムネ) + 宿題・テスト + プラン進捗 用 */
   materials: Material[];
+  /** 教材データの表示状態 (2026-06-12: fetch 失敗を「0 件」と区別する)。省略時 ready 扱い */
+  materialsLoadState?: "loading" | "error" | "ready";
   /** 宿題・テスト / プランの科目名解決用 */
   subjects: Subject[];
   /** レジュメ手応え集計 + プラン進捗導出 用 */
@@ -110,6 +112,7 @@ export function DashboardPane({
   issues,
   nodes,
   materials,
+  materialsLoadState = "ready",
   subjects,
   noteEntries,
   plans,
@@ -676,7 +679,12 @@ export function DashboardPane({
           <CardContent>
             {shelfMaterials.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                まだ教材が登録されていません。
+                {/* loading / error / 本当の 0 件 を区別 (2026-06-12 レビュー指摘) */}
+                {materialsLoadState === "loading"
+                  ? "教材を読み込んでいるよ…"
+                  : materialsLoadState === "error"
+                    ? "教材がうまく読み込めなかった…ページを再読み込みしてみてね。"
+                    : "まだ教材が登録されていません。"}
               </p>
             ) : (
               <div className="flex gap-3 overflow-x-auto pb-1">
