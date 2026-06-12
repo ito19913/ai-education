@@ -81,10 +81,6 @@ import {
   toRoman,
 } from "@/lib/notes/resume-outline";
 import {
-  fetchCustomSubjects,
-  insertSubject,
-} from "@/lib/subjects/subjects-repo";
-import {
   ensureDefaultEventLabels,
   insertEventLabel,
   updateEventLabel,
@@ -100,6 +96,7 @@ import {
 import { useLearningHistory } from "@/hooks/use-learning-history";
 import { useDailyPicks } from "@/hooks/use-daily-picks";
 import { usePlans } from "@/hooks/use-plans";
+import { useSubjects } from "@/hooks/use-subjects";
 import { getPlanSegments } from "@/lib/plans/plan-progress";
 import { streamNdjsonText } from "@/lib/ai/stream-client";
 import type { TutorClaudeRequest } from "@/lib/learn/tutor-chat-shared";
@@ -119,7 +116,7 @@ import {
   loadTutorThread,
   saveTutorThread,
 } from "@/lib/learn/tutor-thread-storage";
-import { MOCK_MATERIALS, MOCK_SUBJECTS } from "@/lib/learn/mock-data";
+import { MOCK_MATERIALS } from "@/lib/learn/mock-data";
 import type {
   AssignmentStatus,
   CalendarEvent,
@@ -194,30 +191,10 @@ export function TutorWorkspace({
   subjects: initialSubjects,
   chatMessages,
 }: Props) {
-  // C30 2026-05-25 grill 2 S7: 科目追加対応で subjects を useState 化
-  // SubjectSettingsPanel から動的 push される
-  const [subjects, setSubjects] = useState<Subject[]>(initialSubjects);
-
-  // 2026-06-07 科目永続化: real モードでは起動時に DB からカスタム科目を取得し、
-  // ハードコード5教科 (initialSubjects) にマージする。id で dedupe (同一セッション中に
-  // 追加→DB fetch が二重にならないように)。これで手動追加した科目がリロード後も残る。
-  useEffect(() => {
-    if (!isSupabaseConfigured()) return;
-    let cancelled = false;
-    fetchCustomSubjects()
-      .then((rows) => {
-        if (cancelled) return;
-        setSubjects((prev) => {
-          const ids = new Set(prev.map((s) => s.id));
-          const additions = rows.filter((s) => !ids.has(s.id));
-          return additions.length > 0 ? [...prev, ...additions] : prev;
-        });
-      })
-      .catch((err) => console.error("[科目] 一覧取得失敗:", err));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // C30 2026-05-25 grill 2 S7: 科目追加対応で subjects を state 管理
+  // (SubjectSettingsPanel から動的追加される)。
+  // Phase 3 モノリス分割 (2026-06-12): 科目ドメインは useSubjects に抽出。
+  const { subjects, addSubject } = useSubjects(initialSubjects);
   // C46 2026-05-26 F (ito19 さん意見): 教材編集・削除のため materials を state 管理。
   // 段階1-B (2026-06-05): real モード (Supabase 設定済) は起動時 DB fetch で復元、
   // mock モードは MOCK_MATERIALS をフォールバック表示 (リロードで消える割り切り)。
@@ -1647,54 +1624,16 @@ export function TutorWorkspace({
   );
 
   // ----- C30 2026-05-25 grill 2: 科目追加完了時の処理 -----
-  // SubjectSettingsPanel から呼ばれる。新規 Subject を生成して subjects state に追加、
-  // ゆいに完了発話を追加して右ペインを閉じる (S7 主体: 親+娘さん両方が使う動線)。
-  // MOCK_SUBJECTS にも push して他画面 (admin 等) でも見えるようにする (in-memory mock)。
-  // 2026-06-07 科目永続化: real モードでは DB に insert して DB 採番 id で state に追加。
-  // これで科目とその科目に紐づけた教材がリロード後も残る (旧来は in-memory のみで消えていた)。
-  // mock モード or DB 失敗時は in-memory id でフォールバック (リロードで消える割り切り)。
+  // SubjectSettingsPanel から呼ばれる。科目の生成・永続化は useSubjects (addSubject) が
+  // 担当し、ここではゆいの完了発話 + 右ペインを閉じる UI 副作用のみ
+  // (S7 主体: 親+娘さん両方が使う動線)。
   const handleSubjectAdded = useCallback(
     async (input: {
       name: string;
       teacherName: string;
       avatarLetter: string;
     }) => {
-      const buildLocal = (id: string): Subject => ({
-        id,
-        name: input.name,
-        teacher: {
-          name: input.teacherName,
-          displayName: `${input.teacherName}先生`,
-          avatarLetter: input.avatarLetter,
-          subtitle: `${input.name}の先生`,
-        },
-      });
-
-      let newSubject: Subject;
-      if (isSupabaseConfigured()) {
-        try {
-          const ownerId = await getCurrentUserId();
-          newSubject = await insertSubject(
-            {
-              name: input.name,
-              teacherName: input.teacherName,
-              avatarLetter: input.avatarLetter,
-            },
-            ownerId,
-          );
-        } catch (err) {
-          console.error("[科目] 保存失敗、in-memory にフォールバック:", err);
-          newSubject = buildLocal(`subj-manual-${Date.now()}`);
-        }
-      } else {
-        newSubject = buildLocal(`subj-manual-${Date.now()}`);
-        // mock-data 側にも push (admin/materials/new など他経路から見える)
-        MOCK_SUBJECTS.push(newSubject);
-      }
-
-      setSubjects((prev) =>
-        prev.some((s) => s.id === newSubject.id) ? prev : [...prev, newSubject],
-      );
+      await addSubject(input);
       const reply: TutorMessage = {
         id: `t-subj-${Date.now()}`,
         role: "tutor",
@@ -1704,7 +1643,7 @@ export function TutorWorkspace({
       setTutorMessages((prev) => [...prev, reply]);
       navigate("default");
     },
-    [navigate],
+    [addSubject, navigate],
   );
 
   // ----- Phase B: 「おかえり、今日なにやる?」儀式 (2026-06-11 grill B-1〜B-8) -----
