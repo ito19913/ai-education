@@ -3478,6 +3478,22 @@ ito19 さんの経験則「1〜2 ヶ月先の計画は計画通りに進まな�
   DashboardPane 宿題・テストカード / きょう決めたこと行の 3 か所。本のまとまり用は据え置き)。
 - migration 不要 (guided_plans / Issue in-memory / assignmentStatus 既存)。
 
+### 課題 (Issue) の Supabase 永続化 (2026-06-12、実装済 `fa15b98`・migration 本番適用+REST 検証済)
+
+Issue はこれまで in-memory のみ (MOCK_ISSUES + セッション中の追加) でリロードで消えて
+いた。「AI と解く」がつまずきを自動 Issue 化するようになり消えると価値が失われるため永続化。
+
+- migration `20260612000000_init_issues.sql`: `issues` テーブル (✅本番適用+REST 検証済)。
+  **id = text (client 生成)** / **node_id = text** (KnowledgeNode id か宿題由来の概念名そのまま) /
+  occurrences・chat_thread は **JSONB** (chat_thread は全置換更新、単一ユーザー前提) /
+  RLS 既存テーブルと同型 / 物理削除なし (解決 = status='resolved')。
+- `lib/issues/issues-repo.ts`: fetchIssues (open 先頭) / insertIssues / updateIssueStatus /
+  updateIssueChatThread。
+- TutorWorkspace: **real モードの課題一覧は DB だけから表示** (mock 課題 5 件は出さない =
+  ダッシュボード「画面に出るのは実データだけ」原則)。永続化される操作 = 宿題の自動 Issue
+  登録 / 解決 / 再オープン / 課題 chat 追記 (失敗はログのみ、in-memory では生きる)。
+- 残置: 旧 standalone `/issues` ページ (IssuesClient) は mock のまま (入口リンク無し、レガシー)。
+
 ---
 
 ## 設計の核（一行で）
