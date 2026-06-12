@@ -15,7 +15,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { renderPageToCanvas } from "@/lib/admin/pdf-extract-text";
+import {
+  releasePageCanvas,
+  renderPageToCanvas,
+} from "@/lib/admin/pdf-extract-text";
 import { findSegmentForPage } from "@/lib/notes/concept-for-page";
 import type { ConceptSegment } from "@/lib/learn/types";
 import { Check } from "lucide-react";
@@ -83,9 +86,22 @@ export function PageThumbnailRail({
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
           const idx = Number((entry.target as HTMLElement).dataset.idx);
-          if (Number.isNaN(idx) || renderedRef.current.has(idx)) continue;
+          if (Number.isNaN(idx)) continue;
+          if (!entry.isIntersecting) {
+            // 画面外 (バッファ 300px の外) に出たサムネはピクセルバッファを解放する
+            // (Phase 2 メモリ対策: 200 ページ × 高解像度 canvas が GPU/heap に
+            // 積み上がるのを防ぐ)。戻ってきたら IntersectionObserver が再描画する。
+            // 表示高さは releasePageCanvas が style.height に固定するので
+            // レイアウトは潰れずスクロール位置も飛ばない。
+            if (renderedRef.current.has(idx)) {
+              const canvas = canvasRefs.current[idx];
+              if (canvas) releasePageCanvas(canvas);
+              renderedRef.current.delete(idx);
+            }
+            continue;
+          }
+          if (renderedRef.current.has(idx)) continue;
           const canvas = canvasRefs.current[idx];
           if (!canvas) continue;
           renderedRef.current.add(idx);

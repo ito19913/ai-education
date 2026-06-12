@@ -39,7 +39,7 @@ import {
   renderPageToCanvas,
   renderPageToJpeg,
   renderCoverThumb,
-  extractFullPageTexts,
+  extractFullPageTextsFromDoc,
   type LoadedPdf,
 } from "@/lib/admin/pdf-extract-text";
 import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
@@ -561,9 +561,6 @@ export function MaterialReadPane({
     // 一度試した教材は再試行しない (スキャン本=0件 でも無限ループ・再生成しない)。
     if (attemptedSegmentation.has(material.id)) return;
 
-    const file = getSessionPdf(material.id);
-    if (!file) return;
-
     // 投げっぱなし (cancel しない)。途中でキャンセルすると setSegmenting(false) が
     // 走らず固まるため、必ず finally で false に戻す。再入は attempted が防ぐ。
     attemptedSegmentation.add(material.id);
@@ -583,7 +580,9 @@ export function MaterialReadPane({
         }
       };
       try {
-        const { hasTextLayer, packedText } = await extractFullPageTexts(file);
+        // 表示用にロード済みの doc をそのまま使う (旧実装は session store の File を
+        // もう 1 部ロードしていた = 186MB 級で二重常駐、Phase 2 メモリ対策)。
+        const { hasTextLayer, packedText } = await extractFullPageTextsFromDoc(doc);
         if (hasTextLayer && packedText.length > 0) {
           // デジタル PDF: 本文テキストから PDF 紙番号で直接区切る (M3)。
           persist(

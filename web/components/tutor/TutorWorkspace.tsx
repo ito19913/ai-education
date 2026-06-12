@@ -43,9 +43,10 @@ import {
   type NewAssignmentInput,
 } from "@/lib/materials/materials-repo";
 import {
-  extractFullPageTexts,
+  extractFullPageTextsFromDoc,
   loadPdfDocument,
   renderCoverThumb,
+  type LoadedPdf,
 } from "@/lib/admin/pdf-extract-text";
 import { segmentConceptsFromText } from "@/lib/admin/segment-claude";
 import { buildScanSegments } from "@/lib/admin/scan-segment-builder";
@@ -1803,67 +1804,24 @@ export function TutorWorkspace({
       //   - スキャン PDF (文字レイヤー無し)   → C-8 経路 (buildScanSegments、目次土台 + vision)
       // 結果は materials state に反映 (+ real モードは DB 保存) + ゆいが「区切れたよ」と通知。
       // これで「開いた時に待つ」のではなく「アップロード時に裏で作っておく」状態になる。
-      const runSegmentation = (m: Material, persist: boolean) => {
+      // Phase 2 メモリ対策 (2026-06-12): 旧実装は 表紙サムネ / テキスト抽出 / スキャン区切り が
+      // それぞれ loadPdfDocument して同じ PDF を並行 3 回ロードしていた (186MB 自炊本で
+      // ピーク ~560MB)。1 回だけロードして共有し、軽い順 (サムネ→区切り) に直列実行する。
+      const runPdfBackgroundWork = (m: Material, persist: boolean) => {
         if (!file) return;
         const subjectName =
           subjects.find((s) => s.id === m.subjectId)?.name ?? "教科";
         void (async () => {
+          let loadedPdf: LoadedPdf;
           try {
-            const { hasTextLayer, packedText } = await extractFullPageTexts(file);
-            let segments: ConceptSegment[];
-            if (hasTextLayer && packedText.length > 0) {
-              // デジタル PDF: 本文テキストから PDF 紙番号で直接区切る (M3)。
-              segments = await segmentConceptsFromText({
-                materialName: m.name,
-                subjectName,
-                gradeLevel: m.gradeLevel ?? "中2",
-                packedText,
-              });
-            } else {
-              // スキャン PDF: C-8 ハイブリッド (目次土台 + オフセット較正) or 全ページ vision。
-              // buildScanSegments は PDFDocumentProxy が要るので一時的にロードして使う。
-              const loadedPdf = await loadPdfDocument(file);
-              try {
-                segments = await buildScanSegments(loadedPdf.doc, m, subjectName);
-              } finally {
-                void loadedPdf.destroy();
-              }
-            }
-            if (segments.length === 0) return;
-            setMaterials((prev) =>
-              prev.map((x) =>
-                x.id === m.id ? { ...x, conceptSegments: segments } : x,
-              ),
-            );
-            if (persist) {
-              try {
-                await updateMaterialSegments(m.id, segments);
-              } catch (err) {
-                console.error("[まとまり] セグメント保存失敗:", err);
-              }
-            }
-            setTutorMessages((prev) => [
-              ...prev,
-              {
-                id: `t-mat-seg-${Date.now()}`,
-                role: "tutor",
-                text: `「${m.name}」を ${segments.length} 個のまとまり (一単元) に区切ったよ✂️\n「一緒に読む」を開くと、葵先生が「今日はここからここまで」と単元ごとに案内してくれるよ。`,
-                createdAt: new Date().toISOString(),
-              },
-            ]);
+            loadedPdf = await loadPdfDocument(file);
           } catch (err) {
-            console.error("[まとまり] 区切り失敗 (動線は止めない):", err);
+            console.error("[教材] PDF ロード失敗 (動線は止めない):", err);
+            return;
           }
-        })();
-      };
-
-      // 表紙サムネ (2026-06-08): 登録時に PDF 1 ページ目を小さく描画して一覧用に保存。
-      // 重い区切り処理とは独立した軽い 1 ページ描画。失敗しても動線は止めない。
-      const genCoverThumb = (m: Material, persist: boolean) => {
-        if (!file) return;
-        void (async () => {
           try {
-            const loadedPdf = await loadPdfDocument(file);
+            // 1) 表紙サムネ (2026-06-08): 1 ページ目を小さく描画して一覧用に保存。
+            //    軽いので先に終わらせる。失敗しても区切りには進む。
             try {
               const thumb = await renderCoverThumb(loadedPdf.doc);
               if (thumb) {
@@ -1878,11 +1836,54 @@ export function TutorWorkspace({
                     ),
                   );
               }
-            } finally {
-              void loadedPdf.destroy();
+            } catch (err) {
+              console.error("[教材] 表紙サムネ生成失敗 (動線は止めない):", err);
             }
-          } catch (err) {
-            console.error("[教材] 表紙サムネ生成失敗 (動線は止めない):", err);
+
+            // 2) まとまり区切り (M1-M10 / C-8)
+            try {
+              const { hasTextLayer, packedText } =
+                await extractFullPageTextsFromDoc(loadedPdf.doc);
+              let segments: ConceptSegment[];
+              if (hasTextLayer && packedText.length > 0) {
+                // デジタル PDF: 本文テキストから PDF 紙番号で直接区切る (M3)。
+                segments = await segmentConceptsFromText({
+                  materialName: m.name,
+                  subjectName,
+                  gradeLevel: m.gradeLevel ?? "中2",
+                  packedText,
+                });
+              } else {
+                // スキャン PDF: C-8 ハイブリッド (目次土台 + オフセット較正) or 全ページ vision。
+                segments = await buildScanSegments(loadedPdf.doc, m, subjectName);
+              }
+              if (segments.length === 0) return;
+              setMaterials((prev) =>
+                prev.map((x) =>
+                  x.id === m.id ? { ...x, conceptSegments: segments } : x,
+                ),
+              );
+              if (persist) {
+                try {
+                  await updateMaterialSegments(m.id, segments);
+                } catch (err) {
+                  console.error("[まとまり] セグメント保存失敗:", err);
+                }
+              }
+              setTutorMessages((prev) => [
+                ...prev,
+                {
+                  id: `t-mat-seg-${Date.now()}`,
+                  role: "tutor",
+                  text: `「${m.name}」を ${segments.length} 個のまとまり (一単元) に区切ったよ✂️\n「一緒に読む」を開くと、葵先生が「今日はここからここまで」と単元ごとに案内してくれるよ。`,
+                  createdAt: new Date().toISOString(),
+                },
+              ]);
+            } catch (err) {
+              console.error("[まとまり] 区切り失敗 (動線は止めない):", err);
+            }
+          } finally {
+            void loadedPdf.destroy();
           }
         })();
       };
@@ -1905,8 +1906,7 @@ export function TutorWorkspace({
       // mock モード: 従来通り in-memory push のみ (リロードで消える)。
       if (!isSupabaseConfigured()) {
         announceAndShow(material);
-        runSegmentation(material, false);
-        genCoverThumb(material, false);
+        runPdfBackgroundWork(material, false);
         return;
       }
 
@@ -1928,10 +1928,9 @@ export function TutorWorkspace({
             ownerId,
           );
           announceAndShow(saved);
-          // まとまり区切りを裏で実行 (DB 保存あり)。PDF アップロードと並走してよい。
-          runSegmentation(saved, true);
-          // 表紙サムネを裏で生成 + DB 保存 (一覧で即表示できるように)。
-          genCoverThumb(saved, true);
+          // 表紙サムネ + まとまり区切りを裏で実行 (DB 保存あり、PDF は 1 回だけロードして共有)。
+          // PDF アップロード (TUS、チャンク読み) とは並走してよい。
+          runPdfBackgroundWork(saved, true);
 
           // PDF を裏でアップロード (await しない)。完了で pdf_path を記録 + 完了通知。
           if (file) {
@@ -1972,7 +1971,7 @@ export function TutorWorkspace({
           console.error("[教材] 保存失敗、in-memory にフォールバック:", err);
           // DB 保存に失敗してもUXを止めない: in-memory で見せる (リロードで消える)。
           announceAndShow(material);
-          runSegmentation(material, false);
+          runPdfBackgroundWork(material, false);
         }
       })();
     },
