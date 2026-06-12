@@ -12,19 +12,9 @@
  * 失敗時は呼び出し側が buildFallbackTemplate (declarations.ts) にフォールバック。
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
 import { requireUser } from "@/lib/supabase/require-user";
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("AI_EDU_ANTHROPIC_API_KEY is not set (template).");
-  }
-  client = new Anthropic({ apiKey });
-  return client;
-}
 
 export type TemplateInput = {
   conceptName: string;
@@ -40,7 +30,7 @@ export async function suggestResumeTemplate(
   input: TemplateInput,
 ): Promise<string> {
   await requireUser();
-  const anthropic = getClient();
+  const anthropic = getAnthropicClient();
   const images = input.pageImagesPacked
     ? input.pageImagesPacked.split("\n").filter((s) => s.length > 0)
     : [];
@@ -89,7 +79,7 @@ ${images.length > 0 ? "## 教材ページ (この中身に合う型を)" : "(ペ
   ];
 
   const res = await anthropic.messages.create({
-    model: "claude-opus-4-8",
+    model: MODEL_OPUS,
     max_tokens: 400,
     system,
     messages: [{ role: "user", content }],

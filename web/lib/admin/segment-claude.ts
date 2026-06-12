@@ -14,35 +14,14 @@
  * 本ファイル = デジタル PDF (文字レイヤーあり) 経路 = vision 不要・激安・速い (M4 デジタル段)。
  * スキャン PDF (文字レイヤー無し) の低解像度 vision 区切りは後段 (C-8、別 Server Action 予定)。
  *
- * 環境変数: AI_EDU_ANTHROPIC_API_KEY。
  * モデル: claude-haiku-4-5 (区切り=構造抽出タスクは Haiku で十分。Opus より大幅に速く・安い。
  *   読書ビューを開いた時のオンデマンド生成の待ち時間短縮のため、ここだけ下位階層を使う)。
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_HAIKU } from "@/lib/ai/client";
+import { PHILOSOPHY_MD } from "@/lib/ai/docs.generated";
 import { requireUser } from "@/lib/supabase/require-user";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { ConceptSegment } from "@/lib/learn/types";
-
-let cachedPhilosophy: string | null = null;
-function getPhilosophy(): string {
-  if (cachedPhilosophy) return cachedPhilosophy;
-  const projectRoot = join(process.cwd(), "..");
-  cachedPhilosophy = readFileSync(join(projectRoot, "PHILOSOPHY.md"), "utf-8");
-  return cachedPhilosophy;
-}
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("AI_EDU_ANTHROPIC_API_KEY is not set (segment-claude).");
-  }
-  client = new Anthropic({ apiKey });
-  return client;
-}
 
 export type SegmentFromTextInput = {
   materialName: string;
@@ -99,7 +78,7 @@ export async function segmentConceptsFromText(
 ]
 
 ## プロジェクトの憲法 (PHILOSOPHY.md)
-${getPhilosophy()}`;
+${PHILOSOPHY_MD}`;
 
   const userPrompt = `教材: ${input.materialName} / 科目: ${input.subjectName} / 学年: ${input.gradeLevel}
 
@@ -113,8 +92,8 @@ ${body}
 
 まとまり JSON:`;
 
-  const res = await getClient().messages.create({
-    model: "claude-haiku-4-5",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_HAIKU,
     max_tokens: 16000,
     system: [
       { type: "text", text: system, cache_control: { type: "ephemeral" } },

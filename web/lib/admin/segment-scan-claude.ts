@@ -18,24 +18,13 @@
  * クライアント側のオーケストレーション (pdf.js でページ描画 → 本 Server Action 呼び出し
  * → ConceptSegment[] 構築) は lib/admin/scan-segment-builder.ts。
  *
- * 環境変数: AI_EDU_ANTHROPIC_API_KEY (他の AI 呼び出しと共通)。
  * 画像配列は Server Action 引数に直接渡すと "Maximum array nesting exceeded" になるため、
  * base64 を改行連結 1 文字列で渡す (C85 の規律)。base64 に改行は出ないので分割は安全。
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_OPUS, MODEL_HAIKU } from "@/lib/ai/client";
 import { requireUser } from "@/lib/supabase/require-user";
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("AI_EDU_ANTHROPIC_API_KEY is not set (segment-scan-claude).");
-  }
-  client = new Anthropic({ apiKey });
-  return client;
-}
 
 /** JSON 配列を salvage パース (出力途中切れを救う、segment-claude と同規律)。失敗で []。 */
 function salvageJsonArray<T>(text: string): T[] {
@@ -152,10 +141,10 @@ ${nodeList}
 
 まとまり JSON:`;
 
-  const res = await getClient().messages.create({
+  const res = await getAnthropicClient().messages.create({
     // 粒度・概念名の質が体験を左右する核心ステップのため Opus を使う (ito19 さん指示、
     // Haiku では別テーマを過剰マージして「荒すぎ」になった)。目次テキストだけの軽い入力。
-    model: "claude-opus-4-8",
+    model: MODEL_OPUS,
     max_tokens: 8000,
     system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: userPrompt }],
@@ -218,8 +207,8 @@ JSON 配列:`;
     { type: "text", text: userPrompt },
   ];
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 1000,
     messages: [{ role: "user", content }],
   });
@@ -318,8 +307,8 @@ export async function segmentScanByVision(
     { type: "text", text: userPrompt },
   ];
 
-  const res = await getClient().messages.create({
-    model: "claude-haiku-4-5",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_HAIKU,
     max_tokens: 8000,
     system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content }],

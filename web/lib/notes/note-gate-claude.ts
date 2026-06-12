@@ -14,29 +14,10 @@
  * 動線を止めない fallback を呼び出し側で用意する (C56 規律)。
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
+import { PHILOSOPHY_MD } from "@/lib/ai/docs.generated";
 import { requireUser } from "@/lib/supabase/require-user";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-let cachedPhilosophy: string | null = null;
-function getPhilosophy(): string {
-  if (cachedPhilosophy) return cachedPhilosophy;
-  const projectRoot = join(process.cwd(), "..");
-  cachedPhilosophy = readFileSync(join(projectRoot, "PHILOSOPHY.md"), "utf-8");
-  return cachedPhilosophy;
-}
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("AI_EDU_ANTHROPIC_API_KEY is not set (note-gate).");
-  }
-  client = new Anthropic({ apiKey });
-  return client;
-}
 
 /** JSON ブロックを本文から抽出 (```json フェンスや前置きを許容)。 */
 function extractJson(text: string): unknown {
@@ -110,7 +91,7 @@ export async function summarizeConceptForNote(
 {"conceptName": "論点名 (短く)", "summary": "正しい要約"}
 
 ## プロジェクトの憲法 (PHILOSOPHY.md)
-${getPhilosophy()}`;
+${PHILOSOPHY_MD}`;
 
   const dialogueText =
     input.dialogue && input.dialogue.length > 0
@@ -147,8 +128,8 @@ ${getPhilosophy()}`;
     { type: "text", text: contextText },
   ];
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 800,
     system: [
       { type: "text", text: system, cache_control: { type: "ephemeral" } },
@@ -209,7 +190,7 @@ export async function judgeExplanation(
 {"passed": true/false, "feedback": "1〜2文"}
 
 ## プロジェクトの憲法 (PHILOSOPHY.md)
-${getPhilosophy()}`;
+${PHILOSOPHY_MD}`;
 
   const user = `論点: ${input.conceptName}
 正しい要約 (葵が用意したもの):
@@ -220,8 +201,8 @@ ${input.explanation}
 
 この説明で「自分の言葉で要点を理解している」と言えるか判定して JSON で返してください。`;
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 400,
     system: [
       { type: "text", text: system, cache_control: { type: "ephemeral" } },
@@ -331,7 +312,7 @@ export async function reviewResume(
 {"points":[{"kind":"ok","text":"…"},{"kind":"missing","text":"…"}],"resolved":true,"encouragement":"1〜2文"}
 
 ## プロジェクトの憲法 (PHILOSOPHY.md)
-${getPhilosophy()}`;
+${PHILOSOPHY_MD}`;
 
   const contextText = `概念 (まとまり): ${input.conceptName} / 科目: ${input.subjectName} / 学年: ${input.gradeLevel}
 
@@ -357,8 +338,8 @@ ${input.childBody}
     { type: "text", text: contextText },
   ];
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 800,
     system: [
       { type: "text", text: system, cache_control: { type: "ephemeral" } },
@@ -433,8 +414,8 @@ export async function tidyResumeBody(input: TidyResumeInput): Promise<string> {
 - 文の順序は変えない (並べ替えは子の判断)。
 - 出力は**整えた本文のみ**。前置き・説明・コードフェンス無し。`;
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 1500,
     system,
     messages: [
@@ -545,8 +526,8 @@ ${input.childBody || "(まだ何も書けていない)"}${prevText}
     { type: "text", text: contextText },
   ];
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 300,
     system: [
       { type: "text", text: system, cache_control: { type: "ephemeral" } },

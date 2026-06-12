@@ -14,19 +14,9 @@
  * 出力の検証・章 id 採番は client 側 (lib/notes/resume-outline.ts sanitizeOutline)。
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_OPUS, MODEL_HAIKU } from "@/lib/ai/client";
 import { requireUser } from "@/lib/supabase/require-user";
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("AI_EDU_ANTHROPIC_API_KEY is not set (outline).");
-  }
-  client = new Anthropic({ apiKey });
-  return client;
-}
 
 /** JSON ブロックを本文から抽出 (```json フェンスや前置きを許容)。 */
 function extractJson(text: string): unknown {
@@ -68,7 +58,7 @@ export async function buildResumeOutlineViaClaude(
   input: OutlineDraftInput,
 ): Promise<OutlineDraftOutput> {
   await requireUser();
-  const anthropic = getClient();
+  const anthropic = getAnthropicClient();
 
   const system = `あなたは葵 (あおい) 先生、AI-Education の教科の先生 (ティーチング担当)。
 中高生の「レジュメ」(自分でまとめる 1 冊のノート) の**アウトライン (章立て)** を作ります。
@@ -130,7 +120,7 @@ ${entriesText || "(まだピースなし)"}
 ${structuresText}${currentText}${instructionText}`;
 
   const res = await anthropic.messages.create({
-    model: "claude-opus-4-8",
+    model: MODEL_OPUS,
     max_tokens: 3000,
     system,
     messages: [{ role: "user", content: userMessage }],
@@ -169,9 +159,9 @@ export async function suggestOutlinePlacement(
   input: PlacementInput,
 ): Promise<PlacementOutput> {
   await requireUser();
-  const anthropic = getClient();
+  const anthropic = getAnthropicClient();
   const res = await anthropic.messages.create({
-    model: "claude-haiku-4-5",
+    model: MODEL_HAIKU,
     max_tokens: 100,
     system: `学習ノートの新しい概念を、既存の章のどれに入れるか判定します。
 出力は JSON のみ: {"sectionIndex": 数値}。0 始まりの index。どの章にも明らかに合わなければ -1。`,

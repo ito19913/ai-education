@@ -15,26 +15,18 @@
  * (= 推測でも教材名に紐づく一般的構成、AI 解釈・取捨選択禁止、
  *  2026-05-25 grill 1 確定 10)
  *
- * 環境変数: AI_EDU_ANTHROPIC_API_KEY (Phase 6 smoke test と共通)
  * モデル: claude-opus-4-8 (Phase 6 smoke test と統一)
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
+import { PHILOSOPHY_MD } from "@/lib/ai/docs.generated";
 import { requireUser } from "@/lib/supabase/require-user";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { AiExtractedNode } from "@/lib/learn/types";
 
 let cachedAokiSystemPrompt: string | null = null;
 function getAokiSystemPrompt(): string {
   if (cachedAokiSystemPrompt) return cachedAokiSystemPrompt;
-
-  // web/ から見たプロジェクトルートに PHILOSOPHY.md が置かれている
-  const projectRoot = join(process.cwd(), "..");
-  const philosophy = readFileSync(
-    join(projectRoot, "PHILOSOPHY.md"),
-    "utf-8",
-  );
 
   cachedAokiSystemPrompt = `あなたは葵 (あおい) 先生、AI-Education プロジェクトの教科の先生 (= ティーチング担当)。
 ゆい先生 (担任、コーチング担当) と協働して小〜中学生・高校生の学習を支援します。
@@ -54,7 +46,7 @@ function getAokiSystemPrompt(): string {
 
 ## プロジェクトの憲法 (PHILOSOPHY.md)
 
-${philosophy}
+${PHILOSOPHY_MD}
 
 ## 今回のタスク
 
@@ -64,22 +56,6 @@ ${philosophy}
 出力は **JSON 配列のみ** (説明文・前置き・コードブロック禁止、parse できる pure JSON)。`;
 
   return cachedAokiSystemPrompt;
-}
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  // env 名は `AI_EDU_ANTHROPIC_API_KEY` (Phase 6 smoke test と共通)。
-  // 親 harness が `ANTHROPIC_API_KEY=""` を inject する衝突回避のため
-  // プロジェクト固有 prefix を使う。
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "AI_EDU_ANTHROPIC_API_KEY is not set in .env.local (C70 教材体系図 AI 抽出).",
-    );
-  }
-  client = new Anthropic({ apiKey });
-  return client;
 }
 
 export type ExtractMaterialInput = {
@@ -187,8 +163,8 @@ ${
     { type: "text", text: userPrompt },
   ];
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     // 目次から多数ノード (最大 60) + 各 description を出すと 8000 では足りず途中で
     // JSON が切れる (C85)。余裕を持って 16000 に。不足時は下の salvage で救う。
     max_tokens: hasToc ? 16000 : 4000,

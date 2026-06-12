@@ -10,19 +10,14 @@
  * 永続化なし (本セッション内のみ in-memory)、Phase 7 で Supabase に保存予定。
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
+import { PHILOSOPHY_MD } from "@/lib/ai/docs.generated";
 import { requireUser } from "@/lib/supabase/require-user";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 let cachedSystemPrompt: string | null = null;
 function getSystemPrompt(): string {
   if (cachedSystemPrompt) return cachedSystemPrompt;
-  const projectRoot = join(process.cwd(), "..");
-  const philosophy = readFileSync(
-    join(projectRoot, "PHILOSOPHY.md"),
-    "utf-8",
-  );
   cachedSystemPrompt = `あなたは葵 (あおい) 先生、AI-Education プロジェクトの教科の先生 (= ティーチング担当)。
 ゆい先生 (担任、コーチング担当) と協働して中学生・高校生の学習を支援します。
 
@@ -44,25 +39,12 @@ function getSystemPrompt(): string {
 
 ## プロジェクトの憲法 (PHILOSOPHY.md)
 
-${philosophy}
+${PHILOSOPHY_MD}
 
 ## 応答ルール
 
 ユーザーの発話に対して葵先生として応答してください。応答テキストのみ、前置きなしで返してください。`;
   return cachedSystemPrompt;
-}
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "AI_EDU_ANTHROPIC_API_KEY is not set in .env.local (B1 葵 chat).",
-    );
-  }
-  client = new Anthropic({ apiKey });
-  return client;
 }
 
 export type AokiChatMessage = {
@@ -151,8 +133,8 @@ ${
     messages.push({ role: "user", content: input.userMessage });
   }
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 1000,
     system: [
       {

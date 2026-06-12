@@ -1,9 +1,8 @@
 "use server";
 
-import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
+import { PHILOSOPHY_MD, TUTOR_ROLE_MD } from "@/lib/ai/docs.generated";
 import { requireUser } from "@/lib/supabase/require-user";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 // Phase 6 smoke test (C56): 「計画立てよう」入口の 1 発話だけを Claude Opus 4.8 で生成。
 // C73 (2026-06-04): シーン汎用 tutorClaudeRespondToScene を追加。mock 発話を fallback として
@@ -15,26 +14,15 @@ let cachedSystemPrompt: string | null = null;
 function getSystemPrompt(): string {
   if (cachedSystemPrompt) return cachedSystemPrompt;
 
-  // web/ から見たプロジェクトルートに SSoT 2 ファイルが置かれている
-  const projectRoot = join(process.cwd(), "..");
-  const tutorRole = readFileSync(
-    join(projectRoot, "TUTOR-ROLE.md"),
-    "utf-8",
-  );
-  const philosophy = readFileSync(
-    join(projectRoot, "PHILOSOPHY.md"),
-    "utf-8",
-  );
-
   cachedSystemPrompt = `あなたはゆい先生 (担任 / コーチ)。中2の娘さん 1 人の学習を伴走します。応答は短く (200〜300 字程度)、温かく、コーチング軸を貫いてください。教科の内容は教えず、本人の「ふわっと」を質問で具体化していくスタンスです。
 
 # 役割の定義 (TUTOR-ROLE.md)
 
-${tutorRole}
+${TUTOR_ROLE_MD}
 
 # 勉強観の憲法 (PHILOSOPHY.md)
 
-${philosophy}
+${PHILOSOPHY_MD}
 
 # 今回の文脈
 
@@ -43,28 +31,12 @@ ${philosophy}
   return cachedSystemPrompt;
 }
 
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  // env 名は `AI_EDU_ANTHROPIC_API_KEY` を使う。Claude Code 等の親 harness が
-  // 子プロセスに `ANTHROPIC_API_KEY=""` を inject するため、標準名だと dotenv の
-  // 「既存 env を上書きしない」規律に巻き込まれて .env.local の値が無視される。
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "AI_EDU_ANTHROPIC_API_KEY is not set in .env.local (Phase 6 smoke test).",
-    );
-  }
-  client = new Anthropic({ apiKey });
-  return client;
-}
-
 export async function tutorClaudeRespondToPlanRequest(
   userInput: string,
 ): Promise<string> {
   await requireUser();
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 512,
     system: [
       {
@@ -136,8 +108,8 @@ ${
 
 ゆいの応答:`;
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 700,
     system: [
       {

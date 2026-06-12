@@ -18,11 +18,11 @@
  * メタ判定は分類タスクなので PHILOSOPHY 全文は system に埋め込まない (軽量・高速)。
  * AI の返した値が選択肢に無ければ呼び出し前に null へ正規化する (ハルシネーション保険)。
  *
- * 環境変数: AI_EDU_ANTHROPIC_API_KEY (Phase 6 と共通)
  * モデル: claude-opus-4-8
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
 import { requireUser } from "@/lib/supabase/require-user";
 
 const SYSTEM_PROMPT = `あなたは葵 (あおい) 先生、AI-Education プロジェクトの教科の先生 (= ティーチング担当)。
@@ -39,19 +39,6 @@ const SYSTEM_PROMPT = `あなたは葵 (あおい) 先生、AI-Education プロ�
 - 著者 (author) は表紙・奥付の著者名・編者名から判定する (例「山田太郎」「○○編集部」)。分からなければ null
 
 出力は指定された JSON のみ。説明文・前置き・コードブロックは禁止。`;
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "AI_EDU_ANTHROPIC_API_KEY is not set in .env.local (教材メタ自動検知).",
-    );
-  }
-  client = new Anthropic({ apiKey });
-  return client;
-}
 
 export type DetectMetaInput = {
   /** クライアントで抽出した表紙・目次・奥付テキスト (デジタル PDF) */
@@ -143,8 +130,8 @@ ${subjectList}
     { type: "text", text: userPrompt },
   ];
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 512,
     system: [
       {

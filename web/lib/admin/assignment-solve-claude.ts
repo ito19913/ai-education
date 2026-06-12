@@ -15,27 +15,15 @@
  * 2. detectAssignmentIssues — 解説セッションの対話履歴から「わかってなさそうな概念」を
  *    抽出 (セッション末にまとめて自動 Issue 登録、1 問ごとに中断しない)
  *
- * 環境変数: AI_EDU_ANTHROPIC_API_KEY。モデル: claude-opus-4-8 (問題の構造理解と
+ * モデル: claude-opus-4-8 (問題の構造理解と
  * つまずき判定は Opus、ガイド読書プランと同じ判断)。
  * 画像は base64 を改行連結 1 文字列で渡す (C85 の規律、配列直渡しの 500 回避)。
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
 import { requireUser } from "@/lib/supabase/require-user";
 import type { GuidedBlock } from "@/lib/learn/types";
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "AI_EDU_ANTHROPIC_API_KEY is not set (assignment-solve-claude).",
-    );
-  }
-  client = new Anthropic({ apiKey });
-  return client;
-}
 
 // ---------------------------------------------------------------------------
 // 1. 問題ブロック検出
@@ -107,8 +95,8 @@ export async function buildAssignmentProblemPlan(
     { type: "text", text: userPrompt },
   ];
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 4000,
     system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content }],
@@ -226,8 +214,8 @@ export async function detectAssignmentIssues(
   ...
 ]`;
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 1000,
     system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
     messages: [

@@ -15,25 +15,15 @@
  * - G-5: ページまたぎは内容で繋ぐ。
  * - bbox (0-1) は視覚ハイライト用 (G-B)。vision 推定なので不正確な場合あり、任意。
  *
- * 環境変数: AI_EDU_ANTHROPIC_API_KEY。モデル: claude-opus-4-8 (ブロック種類・位置・
+ * モデル: claude-opus-4-8 (ブロック種類・位置・
  * POINT/MEMO 判定の構造理解は Opus が信頼でき、実測で良好だったため)。
  * 画像は base64 を改行連結 1 文字列で渡す (C85 の規律、配列直渡しの 500 回避)。
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
 import { requireUser } from "@/lib/supabase/require-user";
 import type { GuidedBlock } from "@/lib/learn/types";
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("AI_EDU_ANTHROPIC_API_KEY is not set (guided-reading-claude).");
-  }
-  client = new Anthropic({ apiKey });
-  return client;
-}
 
 export type GuidedPlanInput = {
   materialName: string;
@@ -120,8 +110,8 @@ POINT・MEMO・補足は本文の後に回す (supplementary=true)。JSON 配列
     { type: "text", text: userPrompt },
   ];
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 4000,
     system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content }],

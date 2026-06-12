@@ -9,19 +9,13 @@
  * 失敗時は mock text 維持で動線止めない。
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
+import { PHILOSOPHY_MD } from "@/lib/ai/docs.generated";
 import { requireUser } from "@/lib/supabase/require-user";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 let cachedSystemPrompt: string | null = null;
 function getSystemPrompt(): string {
   if (cachedSystemPrompt) return cachedSystemPrompt;
-  const projectRoot = join(process.cwd(), "..");
-  const philosophy = readFileSync(
-    join(projectRoot, "PHILOSOPHY.md"),
-    "utf-8",
-  );
   cachedSystemPrompt = `あなたは科目の先生 (= ティーチング担当、葵あおい先生または他教科の先生)。
 中学生・高校生 1 人と 1 件の課題 (= 分からない事 / 解けない問題) を巡って対話します。
 
@@ -38,23 +32,10 @@ function getSystemPrompt(): string {
 
 ## プロジェクトの憲法 (PHILOSOPHY.md)
 
-${philosophy}
+${PHILOSOPHY_MD}
 
 応答テキストのみ、前置きなしで返してください。`;
   return cachedSystemPrompt;
-}
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (client) return client;
-  const apiKey = process.env.AI_EDU_ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "AI_EDU_ANTHROPIC_API_KEY is not set in .env.local (B2 issue-chat).",
-    );
-  }
-  client = new Anthropic({ apiKey });
-  return client;
 }
 
 export type IssueChatClaudeInput = {
@@ -90,8 +71,8 @@ mock 応答と同じ方向性 (= 次のアクション誘導 / quickReplies の�
 新 PHILOSOPHY (コーチング・ファースト型のティーチング = 受動的補助、ファインマン式)
 整合の口調・文言で。応答テキストのみ。`;
 
-  const res = await getClient().messages.create({
-    model: "claude-opus-4-8",
+  const res = await getAnthropicClient().messages.create({
+    model: MODEL_OPUS,
     max_tokens: 600,
     system: [
       {

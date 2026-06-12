@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "sync:docs": "node scripts/sync-ai-docs.mjs",
+    "predev": "node scripts/sync-ai-docs.mjs",
+    "prebuild": "node scripts/sync-ai-docs.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
