@@ -3597,9 +3597,23 @@ AI が続きから補える) ④導入 = **2 段階** (第 1 弾 葵 chat 系 �
     addLearningLog [read 1 日 1 回丸め]+handleStudyMinute)
   - ✅ daily picks → `web/hooks/use-daily-picks.ts` (`49f161b`、追加/やめとく/完了観測
     2 種+dayPickedKeys。教材削除の連鎖掃除は removePicksForMaterial として公開)
-  - ⏳ 残りの候補 (独立性の高い順): プラン → 科目 → 教材 (最大・最後。教材は
-    runPdfBackgroundWork・宿題系・科目/プラン/pick との連鎖があるため要注意)。
-    その後 RightPaneRouter の props 解消 → MaterialReadPane のモード分割
+  - ✅ プラン → `web/hooks/use-plans.ts` (`99be1a4`、state+DB 復元+6 ハンドラ。
+    教材削除の連鎖掃除は removePlansForMaterial として公開、掃除した件数を返す
+    [削除時のゆい発話の文言用])
+  - ✅ 科目 → `web/hooks/use-subjects.ts` (`0c94946`、state+DB 復元マージ [id dedupe]+
+    addSubject [real=DB insert / mock・失敗=in-memory+MOCK_SUBJECTS push]。
+    ゆい発話+navigate は TutorWorkspace 側 handleSubjectAdded ラッパーに残す)
+  - ✅ 教材 (最大) → `web/hooks/use-materials.ts` (`c37cb9f`、state 3 つ+DB 復元+
+    メタ編集/表紙サムネ/ガイドプラン書き戻し/宿題 CRUD/登録フロー
+    [runPdfBackgroundWork=サムネ+区切り+PDF 裏アップロード] を移設)。
+    **UI 副作用・他ドメイン連鎖の切り方** (今後のフック抽出の参考):
+    削除 = removeMaterial (教材部分のみ・削除済み Material を返す) + ワークスペース側で
+    プラン/pick 連鎖掃除+発話+遷移 / 宿題状態 = setAssignmentStatus (state+DB) +
+    ワークスペース側で学習履歴+pick 完了観測 / 登録 = 発話・遷移を
+    **呼び出し時コールバック (MaterialAddedUiHooks) で注入** (tutorMessages/navigate が
+    フック呼び出しより後に宣言されていても循環しない)。
+    これで TutorWorkspace 2,289→1,768 行 (フック抽出 6 ドメイン累計 −900 行強)
+  - ⏳ 残り: RightPaneRouter の props 解消 → MaterialReadPane のモード分割
 
 **レビューが挙げた維持すべき設計**: `as any` ゼロ + discriminated union 規律 / RLS 全テーブル同型 /
 「済みは導出、フラグは持たない」/ 子のデータを失わせない削除 / AI 出力を信用しないコード側

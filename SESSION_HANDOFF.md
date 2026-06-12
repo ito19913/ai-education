@@ -1,6 +1,15 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: **2026-06-12 後段セッション完了 (origin/main=`df1a70a`、本セッション 29 コミット、全 push 済、tsc / lint 0 件 / build / test クリア)**。
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: **2026-06-12 続きセッション (origin/main=`c37cb9f`、tsc / lint 0 件 / build / test クリア)**。
+
+**★2026-06-12 続き: Phase 3 ドメインフック抽出 三連を完遂★** — プラン→科目→教材の順で TutorWorkspace から抽出 (1 ドメイン 1 コミット・挙動同一・毎回 tsc/lint/build/test 検証):
+- `99be1a4` プラン → `use-plans.ts` (連鎖掃除 removePlansForMaterial は掃除件数を返す)
+- `0c94946` 科目 → `use-subjects.ts` (ゆい発話+navigate はワークスペース側ラッパーに残す)
+- `c37cb9f` 教材 (最大) → `use-materials.ts` (登録フロー runPdfBackgroundWork ごと移設。発話・遷移は**呼び出し時コールバック MaterialAddedUiHooks で注入** = フック宣言順の制約を回避)
+
+TutorWorkspace は 2,289→1,768 行。**これで Phase 3 のフック抽出は計 6 ドメイン完了、残り = RightPaneRouter の props 解消 → MaterialReadPane のモード分割** (詳細 ARCHITECTURE「Phase 3 — 構造リファクタ」)。**★実機確認待ちは前セッションの 6 件 + 本セッション分 (教材登録/編集/削除・宿題登録/トグル・科目追加・プラン操作の回帰) = リファクタ範囲が広いので、次の実機はダッシュボード〜教材〜プランをひと通り触るのが安全★**。
+
+ **← 以下は前セッション完了時の Header:**
 
 **本セッションの成果 6 本柱 (Remote Control 経由の初・遠隔セッション)**:
 ①**レビュー Phase 2 全項目完遂**: lib/ai 集約+**Vercel 地雷解消** (`ccf2aa7`、PHILOSOPHY/TUTOR-ROLE は `scripts/sync-ai-docs.mjs` が predev/prebuild で `docs.generated.ts` に焼き込み・ランタイム fs 読み全廃) / PDF メモリ 3 点 (`319df0b`、登録フロー 1 回ロード共有 runPdfBackgroundWork+session-pdf-store LRU+サムネ canvas 解放) / aoki-chat cache 履歴 breakpoint+logAiUsage (`09c64d3`) / Opus→Haiku 安全 2 箇所のみ=メタ検知+整える (`70b3f29`)。
