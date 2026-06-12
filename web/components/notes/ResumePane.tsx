@@ -307,6 +307,52 @@ export function ResumePane(props: Props) {
     setHints([]);
   }, [segKey, existingEntry]);
 
+  // ----- 下書きの自動退避 (2026-06-12 レビュー指摘: 子の本文を失わせない) -----
+  // 書きかけ本文を localStorage に自動保存。リロード・誤クローズ・保存失敗でも、
+  // 次に同じまとまりを開いた時に復元する。確定 (done) で消す。
+  const draftKey = `resume-draft:${materialId}:${segKey}`;
+  // 復元: マウント / まとまり切替時、下書きがあれば本文に戻す
+  // (下書きは「書いている最中」にしか保存されないので、初期値より新しい前提)。
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(draftKey);
+      if (
+        saved &&
+        saved.trim().length > 0 &&
+        saved !== (existingEntry?.aiSummary ?? "")
+      ) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 下書き復元はマウント/切替時の 1 回だけ
+        setBody(saved);
+      }
+    } catch {
+      // localStorage 不可 (プライベートモード等) は黙って諦める
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- draftKey 変化時のみ復元
+  }, [draftKey]);
+  // 退避: 本文が変わるたび debounce 保存 (空なら消す)。
+  useEffect(() => {
+    if (stage === "done") return;
+    const id = window.setTimeout(() => {
+      try {
+        if (body.trim().length === 0) {
+          window.localStorage.removeItem(draftKey);
+        } else {
+          window.localStorage.setItem(draftKey, body);
+        }
+      } catch {
+        // ignore
+      }
+    }, 400);
+    return () => window.clearTimeout(id);
+  }, [body, draftKey, stage]);
+  const clearDraft = useCallback(() => {
+    try {
+      window.localStorage.removeItem(draftKey);
+    } catch {
+      // ignore
+    }
+  }, [draftKey]);
+
   // ----- R4: ヒントちょうだい (押すごとに段階的に濃く、答えは言わない) -----
   const handleHint = useCallback(async () => {
     setHintLoading(true);
@@ -404,6 +450,12 @@ export function ResumePane(props: Props) {
       stopMic(); // 確定するなら録音は止める
       setStage("committing");
 
+      // ★保存失敗を成功に見せない (2026-06-12 レビュー指摘)★: real モードで DB 保存に
+      // 失敗したら done にせず、本文を保持したままエラーを見せて再試行できるようにする
+      // (本文は下書き自動退避でも守られている)。in-memory フォールバックは mock モード専用。
+      const SAVE_FAIL_MSG =
+        "保存がうまくいかなかった…ネットを確認して、もう一回ボタンを押してみてね。書いた内容は消えていないよ。";
+
       // 2 周目 (既存エントリあり) → 更新。なければ新規作成。
       if (existingEntry) {
         const updated: NoteEntry = {
@@ -414,24 +466,28 @@ export function ResumePane(props: Props) {
           // 「済み」導出は updatedAt >= countFrom。古いままだとリロードまで進捗が動かない。
           updatedAt: new Date().toISOString(),
         };
-        try {
-          if (isSupabaseConfigured()) {
+        if (isSupabaseConfigured()) {
+          try {
             await updateNoteEntry(existingEntry.id, {
               aiSummary: text,
               status,
             });
+          } catch (err) {
+            console.error("[レジュメ] 更新の保存失敗:", err);
+            setErrorMsg(SAVE_FAIL_MSG);
+            setStage(result ? "reviewed" : "writing");
+            return;
           }
-        } catch (err) {
-          console.error("[レジュメ] 更新失敗 (in-memory 反映のみ):", err);
         }
         onCommitted(updated);
         setOutcome(status);
         setStage("done");
+        clearDraft();
         return;
       }
 
-      try {
-        if (isSupabaseConfigured()) {
+      if (isSupabaseConfigured()) {
+        try {
           const ownerId = await getCurrentUserId();
           // R10: 入れる冊を決める。Phase 2 でセレクターが選んだ冊 (effectiveTargetId) が
           // あればそれ、無ければ Phase 1 同様にデフォルト冊をオンデマンド確保する。
@@ -464,11 +520,16 @@ export function ResumePane(props: Props) {
           onCommitted(entry);
           setOutcome(status);
           setStage("done");
-          return;
+          clearDraft();
+        } catch (err) {
+          console.error("[レジュメ] 保存失敗:", err);
+          setErrorMsg(SAVE_FAIL_MSG);
+          setStage(result ? "reviewed" : "writing");
         }
-      } catch (err) {
-        console.error("[レジュメ] 保存失敗、in-memory にフォールバック:", err);
+        return;
       }
+
+      // mock モード (Supabase 未設定) のみ: in-memory で続行 (リロードで消える割り切り)。
       onCommitted({
         id: `note-local-${Date.now()}`,
         subjectId,
@@ -482,6 +543,7 @@ export function ResumePane(props: Props) {
       });
       setOutcome(status);
       setStage("done");
+      clearDraft();
     },
     [
       body,
@@ -495,6 +557,8 @@ export function ResumePane(props: Props) {
       effectiveTargetId,
       onCommitted,
       stopMic,
+      result,
+      clearDraft,
     ],
   );
 
