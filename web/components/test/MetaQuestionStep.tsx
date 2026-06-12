@@ -6,7 +6,6 @@
  * ルール 2「論点を特定する」の訓練。
  */
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Brain } from "lucide-react";
 import type { KnowledgeNode, Question } from "@/lib/learn/types";
 

@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // ベンダー配布物 (pdf.js worker / JBIG2 wasm フォールバック)。手を入れない
+    // minified ファイルで、lint 対象にすると既知エラー 10 件のノイズになるだけ。
+    "public/pdf.worker.min.mjs",
+    "public/pdfjs-wasm/**",
+    // ビルド時に scripts/sync-ai-docs.mjs が生成 (PHILOSOPHY/TUTOR-ROLE の焼き込み)
+    "lib/ai/docs.generated.ts",
   ]),
 ]);
 
