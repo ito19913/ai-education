@@ -25,34 +25,11 @@ import { TutorChat } from "./TutorChat";
 import { RightPaneRouter } from "./RightPaneRouter";
 import { AssignmentDialog } from "@/components/materials/AssignmentDialog";
 import { MaterialReadPane } from "@/components/materials/MaterialReadPane";
-import { setSessionPdf } from "@/lib/pdf/session-pdf-store";
 import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
 import {
-  fetchMaterials,
-  insertMaterial,
-  updateMaterialPdfPath,
-  updateMaterialSegments,
-  updateMaterialMeta,
-  updateMaterialCoverThumb,
-  softDeleteMaterial,
-  insertAssignment,
-  updateAssignment,
-  updateAssignmentStatus,
   getCurrentUserId,
   type NewAssignmentInput,
 } from "@/lib/materials/materials-repo";
-import {
-  extractFullPageTextsFromDoc,
-  loadPdfDocument,
-  renderCoverThumb,
-  type LoadedPdf,
-} from "@/lib/pdf/pdf-extract-text";
-import { segmentConceptsFromText } from "@/lib/ai/segment-claude";
-import { buildScanSegments } from "@/lib/ai/scan-segment-builder";
-import {
-  uploadMaterialPdf,
-  removeMaterialPdf,
-} from "@/lib/materials/pdf-storage";
 import {
   fetchNoteEntries,
   updateNoteEntry,
@@ -97,6 +74,7 @@ import { useLearningHistory } from "@/hooks/use-learning-history";
 import { useDailyPicks } from "@/hooks/use-daily-picks";
 import { usePlans } from "@/hooks/use-plans";
 import { useSubjects } from "@/hooks/use-subjects";
+import { useMaterials } from "@/hooks/use-materials";
 import { getPlanSegments } from "@/lib/plans/plan-progress";
 import { streamNdjsonText } from "@/lib/ai/stream-client";
 import type { TutorClaudeRequest } from "@/lib/learn/tutor-chat-shared";
@@ -116,16 +94,13 @@ import {
   loadTutorThread,
   saveTutorThread,
 } from "@/lib/learn/tutor-thread-storage";
-import { MOCK_MATERIALS } from "@/lib/learn/mock-data";
 import type {
   AssignmentStatus,
   CalendarEvent,
   ChatMessage,
-  ConceptSegment,
   EventLabel,
   EventLabelColor,
   ExamPrep,
-  GuidedBlock,
   Homework,
   Issue,
   KnowledgeNode,
@@ -196,47 +171,20 @@ export function TutorWorkspace({
   // Phase 3 モノリス分割 (2026-06-12): 科目ドメインは useSubjects に抽出。
   const { subjects, addSubject } = useSubjects(initialSubjects);
   // C46 2026-05-26 F (ito19 さん意見): 教材編集・削除のため materials を state 管理。
-  // 段階1-B (2026-06-05): real モード (Supabase 設定済) は起動時 DB fetch で復元、
-  // mock モードは MOCK_MATERIALS をフォールバック表示 (リロードで消える割り切り)。
-  // RightPaneRouter 経由で MaterialsListPane / MaterialDetailView に最新 state を流す。
-  const [materials, setMaterials] = useState<Material[]>(
-    isSupabaseConfigured() ? [] : MOCK_MATERIALS,
-  );
-  // Phase B: 「今日なにやる?」候補カードを出すのは初期 fetch 完了後 (空データで
-  // 候補 0 件と誤判定しないため)。mock モードは即 true。
-  const [materialsLoaded, setMaterialsLoaded] = useState(
-    !isSupabaseConfigured(),
-  );
-  // 嘘の空状態を出さない (2026-06-12 レビュー指摘): fetch 失敗を空 (= 「まだ登録されて
-  // いません」) と区別する。データはあるのに「無い」と断言すると子は「消えた!」と混乱する。
-  const [materialsError, setMaterialsError] = useState(false);
-
-  // 段階1-B: real モードでは起動時に DB から教材一覧を取得して復元する。
-  useEffect(() => {
-    if (!isSupabaseConfigured()) return;
-    let cancelled = false;
-    fetchMaterials()
-      .then((rows) => {
-        if (!cancelled) setMaterials(rows);
-      })
-      .catch((err) => {
-        console.error("[教材] 一覧取得失敗:", err);
-        if (!cancelled) setMaterialsError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setMaterialsLoaded(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // 教材データの表示状態 (一覧・ダッシュボードの空状態を 3 値で出し分ける)。
-  const materialsLoadState: "loading" | "error" | "ready" = materialsError
-    ? "error"
-    : materialsLoaded
-      ? "ready"
-      : "loading";
+  // Phase 3 モノリス分割 (2026-06-12): 教材ドメインは useMaterials に抽出。
+  const {
+    materials,
+    materialsLoaded,
+    materialsLoadState,
+    handleMaterialUpdated,
+    handleCoverThumb,
+    handleGuidedPlansSaved,
+    removeMaterial,
+    handleSubmitAssignment,
+    handleDeleteAssignment,
+    setAssignmentStatus,
+    handleMaterialAdded: addMaterialWithUiHooks,
+  } = useMaterials(subjects);
 
   // まとめノート N9①: ノートエントリ。real は DB fetch、mock は in-memory。
   const [noteEntries, setNoteEntries] = useState<NoteEntry[]>([]);
@@ -758,77 +706,12 @@ export function TutorWorkspace({
     [navigate],
   );
 
-  // ----- 教材編集 (C46 F、ito19 さん意見): メタ情報 patch を materials state に反映 -----
-  const handleMaterialUpdated = useCallback(
-    (id: string, patch: Partial<Material>) => {
-      setMaterials((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, ...patch } : m)),
-      );
-      // real モード: メタ編集 (名前/出版社/著者/種別/学年/科目) を DB に永続化。
-      // これまで in-memory のみでリロードすると編集が消えていた (潜在バグ) のを是正。
-      if (isSupabaseConfigured()) {
-        void updateMaterialMeta(id, {
-          name: patch.name,
-          subjectId: patch.subjectId,
-          label: patch.label,
-          publisher: patch.publisher,
-          author: patch.author,
-          gradeLevel: patch.gradeLevel,
-        }).catch((err) =>
-          console.error("[教材] メタ編集の永続化に失敗:", err),
-        );
-      }
-    },
-    [],
-  );
-
-  // ----- 表紙サムネ (2026-06-08): PDF を読んだ時に生成された data URL を反映 + 永続化 -----
-  // 登録時 / 読書ビューを開いた時に 1 回だけ生成し、materials state + DB に保存する。
-  const handleCoverThumb = useCallback((id: string, dataUrl: string) => {
-    setMaterials((prev) =>
-      prev.map((m) =>
-        m.id === id && !m.coverThumb ? { ...m, coverThumb: dataUrl } : m,
-      ),
-    );
-    if (isSupabaseConfigured()) {
-      void updateMaterialCoverThumb(id, dataUrl).catch((err) =>
-        console.error("[教材] 表紙サムネの永続化に失敗:", err),
-      );
-    }
-  }, []);
-
-  // ガイドプラン保存の親 state 書き戻し (2026-06-12 レビュー指摘の修正)。
-  // MaterialReadPane の guidedPlansMap はマウント時の material.guidedPlans から
-  // 初期化されるため、ここで materials を更新しないと次回マウントが古い map になり、
-  // 別まとまりの保存が他まとまりのプラン・青枠調整を DB から消す (stale 全置換)。
-  // DB への保存は MaterialReadPane 側 (persistGuidedPlans) が担当、ここは state のみ。
-  const handleGuidedPlansSaved = useCallback(
-    (materialId: string, plans: Record<string, GuidedBlock[]>) => {
-      setMaterials((prev) =>
-        prev.map((m) =>
-          m.id === materialId ? { ...m, guidedPlans: plans } : m,
-        ),
-      );
-    },
-    [],
-  );
-
   // ----- 教材削除 (C46 F、ito19 さん意見): in-memory 削除 + ゆい発話 + 一覧に戻す -----
+  // 教材ドメイン部分 (state + 論理削除 + PDF 実体削除) は useMaterials (removeMaterial)。
+  // ここは他ドメイン連鎖 (プラン/pick の連鎖掃除) + ゆい発話 + 遷移。
   const handleMaterialDeleted = useCallback(
     (id: string) => {
-      const deleted = materials.find((m) => m.id === id);
-      setMaterials((prev) => prev.filter((m) => m.id !== id));
-      // 段階1-B real モード: 行は論理削除で残し、PDF 実体は Storage から消す (コスト優先)。
-      if (isSupabaseConfigured()) {
-        void softDeleteMaterial(id).catch((err) =>
-          console.error("[教材] 論理削除失敗:", err),
-        );
-        if (deleted?.pdfPath) {
-          void removeMaterialPdf(deleted.pdfPath).catch((err) =>
-            console.error("[教材] PDF 実体削除失敗:", err),
-          );
-        }
-      }
+      const deleted = removeMaterial(id);
       // ★連鎖掃除 (2026-06-12 レビュー指摘)★: 教材は論理削除なので DB の
       // on delete cascade は永久に発火しない。掃除しないと、この教材のプランが
       // 「教材なしのゾンビカード」として残り、きょう決めたこと (daily_picks) も
@@ -846,114 +729,11 @@ export function TutorWorkspace({
       setTutorMessages((prev) => [...prev, reply]);
       navigate("materials");
     },
-    [materials, removePlansForMaterial, removePicksForMaterial, navigate],
+    [removeMaterial, removePlansForMaterial, removePicksForMaterial, navigate],
   );
 
-  // ----- 宿題・テスト (kind="assignment"、2026-06-09) -----
-  // 問題 PDF を Storage にアップして紐付ける共通処理 (新規/差し替え両用)。
-  const uploadAssignmentPdf = useCallback(
-    async (id: string, ownerId: string, pdfFile: File) => {
-      try {
-        const { path, size } = await uploadMaterialPdf(ownerId, id, pdfFile);
-        await updateMaterialPdfPath(id, path, size);
-        setMaterials((prev) =>
-          prev.map((m) =>
-            m.id === id ? { ...m, pdfPath: path, pdfSize: size } : m,
-          ),
-        );
-      } catch (e) {
-        console.error("[宿題・テスト] PDF アップロード失敗:", e);
-      }
-    },
-    [],
-  );
-
-  // 追加 or 編集 (id があれば編集)。PDF があれば一緒にアップ/差し替え。
-  // Phase B 拡張: 新規作成時は作成 Material を返す (儀式中の「登録→今日の枠に自動 pick」用)。
-  const handleSubmitAssignment = useCallback(
-    async (
-      input: NewAssignmentInput,
-      pdfFile?: File,
-      id?: string,
-    ): Promise<Material | null> => {
-      // ----- 編集 -----
-      if (id) {
-        setMaterials((prev) =>
-          prev.map((m) =>
-            m.id === id
-              ? {
-                  ...m,
-                  name: input.name,
-                  subjectId: input.subjectId,
-                  assignmentType: input.assignmentType,
-                  dueDate: input.dueDate,
-                }
-              : m,
-          ),
-        );
-        if (isSupabaseConfigured()) {
-          try {
-            await updateAssignment(id, input);
-          } catch (err) {
-            console.error("[宿題・テスト] 更新失敗:", err);
-          }
-          if (pdfFile) {
-            const ownerId = await getCurrentUserId();
-            await uploadAssignmentPdf(id, ownerId, pdfFile);
-          }
-        }
-        return null;
-      }
-      // ----- 新規 -----
-      if (isSupabaseConfigured()) {
-        try {
-          const ownerId = await getCurrentUserId();
-          const created = await insertAssignment(input, ownerId);
-          setMaterials((prev) => [...prev, created]);
-          // assignment なので まとまり/体系図 等の重い処理はしない。
-          if (pdfFile) {
-            await uploadAssignmentPdf(created.id, ownerId, pdfFile);
-          }
-          return created;
-        } catch (err) {
-          console.error("[宿題・テスト] 追加失敗、in-memory にフォールバック:", err);
-        }
-      }
-      const local: Material = {
-        id: `assignment-local-${Date.now()}`,
-        subjectId: input.subjectId,
-        name: input.name,
-        label: "テキスト",
-        coveredNodeIds: [],
-        kind: "assignment",
-        assignmentType: input.assignmentType,
-        dueDate: input.dueDate,
-        assignmentStatus: "todo",
-      };
-      setMaterials((prev) => [...prev, local]);
-      return local;
-    },
-    [uploadAssignmentPdf],
-  );
-
-  const handleDeleteAssignment = useCallback(
-    (id: string) => {
-      const target = materials.find((m) => m.id === id);
-      setMaterials((prev) => prev.filter((m) => m.id !== id));
-      if (isSupabaseConfigured()) {
-        void softDeleteMaterial(id).catch((err) =>
-          console.error("[宿題・テスト] 削除失敗:", err),
-        );
-        if (target?.pdfPath) {
-          void removeMaterialPdf(target.pdfPath).catch((err) =>
-            console.error("[宿題・テスト] PDF 実体削除失敗:", err),
-          );
-        }
-      }
-    },
-    [materials],
-  );
-
+  // 宿題・テストの状態トグル: state + DB は useMaterials (setAssignmentStatus)。
+  // ここは学習履歴 (自動) + 今日の枠 (pick) の完了観測。
   const handleToggleAssignmentStatus = useCallback(
     (id: string, status: AssignmentStatus) => {
       // 履歴 (自動): 「やった」にした時だけ記録 (戻した時は記録しない)
@@ -971,18 +751,15 @@ export function TutorWorkspace({
       // Phase B: 今日の枠 (pick) に入っていれば完了/取消を観測する
       if (status === "done") observeDayPickDone(id);
       else observeDayPickUndone(id);
-      setMaterials((prev) =>
-        prev.map((m) =>
-          m.id === id ? { ...m, assignmentStatus: status } : m,
-        ),
-      );
-      if (isSupabaseConfigured()) {
-        void updateAssignmentStatus(id, status).catch((err) =>
-          console.error("[宿題・テスト] 状態更新失敗:", err),
-        );
-      }
+      setAssignmentStatus(id, status);
     },
-    [materials, addLearningLog, observeDayPickDone, observeDayPickUndone],
+    [
+      materials,
+      addLearningLog,
+      observeDayPickDone,
+      observeDayPickUndone,
+      setAssignmentStatus,
+    ],
   );
 
   // ----- まとめノート N9①: 能動ゲート通過でエントリが刻まれた時 -----
@@ -1437,190 +1214,18 @@ export function TutorWorkspace({
   }, [noteEntries]);
 
   // ----- 教材追加完了時: materials state に push + ゆい発話 + 新教材の詳細へ遷移 -----
-  // C32 2026-05-25 grill 1 確定 13: アップ完了動線 = ゆいから「葵が読んだよ、見る?」
-  // → 右ペインに material-detail (体系図 + 評価コメント + 葵 chat) 即時展開
-  // 2026-06-04 (残課題② 解消): Step4Save が構築した Material を in-memory で materials に追加。
-  // これで一覧 (MaterialsListPane) にも詳細にも登録した教材が出る。Phase 7 で永続化に置換。
+  // 登録フロー本体 (DB 保存 + PDF 裏アップロード + 表紙サムネ + まとまり区切り) は
+  // useMaterials が担当。ここではゆい発話と詳細遷移の UI 副作用を呼び出し時
+  // コールバックで渡すだけ (C32 アップ完了動線 = 「葵が読んだよ、見る?」→ 詳細展開)。
   const handleMaterialAdded = useCallback(
     (material: Material, approvedNodeCount: number, file?: File | null) => {
-      // まとまり (一単元=1概念) 区切り (M1-M10、2026-06-06 / C-8 スキャン本対応)。
-      // 登録後バックグラウンドで全書を読み、概念単位に区切る:
-      //   - デジタル PDF (文字レイヤーあり) → 本文テキストで区切る (segmentConceptsFromText)
-      //   - スキャン PDF (文字レイヤー無し)   → C-8 経路 (buildScanSegments、目次土台 + vision)
-      // 結果は materials state に反映 (+ real モードは DB 保存) + ゆいが「区切れたよ」と通知。
-      // これで「開いた時に待つ」のではなく「アップロード時に裏で作っておく」状態になる。
-      // Phase 2 メモリ対策 (2026-06-12): 旧実装は 表紙サムネ / テキスト抽出 / スキャン区切り が
-      // それぞれ loadPdfDocument して同じ PDF を並行 3 回ロードしていた (186MB 自炊本で
-      // ピーク ~560MB)。1 回だけロードして共有し、軽い順 (サムネ→区切り) に直列実行する。
-      const runPdfBackgroundWork = (m: Material, persist: boolean) => {
-        if (!file) return;
-        const subjectName =
-          subjects.find((s) => s.id === m.subjectId)?.name ?? "教科";
-        void (async () => {
-          let loadedPdf: LoadedPdf;
-          try {
-            loadedPdf = await loadPdfDocument(file);
-          } catch (err) {
-            console.error("[教材] PDF ロード失敗 (動線は止めない):", err);
-            return;
-          }
-          try {
-            // 1) 表紙サムネ (2026-06-08): 1 ページ目を小さく描画して一覧用に保存。
-            //    軽いので先に終わらせる。失敗しても区切りには進む。
-            try {
-              const thumb = await renderCoverThumb(loadedPdf.doc);
-              if (thumb) {
-                // mock では state 反映のみ、real では DB 保存も (handleCoverThumb 内で分岐)。
-                if (persist) handleCoverThumb(m.id, thumb);
-                else
-                  setMaterials((prev) =>
-                    prev.map((x) =>
-                      x.id === m.id && !x.coverThumb
-                        ? { ...x, coverThumb: thumb }
-                        : x,
-                    ),
-                  );
-              }
-            } catch (err) {
-              console.error("[教材] 表紙サムネ生成失敗 (動線は止めない):", err);
-            }
-
-            // 2) まとまり区切り (M1-M10 / C-8)
-            try {
-              const { hasTextLayer, packedText } =
-                await extractFullPageTextsFromDoc(loadedPdf.doc);
-              let segments: ConceptSegment[];
-              if (hasTextLayer && packedText.length > 0) {
-                // デジタル PDF: 本文テキストから PDF 紙番号で直接区切る (M3)。
-                segments = await segmentConceptsFromText({
-                  materialName: m.name,
-                  subjectName,
-                  gradeLevel: m.gradeLevel ?? "中2",
-                  packedText,
-                });
-              } else {
-                // スキャン PDF: C-8 ハイブリッド (目次土台 + オフセット較正) or 全ページ vision。
-                segments = await buildScanSegments(loadedPdf.doc, m, subjectName);
-              }
-              if (segments.length === 0) return;
-              setMaterials((prev) =>
-                prev.map((x) =>
-                  x.id === m.id ? { ...x, conceptSegments: segments } : x,
-                ),
-              );
-              if (persist) {
-                try {
-                  await updateMaterialSegments(m.id, segments);
-                } catch (err) {
-                  console.error("[まとまり] セグメント保存失敗:", err);
-                }
-              }
-              setTutorMessages((prev) => [
-                ...prev,
-                {
-                  id: `t-mat-seg-${Date.now()}`,
-                  role: "tutor",
-                  text: `「${m.name}」を ${segments.length} 個のまとまり (一単元) に区切ったよ✂️\n「一緒に読む」を開くと、葵先生が「今日はここからここまで」と単元ごとに案内してくれるよ。`,
-                  createdAt: new Date().toISOString(),
-                },
-              ]);
-            } catch (err) {
-              console.error("[まとまり] 区切り失敗 (動線は止めない):", err);
-            }
-          } finally {
-            void loadedPdf.destroy();
-          }
-        })();
-      };
-
-      // 一覧/詳細/体系図への反映 + ゆいの「葵が読んだよ」発話 + 詳細へ遷移 (共通)。
-      const announceAndShow = (m: Material) => {
-        setMaterials((prev) => [...prev, m]);
-        // 段階1-C/1-B: 読書ビューが任意ページを即描画できるよう PDF を L1 キャッシュ。
-        if (file) setSessionPdf(m.id, file);
-        const reply: TutorMessage = {
-          id: `t-mat-${Date.now()}`,
-          role: "tutor",
-          text: `「${m.name}」、葵先生が読んだよ！\n体系図 (${approvedNodeCount} ノード) と評価コメントをまとめてくれたから、右で見せるね。`,
-          createdAt: new Date().toISOString(),
-        };
-        setTutorMessages((prev) => [...prev, reply]);
-        navigate("material-detail", { materialId: m.id });
-      };
-
-      // mock モード: 従来通り in-memory push のみ (リロードで消える)。
-      if (!isSupabaseConfigured()) {
-        announceAndShow(material);
-        runPdfBackgroundWork(material, false);
-        return;
-      }
-
-      // 段階1-B real モード: 行は即作成 (一覧/体系図は即表示)、PDF は裏でアップロード。
-      void (async () => {
-        try {
-          const ownerId = await getCurrentUserId();
-          const saved = await insertMaterial(
-            {
-              subjectId: material.subjectId,
-              name: material.name,
-              label: material.label,
-              publisher: material.publisher,
-              author: material.author,
-              gradeLevel: material.gradeLevel,
-              coveredNodeIds: material.coveredNodeIds,
-              extractedNodes: material.extractedNodes,
-            },
-            ownerId,
-          );
-          announceAndShow(saved);
-          // 表紙サムネ + まとまり区切りを裏で実行 (DB 保存あり、PDF は 1 回だけロードして共有)。
-          // PDF アップロード (TUS、チャンク読み) とは並走してよい。
-          runPdfBackgroundWork(saved, true);
-
-          // PDF を裏でアップロード (await しない)。完了で pdf_path を記録 + 完了通知。
-          if (file) {
-            uploadMaterialPdf(ownerId, saved.id, file)
-              .then(async ({ path, size }) => {
-                await updateMaterialPdfPath(saved.id, path, size);
-                setMaterials((prev) =>
-                  prev.map((m) =>
-                    m.id === saved.id
-                      ? { ...m, pdfPath: path, pdfSize: size }
-                      : m,
-                  ),
-                );
-                setTutorMessages((prev) => [
-                  ...prev,
-                  {
-                    id: `t-mat-up-${Date.now()}`,
-                    role: "tutor",
-                    text: `「${saved.name}」の PDF も保存できたよ📚\nこれで次に開いた時も、リロードしても一緒に読めるよ。`,
-                    createdAt: new Date().toISOString(),
-                  },
-                ]);
-              })
-              .catch((err) => {
-                console.error("[教材] PDF アップロード失敗:", err);
-                setTutorMessages((prev) => [
-                  ...prev,
-                  {
-                    id: `t-mat-uperr-${Date.now()}`,
-                    role: "tutor",
-                    text: `ごめん、「${saved.name}」の PDF 保存が途中で止まっちゃった💦\n教材は登録できてるよ。今のセッション中は読めるけど、リロード後にもう一度開けない時は登録し直してね。`,
-                    createdAt: new Date().toISOString(),
-                  },
-                ]);
-              });
-          }
-        } catch (err) {
-          console.error("[教材] 保存失敗、in-memory にフォールバック:", err);
-          // DB 保存に失敗してもUXを止めない: in-memory で見せる (リロードで消える)。
-          announceAndShow(material);
-          runPdfBackgroundWork(material, false);
-        }
-      })();
+      addMaterialWithUiHooks(material, approvedNodeCount, file, {
+        pushTutorMessage: (message) =>
+          setTutorMessages((prev) => [...prev, message]),
+        onRegistered: (m) => navigate("material-detail", { materialId: m.id }),
+      });
     },
-    [navigate, subjects, handleCoverThumb],
+    [addMaterialWithUiHooks, navigate],
   );
 
   // ----- C30 2026-05-25 grill 2: 科目追加完了時の処理 -----
