@@ -7,7 +7,9 @@
  * Phase 6 で Claude API + 履歴 / 課題 / スケジュールのコンテキスト注入を追加予定。
  */
 import { Suspense } from "react";
-import { TutorWorkspace } from "@/components/tutor/TutorWorkspace";
+// ゆい chat の初期挨拶が localStorage・時刻依存で hydration mismatch になるため
+// SSR を切ったラッパー経由で描画する (詳細は TutorWorkspaceClient.tsx)
+import { TutorWorkspaceClient as TutorWorkspace } from "@/components/tutor/TutorWorkspaceClient";
 import {
   MOCK_EXAM_PREPS,
   MOCK_HOMEWORKS,
