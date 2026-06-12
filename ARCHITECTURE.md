@@ -3572,7 +3572,17 @@ AI が続きから補える) ④導入 = **2 段階** (第 1 弾 葵 chat 系 �
   state の逐次吹き出し + 自動スクロール追従 + unmount で AbortController 中断
 - 未認証 POST は middleware が /login へ 307 (スモークテスト済)
 
-**残り = 第 2 弾 (ゆい chat・課題 chat)**: 第 1 弾の実機確認後に着手。
+**✅ 第 2 弾も実装済 (`5a30f4a`、★実機確認待ち★) — これで対話系すべてストリーミング**:
+- `lib/ai/stream-client.ts` / `stream-route.ts` = NDJSON ストリーミングの client/server
+  共通ヘルパー (aoki ルートも乗せ換えて重複排除)
+- `lib/learn/tutor-chat-shared.ts` / `issue-chat-shared.ts` = プロンプト組み立て
+  (旧 tutor-claude.ts / issue-chat-claude.ts は削除) + `app/api/tutor-chat` / `app/api/issue-chat`
+- mock 層は **「Claude を呼ばず reply 構造 + リクエストを同期で返す」** `prepareTutorReply` /
+  `prepareIssueChatReply` に置換 (card / quickReplies / state 遷移 / resolve シグナルは
+  mock のまま、text だけストリーム)。ゆいは 4 経路 (plan-request / scene 汎用 /
+  day-start / day-close) すべて対応
+- TutorChat `streamingText` prop + IssueChat `streamingText` state で逐次吹き出し。
+  失敗時は grill 確定どおり (途中切れ = 出た分+謝り / 全失敗 = mock 文維持)
 
 ### ★残ロードマップ (未対応、重要度順)
 
