@@ -59,6 +59,12 @@ import {
   softDeleteNoteEntry,
 } from "@/lib/notes/notes-repo";
 import {
+  fetchIssues,
+  insertIssues,
+  updateIssueStatus,
+  updateIssueChatThread,
+} from "@/lib/issues/issues-repo";
+import {
   fetchResumes,
   insertResume,
   renameResume,
@@ -945,7 +951,23 @@ export function TutorWorkspace({
   }, [tutorMessages]);
 
   // ----- Issue state（resolve / chatThread 追加を一元管理） -----
-  const [issues, setIssues] = useState<Issue[]>(initialIssues);
+  // 2026-06-12 永続化: real モードは起動時に DB から復元 (mock の課題は出さない =
+  // 「画面に出るのは実データだけ」)。mock モードは従来どおり MOCK_ISSUES。
+  const [issues, setIssues] = useState<Issue[]>(
+    isSupabaseConfigured() ? [] : initialIssues,
+  );
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+    fetchIssues()
+      .then((rows) => {
+        if (!cancelled) setIssues(rows);
+      })
+      .catch((err) => console.error("[課題] 一覧取得失敗:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Today schedule（done トグル等は TodayTaskDashboard 内で完結するが、
   // /tutor 右ペインでも同じ初期データを使う）
   const [scheduleToday] = useState<ScheduleItem[]>(initialScheduleToday);
@@ -2456,6 +2478,11 @@ export function TutorWorkspace({
           : i,
       ),
     );
+    if (isSupabaseConfigured()) {
+      updateIssueStatus(issueId, "resolved").catch((err) =>
+        console.error("[課題] 解決の保存失敗:", err),
+      );
+    }
   }, []);
 
   const handleReopenIssue = useCallback((issueId: string) => {
@@ -2466,6 +2493,11 @@ export function TutorWorkspace({
           : i,
       ),
     );
+    if (isSupabaseConfigured()) {
+      updateIssueStatus(issueId, "open").catch((err) =>
+        console.error("[課題] 再オープンの保存失敗:", err),
+      );
+    }
   }, []);
 
   // 宿題「AI と解く」(2026-06-11 grill 確定): 解説セッション末に葵が検知した
@@ -2477,43 +2509,58 @@ export function TutorWorkspace({
       if (found.length === 0) return;
       const now = new Date().toISOString();
       const stamp = Date.now();
-      setIssues((prev) => [
-        ...found.map(
-          (f, i): Issue => ({
-            id: `issue-hw-${stamp}-${i}`,
-            nodeId: f.concept,
-            source: "ai-detected",
-            title: f.title,
-            detail: f.detail,
-            status: "open",
-            createdAt: now,
-            occurrences: [
-              {
-                id: `occ-hw-${stamp}-${i}`,
-                detectedAt: now,
-                description: `宿題「${materialName}」の解説で見つかった`,
-                source: "ai-detected",
-              },
-            ],
-          }),
-        ),
-        ...prev,
-      ]);
+      const created = found.map(
+        (f, i): Issue => ({
+          id: `issue-hw-${stamp}-${i}`,
+          nodeId: f.concept,
+          source: "ai-detected",
+          title: f.title,
+          detail: f.detail,
+          status: "open",
+          createdAt: now,
+          occurrences: [
+            {
+              id: `occ-hw-${stamp}-${i}`,
+              detectedAt: now,
+              description: `宿題「${materialName}」の解説で見つかった`,
+              source: "ai-detected",
+            },
+          ],
+        }),
+      );
+      setIssues((prev) => [...created, ...prev]);
+      // 2026-06-12 永続化: 失敗しても in-memory では生きている (ログのみ)。
+      if (isSupabaseConfigured()) {
+        void (async () => {
+          try {
+            const ownerId = await getCurrentUserId();
+            await insertIssues(created, ownerId);
+          } catch (err) {
+            console.error("[課題] 自動登録の保存失敗:", err);
+          }
+        })();
+      }
     },
     [],
   );
 
   const handleAppendChatMessages = useCallback(
     (issueId: string, msgs: IssueChatMessage[]) => {
+      // 永続化用に追記後スレッドを state 更新の外で組み立てる (updater 内の副作用を避ける)。
+      const target = issues.find((i) => i.id === issueId);
+      const newThread = [...(target?.chatThread ?? []), ...msgs];
       setIssues((prev) =>
         prev.map((i) =>
-          i.id === issueId
-            ? { ...i, chatThread: [...(i.chatThread ?? []), ...msgs] }
-            : i,
+          i.id === issueId ? { ...i, chatThread: newThread } : i,
         ),
       );
+      if (isSupabaseConfigured() && target) {
+        updateIssueChatThread(issueId, newThread).catch((err) =>
+          console.error("[課題] chat 保存失敗:", err),
+        );
+      }
     },
-    [],
+    [issues],
   );
 
   // 右ペインに課題 chat が出ている時、左ゆい入力欄を無効化する
