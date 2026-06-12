@@ -8,6 +8,27 @@ import Anthropic from "@anthropic-ai/sdk";
 export const MODEL_OPUS = "claude-opus-4-8";
 export const MODEL_HAIKU = "claude-haiku-4-5";
 
+/**
+ * API 応答の usage をログしてキャッシュヒットを可視化する (レビュー Phase 2)。
+ * cache_read が大きく cache_write が小さければキャッシュが効いている。
+ * Server Action 内で呼ぶ想定 (出力は dev コンソール / Vercel のサーバーログ)。
+ */
+export function logAiUsage(
+  tag: string,
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+  },
+): void {
+  console.log(
+    `[AI usage] ${tag}: in=${usage.input_tokens} out=${usage.output_tokens}` +
+      ` cache_read=${usage.cache_read_input_tokens ?? 0}` +
+      ` cache_write=${usage.cache_creation_input_tokens ?? 0}`,
+  );
+}
+
 let client: Anthropic | null = null;
 
 export function getAnthropicClient(): Anthropic {

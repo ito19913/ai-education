@@ -11,7 +11,7 @@
  */
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
+import { getAnthropicClient, logAiUsage, MODEL_OPUS } from "@/lib/ai/client";
 import { PHILOSOPHY_MD } from "@/lib/ai/docs.generated";
 import { requireUser } from "@/lib/supabase/require-user";
 
@@ -110,6 +110,26 @@ ${
     messages.push({ role: m.role, content: m.text });
   }
 
+  // ★履歴末尾に cache breakpoint (レビュー Phase 2、2026-06-12)★
+  // system だけに breakpoint があると、会話が伸びるたびに PHILOSOPHY 込みの履歴全体を
+  // 毎ターン再処理する (画像 breakpoint は翌ターンの履歴がテキストのみ = プレフィックスが
+  // 変わるため再利用されない)。履歴の末尾 (今回 user 発話の直前) に breakpoint を置くと、
+  // 次ターンは前ターンのキャッシュにプレフィックスヒットして差分だけ処理される。
+  // breakpoint 数 = system 1 + 履歴末尾 1 + 画像 1 = 3 (上限 4 以内)。
+  const lastCtx = messages[messages.length - 1];
+  if (typeof lastCtx.content === "string") {
+    messages[messages.length - 1] = {
+      ...lastCtx,
+      content: [
+        {
+          type: "text",
+          text: lastCtx.content,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+    };
+  }
+
   // 今回の user message。読書中なら現在ページ画像を先頭に付ける (画像 block → テキスト)。
   if (isReading) {
     const content: Anthropic.ContentBlockParam[] = [
@@ -145,6 +165,8 @@ ${
     ],
     messages,
   });
+
+  logAiUsage("aoki-chat", res.usage);
 
   const textBlock = res.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {
