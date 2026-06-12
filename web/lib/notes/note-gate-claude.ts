@@ -10,7 +10,7 @@
  *   正しい要約を返す (N5 論点認定の最小実装 = AI がページから概念を判定)。
  * - judgeExplanation: 子の説明が「自分の言葉で要点を言えているか」を判定 (能動ゲート)。
  *
- * aoki-chat-claude.ts と同じく Opus 4.8 + PHILOSOPHY を prompt cache。失敗時は
+ * aoki-chat-shared.ts と同じく Opus 4.8 + PHILOSOPHY を prompt cache。失敗時は
  * 動線を止めない fallback を呼び出し側で用意する (C56 規律)。
  */
 

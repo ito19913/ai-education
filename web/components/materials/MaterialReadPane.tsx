@@ -58,10 +58,11 @@ import {
   updateMaterialSegments,
 } from "@/lib/materials/materials-repo";
 import { isSupabaseConfigured } from "@/lib/materials/is-supabase-configured";
-import {
-  respondViaAokiChat,
-  type AokiChatMessage,
-} from "@/lib/admin/aoki-chat-claude";
+import type {
+  AokiChatInput,
+  AokiChatMessage,
+} from "@/lib/admin/aoki-chat-shared";
+import { streamAokiChat } from "@/lib/admin/aoki-chat-stream";
 import { ResumePane } from "@/components/notes/ResumePane";
 import { PageThumbnailRail } from "@/components/materials/PageThumbnailRail";
 import {
@@ -418,6 +419,14 @@ export function MaterialReadPane({
   const [history, setHistory] = useState<AokiChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  // ストリーミング中の途中経過 (null=生成していない、""=接続中で最初の文字待ち)。
+  // 出始めたら chat 末尾に逐次伸びる吹き出しとして描画する (grill Q2、2026-06-12)。
+  const [streamingText, setStreamingText] = useState<string | null>(null);
+  // 画面を離れたら生成を自動中断する (grill Q2: 停止ボタンは置かない)
+  const streamAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    return () => streamAbortRef.current?.abort();
+  }, []);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   // 音声で質問 (R4 と同じ Web Speech API。宿題「AI と解く」の質疑応答は音声メイン。
   // 本の読書でも使えるよう常時表示、非対応ブラウザでは 🎤 を出さない)。
@@ -644,13 +653,13 @@ export function MaterialReadPane({
     setPageInput(String(page));
   }, [page]);
 
-  // chat 履歴が伸びたら最下部にスクロール
+  // chat 履歴が伸びたら最下部にスクロール (ストリーミング中の途中経過でも追従)
   useEffect(() => {
     chatScrollRef.current?.scrollTo({
       top: chatScrollRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [history]);
+  }, [history, streamingText]);
 
   const goPrev = useCallback(() => setPage((p) => Math.max(1, p - step)), [step]);
   const goNext = useCallback(
@@ -723,6 +732,55 @@ export function MaterialReadPane({
     [material.id, onGuidedPlansSaved],
   );
 
+  // ----- 葵応答のストリーミング取得 (レビュー Phase 2-⑤ 第 1 弾、2026-06-12) -----
+  // 3 動線 (学習開始オリエン / ここを解説 / chat 送信) 共通。出力中は streamingText に
+  // 途中経過を流し (吹き出しが逐次伸びる)、確定した発話 1〜2 件を返す (呼び出し側が
+  // history に積む)。grill 確定: 途中で切れたら出た分は消さず「途中で止まっちゃった」を
+  // 続ける / 完全失敗はエラー発話 1 件 / 画面遷移 (unmount) は黙って中断 ([] を返す)。
+  const streamAokiReply = useCallback(
+    async (input: AokiChatInput): Promise<AokiChatMessage[]> => {
+      const controller = new AbortController();
+      streamAbortRef.current?.abort();
+      streamAbortRef.current = controller;
+      try {
+        const { text, errored } = await streamAokiChat(
+          input,
+          (t) => setStreamingText(t),
+          controller.signal,
+        );
+        if (!errored) return [{ role: "assistant", text }];
+        if (text.length > 0) {
+          return [
+            { role: "assistant", text },
+            {
+              role: "assistant",
+              text: "…ごめん、途中で止まっちゃった💦 もう一回聞いてくれる?",
+            },
+          ];
+        }
+        return [
+          {
+            role: "assistant",
+            text: "ごめん、今うまく読み取れなかった…もう一度試してくれる?",
+          },
+        ];
+      } catch (err) {
+        if (controller.signal.aborted) return []; // 画面遷移による中断は黙って終わる
+        console.error("[読書] 葵ストリーミング失敗:", err);
+        return [
+          {
+            role: "assistant",
+            text: "ごめん、今うまく読み取れなかった…もう一度試してくれる?",
+          },
+        ];
+      } finally {
+        if (streamAbortRef.current === controller) streamAbortRef.current = null;
+        setStreamingText(null);
+      }
+    },
+    [],
+  );
+
   // M6: 指定した まとまり (target) のオリエンを葵に語らせる。範囲先頭へジャンプ →
   // 「今日はここ(p.X〜Y)を『○○』として勉強しよう。まず通して読もう」と案内 (2フェーズ①)。
   // target が null の時は「今表示ページの説明」フォールバック (まとまり未生成の本)。
@@ -748,7 +806,7 @@ export function MaterialReadPane({
 4) 最後に「まずは一度ざっと通して読んでみよう。分からない所は飛ばして大丈夫。読み終えて『レジュメにする』を押したら、概念ごとに一緒にまとめていこうね。ここから始めていい?」と通読を促し、軽く確認する。`
           : "（学習を開始）今開いているページの要点を、中学生にわかるように2〜4文で説明して。最後に「分からないところがあれば聞いてね」と一言添えて。";
 
-        const aiText = await respondViaAokiChat({
+        const replies = await streamAokiReply({
           materialName: material.name,
           subjectName: subject?.name ?? "教科",
           gradeLevel: material.gradeLevel ?? "中2",
@@ -759,7 +817,7 @@ export function MaterialReadPane({
           currentPageNumber: target?.startPdfPage ?? page,
         });
         // 葵の説明だけを積む (キックオフ発話は可視 history に出さない = 自分から説明したように見せる)
-        setHistory((prev) => [...prev, { role: "assistant", text: aiText }]);
+        setHistory((prev) => [...prev, ...replies]);
       } catch (err) {
         console.error("[読書] 学習開始失敗:", err);
         setHistory((prev) => [
@@ -773,7 +831,7 @@ export function MaterialReadPane({
         setStarting(false);
       }
     },
-    [loaded, starting, sending, pagesToShow, packPages, material, subject, page, history],
+    [loaded, starting, sending, pagesToShow, packPages, material, subject, page, history, streamAokiReply],
   );
 
   // ----- ガイド読書: 1 ブロックを葵が解説する (G-A) -----
@@ -812,7 +870,7 @@ export function MaterialReadPane({
       const userMessage = assignmentMode
         ? `（宿題の解説）問題「${block.label}」${posText}を ${levelText} 解説して。①この問題の考え方 → ②解き方の筋道 → ③答えの確認、の順で、この問題だけに絞って。最後に「答え、合ってた?」と聞いてね。計算や答えに確信が持てない時は「ここは学校の解答でも確認してね」と一言添えること。`
         : `（ガイド読書）${suppText}次は「${block.label}」${posText}を ${levelText} 説明して。今このブロックだけに絞って、長くなりすぎないように。最後に「ここまで大丈夫? 次に行く?」と一言添えてね。`;
-      const aiText = await respondViaAokiChat({
+      const replies = await streamAokiReply({
         materialName: material.name,
         subjectName: subject?.name ?? "教科",
         gradeLevel: material.gradeLevel ?? "中2",
@@ -822,9 +880,9 @@ export function MaterialReadPane({
         currentPageImagesPacked: packed,
         currentPageNumber: block.pdfPage,
       });
-      setHistory((prev) => [...prev, { role: "assistant", text: aiText }]);
+      setHistory((prev) => [...prev, ...replies]);
     },
-    [loaded, spread, packPages, material, subject, history, assignmentMode],
+    [loaded, spread, packPages, material, subject, history, assignmentMode, streamAokiReply],
   );
 
   // 入口の一覧から まとまり を選んだ時: ガイド読書を開始 (ブロックプラン生成 → 最初を解説)。
@@ -1442,7 +1500,7 @@ export function MaterialReadPane({
         }
         if (imgs.length > 0) packed = imgs.join("\n");
       }
-      const aiText = await respondViaAokiChat({
+      const replies = await streamAokiReply({
         materialName: material.name,
         subjectName: subject?.name ?? "教科",
         gradeLevel: material.gradeLevel ?? "中2",
@@ -1452,7 +1510,7 @@ export function MaterialReadPane({
         currentPageImagesPacked: packed,
         currentPageNumber: page,
       });
-      setHistory([...newHistory, { role: "assistant", text: aiText }]);
+      setHistory([...newHistory, ...replies]);
     } catch (err) {
       console.error("[読書] aoki-chat failed:", err);
       setHistory([
@@ -2181,7 +2239,8 @@ export function MaterialReadPane({
                     </li>
                   ),
                 )}
-                {(sending || guidedBusy) && (
+                {/* ストリーミング中の途中経過 (書かれた端から伸びる吹き出し、grill Q2) */}
+                {streamingText !== null && streamingText.length > 0 && (
                   <li className="flex items-end gap-2">
                     <SubjectTeacherAvatar
                       subjectId={teacherSubjectId}
@@ -2189,13 +2248,28 @@ export function MaterialReadPane({
                       fallbackLetter={teacherAvatarLetter}
                       className="shrink-0 shadow-sm ring-2 ring-white"
                     />
-                    <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-3 shadow-sm">
-                      <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.3s]" />
-                      <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.15s]" />
-                      <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" />
+                    <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-2 text-sm text-card-foreground shadow-sm">
+                      <MarkdownText text={streamingText} />
                     </div>
                   </li>
                 )}
+                {/* 最初の文字が出るまでは従来どおり「考え中」(出始めたら上の吹き出しに切替) */}
+                {(sending || guidedBusy || starting) &&
+                  (streamingText === null || streamingText.length === 0) && (
+                    <li className="flex items-end gap-2">
+                      <SubjectTeacherAvatar
+                        subjectId={teacherSubjectId}
+                        size={28}
+                        fallbackLetter={teacherAvatarLetter}
+                        className="shrink-0 shadow-sm ring-2 ring-white"
+                      />
+                      <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-border bg-card px-3 py-3 shadow-sm">
+                        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.3s]" />
+                        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.15s]" />
+                        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" />
+                      </div>
+                    </li>
+                  )}
               </ul>
             )}
           </div>

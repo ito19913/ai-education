@@ -1,19 +1,16 @@
-"use server";
-
 /**
- * 葵 chat AI 応答 (B1、C75 2026-06-04)
+ * 葵 chat のプロンプト組み立て (ストリーミング化 2026-06-12、レビュー Phase 2-⑤ 第 1 弾)
  *
- * 2026-05-25 grill 1 確定 12: 教材ごとに葵 chat 独立スレッド。
- * 本ファイルは Server Action として、教材 + ノード文脈 + chat 履歴 +
- * ユーザー発話を Claude Opus 4.8 に渡して葵応答を生成する。
+ * 旧 aoki-chat-claude.ts (Server Action) のロジックをそのまま移設。Server Action は
+ * ストリーミングを返せないため、呼び出しは Route Handler (app/api/aoki-chat) に移行した。
+ * このファイルは "use server" でない plain モジュール (Route Handler から import する)。
  *
- * 永続化なし (本セッション内のみ in-memory)、Phase 7 で Supabase に保存予定。
+ * ★server 専用★: PHILOSOPHY 全文を含むため client コンポーネントから値 import しない
+ * (型だけなら `import type` で OK — コンパイル時に消える)。
  */
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicClient, logAiUsage, MODEL_OPUS } from "@/lib/ai/client";
 import { PHILOSOPHY_MD } from "@/lib/ai/docs.generated";
-import { requireUser } from "@/lib/supabase/require-user";
 
 let cachedSystemPrompt: string | null = null;
 function getSystemPrompt(): string {
@@ -65,16 +62,21 @@ export type AokiChatInput = {
   /**
    * 段階1-C「一緒にめくって読む」: ユーザーが今読書ビューで開いているページ画像
    * (base64 JPEG、prefix 無し、改行連結。現在は 1 枚)。あれば葵は vision でその
-   * ページの本文を読んでその場で教える。配列でなく文字列なのは Server Action の
-   * array-nesting ガード回避 (C85 と同じ)。
+   * ページの本文を読んでその場で教える。配列でなく文字列なのは Server Action 時代の
+   * array-nesting ガード回避の名残 (C85)。JSON ボディでもそのまま流用。
    */
   currentPageImagesPacked?: string;
   /** 読書ビューで今開いている物理ページ番号 (1-indexed)。文脈提示用。 */
   currentPageNumber?: number;
 };
 
-export async function respondViaAokiChat(input: AokiChatInput): Promise<string> {
-  await requireUser();
+export type AokiChatRequest = {
+  system: Anthropic.TextBlockParam[];
+  messages: Anthropic.MessageParam[];
+};
+
+/** 葵 chat の API リクエスト (system + messages) を組み立てる。 */
+export function buildAokiChatRequest(input: AokiChatInput): AokiChatRequest {
   const messages: Anthropic.MessageParam[] = [];
 
   // 段階1-C: 読書ビューで今開いているページ画像 (改行連結を分割)
@@ -153,9 +155,7 @@ ${
     messages.push({ role: "user", content: input.userMessage });
   }
 
-  const res = await getAnthropicClient().messages.create({
-    model: MODEL_OPUS,
-    max_tokens: 1000,
+  return {
     system: [
       {
         type: "text",
@@ -164,13 +164,5 @@ ${
       },
     ],
     messages,
-  });
-
-  logAiUsage("aoki-chat", res.usage);
-
-  const textBlock = res.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("Claude returned no text block (B1 aoki-chat).");
-  }
-  return textBlock.text;
+  };
 }
