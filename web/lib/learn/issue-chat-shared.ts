@@ -1,17 +1,24 @@
-"use server";
-
 /**
- * 課題 chat AI 応答 (B2、C76 2026-06-04)
+ * 課題 chat (B2) のプロンプト組み立て (ストリーミング化 2026-06-12、第 2 弾)
  *
- * IssueChat (= 科目の先生との 1 件の課題を巡る対話) を Claude Opus 4.8 化。
- * 既存 buildNextIssueChatReply の reply 構造 (quickReplies / resolve signal) は
- * 維持しつつ、text 部分のみ Claude で書き換える post-process パターン。
- * 失敗時は mock text 維持で動線止めない。
+ * 旧 issue-chat-claude.ts (Server Action) のロジックを移設。Server Action は
+ * ストリーミングを返せないため、呼び出しは Route Handler (app/api/issue-chat) に移行した。
+ *
+ * ★server 専用★: PHILOSOPHY 全文を含むため client から値 import しない
+ * (型だけなら `import type` で OK)。
  */
 
-import { getAnthropicClient, MODEL_OPUS } from "@/lib/ai/client";
+import type Anthropic from "@anthropic-ai/sdk";
 import { PHILOSOPHY_MD } from "@/lib/ai/docs.generated";
-import { requireUser } from "@/lib/supabase/require-user";
+
+export type IssueChatClaudeInput = {
+  issueTitle: string;
+  issueDetail?: string;
+  subjectName: string;
+  teacherName: string;
+  userInput: string;
+  fallbackText: string;
+};
 
 let cachedSystemPrompt: string | null = null;
 function getSystemPrompt(): string {
@@ -38,19 +45,15 @@ ${PHILOSOPHY_MD}
   return cachedSystemPrompt;
 }
 
-export type IssueChatClaudeInput = {
-  issueTitle: string;
-  issueDetail?: string;
-  subjectName: string;
-  teacherName: string;
-  userInput: string;
-  fallbackText: string;
+export type IssueChatApiRequest = {
+  system: Anthropic.TextBlockParam[];
+  messages: Anthropic.MessageParam[];
 };
 
-export async function issueChatRespondViaClaude(
+/** 課題 chat の API リクエスト (system + messages) を組み立てる。 */
+export function buildIssueChatRequest(
   input: IssueChatClaudeInput,
-): Promise<string> {
-  await requireUser();
+): IssueChatApiRequest {
   const userMessage = `## 課題
 タイトル: ${input.issueTitle}
 ${input.issueDetail ? `詳細: ${input.issueDetail}` : ""}
@@ -71,9 +74,7 @@ mock 応答と同じ方向性 (= 次のアクション誘導 / quickReplies の�
 新 PHILOSOPHY (コーチング・ファースト型のティーチング = 受動的補助、ファインマン式)
 整合の口調・文言で。応答テキストのみ。`;
 
-  const res = await getAnthropicClient().messages.create({
-    model: MODEL_OPUS,
-    max_tokens: 600,
+  return {
     system: [
       {
         type: "text",
@@ -82,11 +83,5 @@ mock 応答と同じ方向性 (= 次のアクション誘導 / quickReplies の�
       },
     ],
     messages: [{ role: "user", content: userMessage }],
-  });
-
-  const textBlock = res.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("Claude returned no text block (B2 issue-chat).");
-  }
-  return textBlock.text;
+  };
 }

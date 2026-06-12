@@ -27,9 +27,11 @@ import { MOCK_HANDOFFS } from "@/lib/learn/mock-data";
 import {
   buildInitialIssueChat,
   buildNextIssueChatReply,
-  buildNextIssueChatReplyAsync,
+  prepareIssueChatReply,
   type IssueChatStep,
 } from "@/lib/learn/issue-chat-mock";
+import { streamNdjsonText } from "@/lib/ai/stream-client";
+import { MarkdownText } from "@/components/chat/MarkdownText";
 
 type Props = {
   issue: Issue;
@@ -57,6 +59,9 @@ export function IssueChat({
 }: Props) {
   const resolved = issue.status === "resolved";
   const [isThinking, setIsThinking] = useState(false);
+  // ストリーミング中の途中経過 (第 2 弾、2026-06-12)。非空なら「考え中…」の代わりに
+  // 逐次伸びる吹き出しを出す。
+  const [streamingText, setStreamingText] = useState<string | null>(null);
   const stepRef = useRef<IssueChatStep>({
     issueId: issue.id,
     turnCount: issue.chatThread?.length ?? 0,
@@ -115,10 +120,10 @@ export function IssueChat({
     return nodes.find((n) => n.id === msg.nodeId)?.name;
   }, [issue, chatMessages, nodes]);
 
-  // 末尾までスクロール
+  // 末尾までスクロール (ストリーミング中の途中経過でも追従)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [thread.length, isThinking]);
+  }, [thread.length, isThinking, streamingText]);
 
   // 最後の teacher メッセージから quickReplies を引く
   const lastTeacherMessage = [...thread]
@@ -139,19 +144,43 @@ export function IssueChat({
     };
     onAppendMessages([learnerMsg]);
     setIsThinking(true);
-    // 思考演出（600ms）→ async 応答生成 (B2 C76: NEXT_PUBLIC_USE_CLAUDE_API=true
-    // なら Claude 経由、それ以外は mock fallback)
+    // 思考演出（600ms）→ 応答生成。ストリーミング化 (第 2 弾、2026-06-12):
+    // mock が reply 構造 (quickReplies / resolve シグナル) を同期で組み立て、Claude 対象
+    // なら text だけを /api/issue-chat からストリーミングで受けて逐次表示→確定置換。
+    // grill 確定: 途中で切れたら出た分を残して謝る / 全失敗は mock 文維持 (動線止めない)。
     setTimeout(() => {
       void (async () => {
         try {
-          const result = await buildNextIssueChatReplyAsync({
+          const { result, claude } = prepareIssueChatReply({
             state: stepRef.current,
             issue,
             userInput: text,
             // 教科名・先生名は subjects から取得 (本実装では subjects prop が必要)、
             // 現状は IssueChat に渡ってきてないので default の "教科" / persona.displayName
-            // を Server Action 側で使う
           });
+          if (claude) {
+            try {
+              const { text: aiText, errored } = await streamNdjsonText(
+                "/api/issue-chat",
+                claude,
+                (t) => setStreamingText(t),
+              );
+              const trimmed = aiText.trim();
+              if (!errored && trimmed.length > 0) {
+                result.reply.text = trimmed;
+              } else if (errored && trimmed.length > 0) {
+                result.reply.text = `${trimmed}\n\n…ごめん、途中で止まっちゃった💦 続きはもう一回聞いてね。`;
+              }
+              // 全失敗は mock 文維持
+            } catch (err) {
+              console.error(
+                "[B2] issue-chat ストリーミング失敗、mock 文維持:",
+                err,
+              );
+            } finally {
+              setStreamingText(null);
+            }
+          }
           stepRef.current = result.nextState;
           onAppendMessages([result.reply]);
           if (result.shouldResolve) {
@@ -159,7 +188,7 @@ export function IssueChat({
             onResolve();
           }
         } catch (err) {
-          console.error("[B2] issue-chat async failed, fallback sync:", err);
+          console.error("[B2] issue-chat 応答生成失敗、fallback sync:", err);
           const result = buildNextIssueChatReply({
             state: stepRef.current,
             issue,
@@ -240,16 +269,29 @@ export function IssueChat({
               resolved={resolved}
             />
           ))}
-          {isThinking && (
+          {/* ストリーミング中の途中経過 (書かれた端から伸びる吹き出し、grill Q2) */}
+          {streamingText != null && streamingText.length > 0 && (
             <div className="flex items-start gap-2.5">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
                 あ
               </div>
-              <div className="rounded-2xl rounded-tl-md border border-border bg-card px-3.5 py-2.5 text-sm text-muted-foreground">
-                <span className="animate-pulse">考え中…</span>
+              <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-border bg-card px-3.5 py-2.5 text-sm">
+                <MarkdownText text={streamingText} variant="card" />
               </div>
             </div>
           )}
+          {/* 最初の文字が出るまでは従来どおり「考え中…」 */}
+          {isThinking &&
+            (streamingText == null || streamingText.length === 0) && (
+              <div className="flex items-start gap-2.5">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                  あ
+                </div>
+                <div className="rounded-2xl rounded-tl-md border border-border bg-card px-3.5 py-2.5 text-sm text-muted-foreground">
+                  <span className="animate-pulse">考え中…</span>
+                </div>
+              </div>
+            )}
           <div ref={bottomRef} />
         </div>
       </div>

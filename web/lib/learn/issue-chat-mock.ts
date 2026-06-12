@@ -11,7 +11,7 @@
  * - クリア用 keyword は厳密に判定（誤クリア防止）
  */
 import type { ChatMessage, Issue, IssueChatMessage } from "./types";
-import { issueChatRespondViaClaude } from "./issue-chat-claude";
+import type { IssueChatClaudeInput } from "./issue-chat-shared";
 
 /** 科目の先生（英語担当）の persona。表示用の固定情報は MOCK_SUBJECTS[0].teacher に集約済み */
 export const SUBJECT_TEACHER_PERSONA = {
@@ -229,45 +229,45 @@ export function buildNextIssueChatReply(args: {
 }
 
 /**
- * B2 (C76 2026-06-04): buildNextIssueChatReply の async wrapper。
+ * ストリーミング化 (2026-06-12、第 2 弾): Claude を呼ばずに「reply 構造 + Claude に
+ * 投げるリクエスト」を同期で返す。呼び出し元 (IssueChat) が /api/issue-chat へ
+ * ストリーミングで投げ、text だけを逐次表示→確定置換する。
  *
- * NEXT_PUBLIC_USE_CLAUDE_API=true なら、同期版で reply 構造を作った後に
- * Claude で text のみ書き換える post-process パターン。
- * resolve シグナル (= 「クリア」発話) と quickReplies は維持。
- * Claude 失敗時は mock のまま (動線止めない、C56 と同規律)。
+ * 旧 buildNextIssueChatReplyAsync (B2 C76、Server Action で全文待ち) の置き換え。
+ * resolve シグナル (= 「クリア」発話) と quickReplies は mock のまま維持。
+ * claude: null なら Claude 対象外 (flag off / resolve 発話) = mock のまま即表示。
+ * ストリーム失敗時の fallback は呼び出し元が reply.text (= mock 文) を維持する。
  */
-export async function buildNextIssueChatReplyAsync(args: {
+export function prepareIssueChatReply(args: {
   state: IssueChatStep;
   issue: Issue;
   userInput: string;
   subjectName?: string;
   teacherName?: string;
-}): Promise<{
-  reply: IssueChatMessage;
-  nextState: IssueChatStep;
-  shouldResolve?: boolean;
-}> {
+}): {
+  result: {
+    reply: IssueChatMessage;
+    nextState: IssueChatStep;
+    shouldResolve?: boolean;
+  };
+  claude: IssueChatClaudeInput | null;
+} {
   const result = buildNextIssueChatReply({
     state: args.state,
     issue: args.issue,
     userInput: args.userInput,
   });
   const useClaude = process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true";
-  if (!useClaude || result.shouldResolve) return result;
-  try {
-    const aiText = await issueChatRespondViaClaude({
+  if (!useClaude || result.shouldResolve) return { result, claude: null };
+  return {
+    result,
+    claude: {
       issueTitle: args.issue.title,
       issueDetail: args.issue.detail,
       subjectName: args.subjectName ?? "教科",
       teacherName: args.teacherName ?? SUBJECT_TEACHER_PERSONA.displayName,
       userInput: args.userInput,
       fallbackText: result.reply.text ?? "",
-    });
-    if (aiText && aiText.trim().length > 0) {
-      result.reply.text = aiText.trim();
-    }
-  } catch (err) {
-    console.error("[B2] issue-chat Claude failed, mock text 維持:", err);
-  }
-  return result;
+    },
+  };
 }

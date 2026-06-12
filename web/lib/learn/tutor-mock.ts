@@ -44,10 +44,7 @@ import {
   MOCK_TREE,
 } from "./mock-data";
 import { searchTutorThreads } from "./tutor-thread-storage";
-import {
-  tutorClaudeRespondToPlanRequest,
-  tutorClaudeRespondToScene,
-} from "./tutor-claude";
+import type { TutorClaudeRequest } from "./tutor-chat-shared";
 import {
   detectTeachingRequest,
   labelForTeachingCategory,
@@ -2997,22 +2994,25 @@ function detectSearchIntent(input: string): string | null {
 }
 
 // Phase 6 smoke test (C56): NEXT_PUBLIC_USE_CLAUDE_API=true のときに「計画立てよう」入口の
-// 1 発話だけ Claude Opus 4.8 で生成する async wrapper。matchesPlanRequest 以外は
-// 既存の同期 buildNextTutorReply に委譲、Claude 呼び出し失敗時も mock に fallback する。
-// 既存同期関数を破壊しない並走方式 — caller (TutorWorkspace) だけが await に切替わる。
+// ストリーミング化 (2026-06-12、第 2 弾): Claude を呼ばずに「reply 構造 + Claude に
+// 投げるリクエスト」を同期で返す。呼び出し元 (TutorWorkspace.generateReply) が
+// /api/tutor-chat へストリーミングで投げ、text だけを逐次表示→確定置換する。
 //
-// C73 (2026-06-04): 拡張。「計画立てよう」入口以外のシーンも post-process で Claude 化:
+// 旧 buildNextTutorReplyAsync (C56/C73、Server Action で全文待ち) の置き換え:
 // 1. 同期版 buildNextTutorReply で reply 構造 (card / quickReplies / topic / state) を組み立て
-// 2. inferSceneFromResult で state 遷移からシーン識別子を推定
-// 3. シーン識別子があれば buildSceneContext で context 構築 → tutorClaudeRespondToScene で
-//    text のみ Claude で書き換え (= card / quickReplies は維持、reply.text のみ置換)
-// 4. Claude 失敗時は text を mock のまま維持 = 動線止めない
-export async function buildNextTutorReplyAsync(args: {
+// 2. 「計画立てよう」入口は subject-picker カード付き特殊 reply + plan-request リクエスト (C56)
+// 3. それ以外は inferSceneFromResult でシーン推定 → scene リクエスト (C73)
+// 4. claude: null なら Claude 対象外 (= mock のまま即表示)。ストリーム失敗時の
+//    fallback は呼び出し元が reply.text (= mock 文) を維持する = 動線止めない
+export function prepareTutorReply(args: {
   state: TutorStep;
   userInput: string;
-}): Promise<{ reply: TutorMessage; nextState: TutorStep }> {
+}): {
+  result: { reply: TutorMessage; nextState: TutorStep };
+  claude: TutorClaudeRequest | null;
+} {
   const useClaude = process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true";
-  if (!useClaude) return buildNextTutorReply(args);
+  if (!useClaude) return { result: buildNextTutorReply(args), claude: null };
 
   const lower = args.userInput.toLowerCase().trim();
   const matchesPlanRequest =
@@ -3023,65 +3023,53 @@ export async function buildNextTutorReplyAsync(args: {
     lower.includes("新しい計画立") ||
     lower.includes("plan");
 
-  // C56 既存ルート: 「計画立てよう」入口の特殊処理 (subject-picker カード付与 + 専用 prompt)
+  // C56 既存ルート: 「計画立てよう」入口の特殊処理 (subject-picker カード付与 + 専用 prompt)。
+  // fallback 文は同期 mock の reply.text を流用 (Claude 全失敗でも発話が空にならない)。
   if (matchesPlanRequest) {
-    try {
-      const claudeText = await tutorClaudeRespondToPlanRequest(args.userInput);
-      const now = new Date().toISOString();
-      const reply: TutorMessage = {
-        id: makeId(),
-        role: "tutor",
-        text: claudeText,
-        card: {
-          kind: "subject-picker",
-          options: MOCK_SUBJECTS.map((s) => ({
-            subjectId: s.id,
-            label: s.name,
-          })),
-        },
-        createdAt: now,
-      };
-      reply.topic = deriveTutorTopic(
-        "plan-await-subject",
-        reply.rightPaneAction,
-      );
-      return {
+    const mockResult = buildNextTutorReply(args);
+    const now = new Date().toISOString();
+    const reply: TutorMessage = {
+      id: makeId(),
+      role: "tutor",
+      text: mockResult.reply.text ?? "",
+      card: {
+        kind: "subject-picker",
+        options: MOCK_SUBJECTS.map((s) => ({
+          subjectId: s.id,
+          label: s.name,
+        })),
+      },
+      createdAt: now,
+    };
+    reply.topic = deriveTutorTopic("plan-await-subject", reply.rightPaneAction);
+    return {
+      result: {
         nextState: {
           ...args.state,
           state: "plan-await-subject",
           proposedPlanType: "regular-study",
         },
         reply,
-      };
-    } catch (err) {
-      console.error(
-        "[Phase 6 smoke test] Claude call failed, fallback to mock:",
-        err,
-      );
-      return buildNextTutorReply(args);
-    }
+      },
+      claude: { kind: "plan-request", userInput: args.userInput },
+    };
   }
 
-  // C73 新ルート: 同期版で reply を作って、シーン推定 + Claude post-process で text 上書き
+  // C73 ルート: 同期版で reply を作って、シーン推定。該当シーンが無ければ mock のまま。
   const result = buildNextTutorReply(args);
   const scene = inferSceneFromResult(result, args);
-  if (!scene) return result;
+  if (!scene) return { result, claude: null };
 
-  try {
-    const sceneContext = buildSceneContext(scene, result, args);
-    const aiText = await tutorClaudeRespondToScene({
+  return {
+    result,
+    claude: {
+      kind: "scene",
       scene,
-      sceneContext,
+      sceneContext: buildSceneContext(scene, result, args),
       userInput: args.userInput,
       fallbackText: result.reply.text ?? "",
-    });
-    if (aiText && aiText.trim().length > 0) {
-      result.reply.text = aiText.trim();
-    }
-  } catch (err) {
-    console.error(`[C73] Claude scene "${scene}" failed, mock text 維持:`, err);
-  }
-  return result;
+    },
+  };
 }
 
 /**

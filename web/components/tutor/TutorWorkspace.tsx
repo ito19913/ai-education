@@ -126,12 +126,13 @@ import {
   clearDailyPickCompleted,
 } from "@/lib/today/daily-picks-repo";
 import { getPlanSegments } from "@/lib/plans/plan-progress";
-import { tutorClaudeRespondToScene } from "@/lib/learn/tutor-claude";
+import { streamNdjsonText } from "@/lib/ai/stream-client";
+import type { TutorClaudeRequest } from "@/lib/learn/tutor-chat-shared";
 import { DEFAULT_EVENT_LABELS } from "@/lib/learn/event-colors";
 import {
   buildInitialTutorThread,
   buildNextTutorReply,
-  buildNextTutorReplyAsync,
+  prepareTutorReply,
   EVENING_RITUAL_LAST_DATE_KEY,
   MORNING_MODE_ENABLED,
   emptySchoolReportDraft,
@@ -2141,6 +2142,34 @@ export function TutorWorkspace({
   }, []);
 
   /** 儀式の入口発話 (候補ピッカーカード付き)。Claude flag on なら text を言い換え。 */
+  // ----- ゆい chat ストリーミング (レビュー Phase 2-⑤ 第 2 弾、2026-06-12) -----
+  // Claude 言い換え (plan-request / scene 汎用 / day-start / day-close) を
+  // /api/tutor-chat からストリーミングで受け、途中経過を TutorChat の吹き出しに流す。
+  // grill 確定: 途中で切れたら出た分を残して謝る / 全失敗は mock 文維持 (動線止めない)。
+  const [yuiStreamingText, setYuiStreamingText] = useState<string | null>(null);
+  const streamYuiText = useCallback(
+    async (req: TutorClaudeRequest, fallbackText: string): Promise<string> => {
+      try {
+        const { text, errored } = await streamNdjsonText(
+          "/api/tutor-chat",
+          req,
+          (t) => setYuiStreamingText(t),
+        );
+        const trimmed = text.trim();
+        if (!errored && trimmed.length > 0) return trimmed;
+        if (errored && trimmed.length > 0)
+          return `${trimmed}\n\n…ごめん、途中で止まっちゃった💦 続きはもう一回聞いてね。`;
+        return fallbackText;
+      } catch (err) {
+        console.error("[ゆい chat] ストリーミング失敗、mock 文維持:", err);
+        return fallbackText;
+      } finally {
+        setYuiStreamingText(null);
+      }
+    },
+    [],
+  );
+
   const buildDayRitualReply = useCallback(
     async (userInput: string): Promise<TutorMessage> => {
       const { assignments, books } = computeDayCandidates();
@@ -2151,8 +2180,9 @@ export function TutorWorkspace({
           ? "今日なにやる? 登録済みで選べるものはないけど、新しく出た宿題があったらここから登録してね👇 プランのまとまりだけでも OK!"
           : "いいね、今日やること決めよう! 候補はこのへんだよ👇 やるやつをタップしてね。\n\nもちろん「今日はプランだけ」でも全然 OK だよ。";
       if (process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true") {
-        try {
-          const aiText = await tutorClaudeRespondToScene({
+        text = await streamYuiText(
+          {
+            kind: "scene",
             scene: "day-start",
             sceneContext: {
               assignmentCount: assignments.length,
@@ -2162,14 +2192,9 @@ export function TutorWorkspace({
             },
             userInput,
             fallbackText: text,
-          });
-          if (aiText && aiText.trim().length > 0) text = aiText.trim();
-        } catch (err) {
-          console.error(
-            '[Phase B] Claude scene "day-start" failed, mock text 維持:',
-            err,
-          );
-        }
+          },
+          text,
+        );
       }
       return {
         id: `t-day-${Date.now()}`,
@@ -2180,7 +2205,7 @@ export function TutorWorkspace({
         createdAt: now,
       };
     },
-    [computeDayCandidates],
+    [computeDayCandidates, streamYuiText],
   );
 
   /** 儀式の締め (「今日はプランだけ」「これで OK」)。 */
@@ -2193,8 +2218,9 @@ export function TutorWorkspace({
           ? "OK! 今日の分はダッシュボードの「きょう決めたこと」に出てるよ📌 さっそく始めよう🔥"
           : "OK! 今日はプランの「つぎのまとまり」を進めよう💪 ダッシュボードから始めてね。";
       if (process.env.NEXT_PUBLIC_USE_CLAUDE_API === "true") {
-        try {
-          const aiText = await tutorClaudeRespondToScene({
+        text = await streamYuiText(
+          {
+            kind: "scene",
             scene: "day-close",
             sceneContext: {
               pickedCount,
@@ -2202,14 +2228,9 @@ export function TutorWorkspace({
             },
             userInput,
             fallbackText: text,
-          });
-          if (aiText && aiText.trim().length > 0) text = aiText.trim();
-        } catch (err) {
-          console.error(
-            '[Phase B] Claude scene "day-close" failed, mock text 維持:',
-            err,
-          );
-        }
+          },
+          text,
+        );
       }
       return {
         id: `t-dayclose-${Date.now()}`,
@@ -2218,7 +2239,7 @@ export function TutorWorkspace({
         createdAt: now,
       };
     },
-    [dayPicks],
+    [dayPicks, streamYuiText],
   );
 
   // 宿題・テストをタップ → pick 追加 + 「他にもやる?」(B-6)
@@ -2431,17 +2452,25 @@ export function TutorWorkspace({
       ) {
         return buildDayCloseReply(userInput);
       }
-      const result = await buildNextTutorReplyAsync({
+      // ストリーミング化 (第 2 弾): mock が reply 構造 (card / state 遷移) を同期で組み立て、
+      // Claude 対象シーンなら text だけを /api/tutor-chat からストリーミングで受ける。
+      const { result, claude } = prepareTutorReply({
         state: tutorStepRef.current,
         userInput,
       });
+      if (claude) {
+        result.reply.text = await streamYuiText(
+          claude,
+          result.reply.text ?? "",
+        );
+      }
       tutorStepRef.current = result.nextState;
       if (result.reply.rightPaneAction) {
         applyRightPaneAction(result.reply.rightPaneAction);
       }
       return result.reply;
     },
-    [applyRightPaneAction, buildDayRitualReply, buildDayCloseReply],
+    [applyRightPaneAction, buildDayRitualReply, buildDayCloseReply, streamYuiText],
   );
 
   const onPickSubject = useCallback(
@@ -2737,6 +2766,7 @@ export function TutorWorkspace({
             initialMessages={tutorMessages}
             messages={tutorMessages}
             setMessages={setTutorMessages}
+            streamingText={yuiStreamingText}
             nodes={nodes}
             issues={issues}
             scheduleItems={scheduleToday}

@@ -22,6 +22,7 @@ import type {
   TutorTopic,
 } from "@/lib/learn/types";
 import { TUTOR_PERSONA } from "@/lib/learn/tutor-mock";
+import { MarkdownText } from "@/components/chat/MarkdownText";
 import { TutorAvatar } from "./TutorAvatar";
 import { TutorMessageBubble } from "./TutorMessageBubble";
 import { TutorComposer } from "./TutorComposer";
@@ -41,6 +42,9 @@ type Props = {
     userInput: string;
     history: TutorMessage[];
   }) => Promise<TutorMessage>;
+  /** ストリーミング中の途中経過 (第 2 弾、2026-06-12)。null=生成していない。
+   *  非空ならタイピングドットの代わりに逐次伸びる吹き出しを出す。 */
+  streamingText?: string | null;
   /** カード（教科ピッカー / 教材ピッカー）が選択された時に、
    *  会話の状態を進めるためのフック */
   onPickSubject: (subjectId: string, label: string) => TutorMessage;
@@ -88,6 +92,7 @@ export function TutorChat({
   issues,
   scheduleItems,
   generateReply,
+  streamingText,
   onPickSubject,
   onPickMaterial,
   onPickDuration,
@@ -114,10 +119,10 @@ export function TutorChat({
   const [isThinking, setIsThinking] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  // 新メッセージが入ったら一番下にスクロール
+  // 新メッセージが入ったら一番下にスクロール (ストリーミング中の途中経過でも追従)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, isThinking]);
+  }, [messages.length, isThinking, streamingText]);
 
   // 最新の AI メッセージ（quickReplies / card を見るため）
   const lastTutorMessage = useMemo(
@@ -341,18 +346,29 @@ export function TutorChat({
             />
           ))}
 
-          {isThinking && (
-            <div className="flex items-center gap-2.5">
+          {/* ストリーミング中の途中経過 (書かれた端から伸びる吹き出し、grill Q2) */}
+          {streamingText != null && streamingText.length > 0 && (
+            <div className="flex items-start gap-2.5">
               <TutorAvatar size="md" />
-              <div className="rounded-2xl rounded-tl-md border border-border bg-card px-3.5 py-2.5">
-                <div className="flex gap-1">
-                  <Dot delay={0} />
-                  <Dot delay={150} />
-                  <Dot delay={300} />
-                </div>
+              <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-border bg-card px-3.5 py-2.5">
+                <MarkdownText text={streamingText} variant="card" />
               </div>
             </div>
           )}
+          {/* 最初の文字が出るまでは従来どおりタイピングドット */}
+          {isThinking &&
+            (streamingText == null || streamingText.length === 0) && (
+              <div className="flex items-center gap-2.5">
+                <TutorAvatar size="md" />
+                <div className="rounded-2xl rounded-tl-md border border-border bg-card px-3.5 py-2.5">
+                  <div className="flex gap-1">
+                    <Dot delay={0} />
+                    <Dot delay={150} />
+                    <Dot delay={300} />
+                  </div>
+                </div>
+              </div>
+            )}
 
           {/* scroll sentinel */}
           <div ref={bottomRef} aria-hidden="true" />
