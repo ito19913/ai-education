@@ -139,6 +139,19 @@ export function TutorChat({
           history: [...messages, userMsg],
         });
         setMessages((prev) => appendReplyWithSection(prev, reply));
+      } catch (err) {
+        // 黙って失敗しない (2026-06-12 レビュー指摘): 通信断等で返信生成が落ちても
+        // 子に「無視された」と感じさせず、再送を促す (入力済みの発話は履歴に残っている)。
+        console.error("[ゆい chat] 返信生成失敗:", err);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `t-error-${Date.now()}`,
+            role: "tutor",
+            text: "ごめん、うまく返事できなかった…もう一回送ってみてくれる?",
+            createdAt: new Date().toISOString(),
+          },
+        ]);
       } finally {
         setIsThinking(false);
       }
@@ -228,6 +241,18 @@ export function TutorChat({
       try {
         const reply = await run();
         setMessages((prev) => appendReplyWithSection(prev, reply));
+      } catch (err) {
+        // 黙って失敗しない (2026-06-12 レビュー指摘、appendThenReply と同パターン)。
+        console.error("[ゆい chat] 儀式ピッカー処理失敗:", err);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `t-error-${Date.now()}`,
+            role: "tutor",
+            text: "ごめん、うまくできなかった…もう一回選んでみてくれる?",
+            createdAt: new Date().toISOString(),
+          },
+        ]);
       } finally {
         setIsThinking(false);
       }

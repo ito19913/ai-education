@@ -152,6 +152,7 @@ import type {
   EventLabel,
   EventLabelColor,
   ExamPrep,
+  GuidedBlock,
   Homework,
   Issue,
   IssueChatMessage,
@@ -1111,6 +1112,22 @@ export function TutorWorkspace({
     }
   }, []);
 
+  // ガイドプラン保存の親 state 書き戻し (2026-06-12 レビュー指摘の修正)。
+  // MaterialReadPane の guidedPlansMap はマウント時の material.guidedPlans から
+  // 初期化されるため、ここで materials を更新しないと次回マウントが古い map になり、
+  // 別まとまりの保存が他まとまりのプラン・青枠調整を DB から消す (stale 全置換)。
+  // DB への保存は MaterialReadPane 側 (persistGuidedPlans) が担当、ここは state のみ。
+  const handleGuidedPlansSaved = useCallback(
+    (materialId: string, plans: Record<string, GuidedBlock[]>) => {
+      setMaterials((prev) =>
+        prev.map((m) =>
+          m.id === materialId ? { ...m, guidedPlans: plans } : m,
+        ),
+      );
+    },
+    [],
+  );
+
   // ----- 教材削除 (C46 F、ito19 さん意見): in-memory 削除 + ゆい発話 + 一覧に戻す -----
   const handleMaterialDeleted = useCallback(
     (id: string) => {
@@ -1388,7 +1405,14 @@ export function TutorWorkspace({
         }
       }
       setNoteEntries((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+        prev.map((e) =>
+          e.id === id
+            ? // updatedAt も載せる (2026-06-12 レビュー指摘): 2 周目プラン (countFrom) の
+              // 進捗は updatedAt >= countFrom で導出するため、in-memory が古いままだと
+              // リロードするまでダッシュボードの「済み」が動かなかった。
+              { ...e, ...patch, updatedAt: new Date().toISOString() }
+            : e,
+        ),
       );
       if (isSupabaseConfigured()) {
         void updateNoteEntry(id, patch).catch((err) =>
@@ -2631,6 +2655,7 @@ export function TutorWorkspace({
             onAssignmentDone={() =>
               handleToggleAssignmentStatus(readMaterial.id, "done")
             }
+            onGuidedPlansSaved={handleGuidedPlansSaved}
             notedSegmentIds={
               // ★ segment id は教材内ユニーク (seg-1 等) なので、必ず教材で絞る。
               //   絞らないと別教材の同名 seg がこの教材の緑チェックに誤マッチする。

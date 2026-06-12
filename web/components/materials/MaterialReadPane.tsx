@@ -136,6 +136,16 @@ type Props = {
   onAssignmentIssues?: (found: DetectedAssignmentIssue[]) => void;
   /** 宿題「AI と解く」: 子が「ぜんぶ解けた!」と宣言した時 (親が assignmentStatus=done に) */
   onAssignmentDone?: () => void;
+  /**
+   * ガイドプラン保存時に最新 map を親へ書き戻す (2026-06-12 レビュー指摘の修正)。
+   * guidedPlansMap はマウント時の material.guidedPlans から初期化されるため、これが
+   * 無いと「読書ビューを開き直す→別まとまりで保存」で古い map が DB を全置換し、
+   * 他まとまりのプラン・手動調整した青枠が消えていた。
+   */
+  onGuidedPlansSaved?: (
+    materialId: string,
+    plans: Record<string, GuidedBlock[]>,
+  ) => void;
 };
 
 // まとまり全体を vision で渡す時の最大ページ数 (payload / 速度の上限、M8)。
@@ -348,6 +358,7 @@ export function MaterialReadPane({
   onStudyMinute,
   onAssignmentIssues,
   onAssignmentDone,
+  onGuidedPlansSaved,
 }: Props) {
   // 狭い画面では縦スタック (rail は隠す)、広い画面では横3ペイン。
   const isMobile = useIsMobile();
@@ -376,6 +387,11 @@ export function MaterialReadPane({
   const [guidedPlansMap, setGuidedPlansMap] = useState<
     Record<string, GuidedBlock[]>
   >(() => material.guidedPlans ?? {});
+  // 最新 map のミラー (persistGuidedPlans が stale closure を踏まないため)。
+  const guidedPlansMapRef = useRef(guidedPlansMap);
+  useEffect(() => {
+    guidedPlansMapRef.current = guidedPlansMap;
+  }, [guidedPlansMap]);
   // ズーム倍率。1 = エリアにフィット、>1 で拡大 (スクロール)。
   const [zoom, setZoom] = useState(1);
   // ページの縦横比 (width / height)。フィット計算に使う。
@@ -687,6 +703,27 @@ export function MaterialReadPane({
     [loaded, numPages],
   );
 
+  // ガイドプランを session キャッシュ + map + DB + 親 materials state へ一括反映する
+  // 唯一の保存口 (startGuided / startAssignment / commitGuidedBbox が共用)。
+  // ★親への書き戻し (onGuidedPlansSaved) が肝: これが無いと次回マウントの初期 map が
+  // 古く、別まとまりの保存で他まとまりのプラン・青枠調整を DB から消していた
+  // (2026-06-12 レビュー指摘の stale 全置換バグ修正)。
+  const persistGuidedPlans = useCallback(
+    (segId: string, blocks: GuidedBlock[]) => {
+      sessionGuidedPlanCache.set(segId, blocks);
+      const next = { ...guidedPlansMapRef.current, [segId]: blocks };
+      guidedPlansMapRef.current = next;
+      setGuidedPlansMap(next);
+      if (isSupabaseConfigured()) {
+        updateMaterialGuidedPlans(material.id, next).catch((e) =>
+          console.error("[ガイド読書] プラン保存失敗:", e),
+        );
+      }
+      onGuidedPlansSaved?.(material.id, next);
+    },
+    [material.id, onGuidedPlansSaved],
+  );
+
   // M6: 指定した まとまり (target) のオリエンを葵に語らせる。範囲先頭へジャンプ →
   // 「今日はここ(p.X〜Y)を『○○』として勉強しよう。まず通して読もう」と案内 (2フェーズ①)。
   // target が null の時は「今表示ページの説明」フォールバック (まとまり未生成の本)。
@@ -845,19 +882,9 @@ export function MaterialReadPane({
           ];
           generated = true; // フォールバックも保存対象 (ロジック統一・以後再生成しない)
         }
-        // 新規生成したプランは session キャッシュ + map に入れて DB へ永続化。
+        // 新規生成したプランは session キャッシュ + map + DB + 親 state へ反映。
         if (generated) {
-          const plan = blocks;
-          sessionGuidedPlanCache.set(seg.id, plan);
-          setGuidedPlansMap((prev) => {
-            const next = { ...prev, [seg.id]: plan };
-            if (isSupabaseConfigured()) {
-              updateMaterialGuidedPlans(material.id, next).catch((e) =>
-                console.error("[ガイド読書] プラン保存失敗:", e),
-              );
-            }
-            return next;
-          });
+          persistGuidedPlans(seg.id, blocks);
         }
         // 最初のブロックを「選択」状態にする (まだ読まない、G-2)。子が「ここを解説」で読む。
         setGuidedBlocks(blocks);
@@ -887,6 +914,7 @@ export function MaterialReadPane({
       notedSegmentIds,
       guidedPlansMap,
       onLogRead,
+      persistGuidedPlans,
     ],
   );
 
@@ -983,17 +1011,7 @@ export function MaterialReadPane({
         generated = true;
       }
       if (generated) {
-        const plan = blocks;
-        sessionGuidedPlanCache.set(pseudoSeg.id, plan);
-        setGuidedPlansMap((prev) => {
-          const next = { ...prev, [pseudoSeg.id]: plan };
-          if (isSupabaseConfigured()) {
-            updateMaterialGuidedPlans(material.id, next).catch((e) =>
-              console.error("[AIと解く] 問題プラン保存失敗:", e),
-            );
-          }
-          return next;
-        });
+        persistGuidedPlans(pseudoSeg.id, blocks);
       }
       setGuidedBlocks(blocks);
       setGuidedIndex(0);
@@ -1020,6 +1038,7 @@ export function MaterialReadPane({
     subject,
     guidedPlansMap,
     onLogRead,
+    persistGuidedPlans,
   ]);
 
   // セッションの締め: つまずきをまとめて検知して親へ (自動 Issue 化、監修なし)。
@@ -1235,19 +1254,10 @@ export function MaterialReadPane({
         }
       }
 
-      // 同じブロック内の微調整: session キャッシュ + map に焼き込み、DB へ 1 回だけ永続化。
-      sessionGuidedPlanCache.set(seg.id, blocks);
-      setGuidedPlansMap((prev) => {
-        const next = { ...prev, [seg.id]: blocks };
-        if (isSupabaseConfigured()) {
-          updateMaterialGuidedPlans(material.id, next).catch((e) =>
-            console.error("[ガイド読書] 青枠保存失敗:", e),
-          );
-        }
-        return next;
-      });
+      // 同じブロック内の微調整: session キャッシュ + map + DB + 親 state へ 1 回だけ永続化。
+      persistGuidedPlans(seg.id, blocks);
     },
-    [guidedSegment, material.id, guidedIndex, pagesToShow, spread],
+    [guidedSegment, guidedIndex, pagesToShow, spread, persistGuidedPlans],
   );
 
   // 選択カーソルを動かす (API なし・即時)。ハイライトと表示ページだけ動かし、まだ読まない。
@@ -1281,7 +1291,16 @@ export function MaterialReadPane({
         guidedSegment?.conceptName ?? "",
       );
     } catch (err) {
+      // 黙って失敗しない (2026-06-12 レビュー指摘): スピナーが消えるだけだと
+      // 子は再試行すべきか分からない。handleSend と同じく葵の発話で伝える。
       console.error("[ガイド読書] 解説失敗:", err);
+      setHistory((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: "ごめん、うまく説明できなかった…もう一回「ここを解説」を押してみてくれる?",
+        },
+      ]);
     } finally {
       setGuidedBusy(false);
     }
@@ -1310,7 +1329,15 @@ export function MaterialReadPane({
           guidedSegment?.conceptName ?? "",
         );
       } catch (err) {
+        // 黙って失敗しない (2026-06-12 レビュー指摘、explainCursor と同パターン)。
         console.error("[ガイド読書] 説明調整失敗:", err);
+        setHistory((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            text: "ごめん、うまく言い直せなかった…もう一回押してみてくれる?",
+          },
+        ]);
       } finally {
         setGuidedBusy(false);
       }

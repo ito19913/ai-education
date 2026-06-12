@@ -410,6 +410,9 @@ export function ResumePane(props: Props) {
           ...existingEntry,
           aiSummary: text,
           status,
+          // updatedAt を進める (2026-06-12 レビュー指摘): 2 周目プラン (countFrom) の
+          // 「済み」導出は updatedAt >= countFrom。古いままだとリロードまで進捗が動かない。
+          updatedAt: new Date().toISOString(),
         };
         try {
           if (isSupabaseConfigured()) {

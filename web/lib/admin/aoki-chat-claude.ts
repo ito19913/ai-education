@@ -129,12 +129,17 @@ ${
   // 今回の user message。読書中なら現在ページ画像を先頭に付ける (画像 block → テキスト)。
   if (isReading) {
     const content: Anthropic.ContentBlockParam[] = [
+      // ★cache_control (breakpoint) は 1 リクエスト最大 4 個。画像全部に付けると
+      // オリエン等で 12 枚送る経路が 400 invalid_request_error になる
+      // (2026-06-12 レビュー指摘)。最後の 1 枚だけに付ける (プレフィックス
+      // マッチで先行画像もまとめてキャッシュされる)。
       ...pageImages.map(
-        (b64): Anthropic.ImageBlockParam => ({
+        (b64, i): Anthropic.ImageBlockParam => ({
           type: "image",
           source: { type: "base64", media_type: "image/jpeg", data: b64 },
-          // 同じページを連投するので prompt cache でフォローアップを安く・速く。
-          cache_control: { type: "ephemeral" },
+          ...(i === pageImages.length - 1
+            ? { cache_control: { type: "ephemeral" as const } }
+            : {}),
         }),
       ),
       { type: "text", text: input.userMessage },

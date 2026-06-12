@@ -129,11 +129,17 @@ ${getPhilosophy()}`;
 今添付されているページの中心的な論点を 1 つ選び${input.dialogue && input.dialogue.length > 0 ? "（上の対話で本人が触れた点を踏まえて）" : ""}、まとめノート用の正しい要約を JSON で返してください。`;
 
   const content: Anthropic.ContentBlockParam[] = [
+    // ★cache_control (breakpoint) は 1 リクエスト最大 4 個。画像全部に付けると
+    // 4 ページ超のまとまりで 400 invalid_request_error になり添削/要約/ヒントが
+    // 全滅する (2026-06-12 レビュー指摘)。プレフィックスマッチで先行画像も
+    // まとめてキャッシュされるため、最後の 1 枚だけに付ける。
     ...images.map(
-      (b64): Anthropic.ImageBlockParam => ({
+      (b64, i): Anthropic.ImageBlockParam => ({
         type: "image",
         source: { type: "base64", media_type: "image/jpeg", data: b64 },
-        cache_control: { type: "ephemeral" },
+        ...(i === images.length - 1
+          ? { cache_control: { type: "ephemeral" as const } }
+          : {}),
       }),
     ),
     { type: "text", text: contextText },
@@ -331,11 +337,17 @@ ${input.childBody}
 添付の教材ページを基準に、上のレジュメを 3 色で添削して JSON で返してください。答えは書かず、方向だけ示すこと。`;
 
   const content: Anthropic.ContentBlockParam[] = [
+    // ★cache_control (breakpoint) は 1 リクエスト最大 4 個。画像全部に付けると
+    // 4 ページ超のまとまりで 400 invalid_request_error になり添削/要約/ヒントが
+    // 全滅する (2026-06-12 レビュー指摘)。プレフィックスマッチで先行画像も
+    // まとめてキャッシュされるため、最後の 1 枚だけに付ける。
     ...images.map(
-      (b64): Anthropic.ImageBlockParam => ({
+      (b64, i): Anthropic.ImageBlockParam => ({
         type: "image",
         source: { type: "base64", media_type: "image/jpeg", data: b64 },
-        cache_control: { type: "ephemeral" },
+        ...(i === images.length - 1
+          ? { cache_control: { type: "ephemeral" as const } }
+          : {}),
       }),
     ),
     { type: "text", text: contextText },
@@ -511,11 +523,17 @@ ${input.childBody || "(まだ何も書けていない)"}${prevText}
 添付の教材ページを根拠に、答えは言わず、糸口を 1 つだけ短く返してください。`;
 
   const content: Anthropic.ContentBlockParam[] = [
+    // ★cache_control (breakpoint) は 1 リクエスト最大 4 個。画像全部に付けると
+    // 4 ページ超のまとまりで 400 invalid_request_error になり添削/要約/ヒントが
+    // 全滅する (2026-06-12 レビュー指摘)。プレフィックスマッチで先行画像も
+    // まとめてキャッシュされるため、最後の 1 枚だけに付ける。
     ...images.map(
-      (b64): Anthropic.ImageBlockParam => ({
+      (b64, i): Anthropic.ImageBlockParam => ({
         type: "image",
         source: { type: "base64", media_type: "image/jpeg", data: b64 },
-        cache_control: { type: "ephemeral" },
+        ...(i === images.length - 1
+          ? { cache_control: { type: "ephemeral" as const } }
+          : {}),
       }),
     ),
     { type: "text", text: contextText },
