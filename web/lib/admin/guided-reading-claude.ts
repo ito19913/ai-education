@@ -21,6 +21,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 import type { GuidedBlock } from "@/lib/learn/types";
 
 let client: Anthropic | null = null;
@@ -64,6 +65,7 @@ const VALID_KINDS: GuidedBlock["kind"][] = [
 export async function buildGuidedReadingPlan(
   input: GuidedPlanInput,
 ): Promise<GuidedBlock[]> {
+  await requireUser();
   const images = input.imagesPacked.split("\n").filter((s) => s.length > 0);
   if (images.length === 0) return [];
   // 画像 ↔ PDF 紙番号の対応を本文に明示 (画像1=p.X …)。

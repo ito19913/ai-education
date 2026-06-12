@@ -11,6 +11,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -91,6 +92,7 @@ export type AokiChatInput = {
 };
 
 export async function respondViaAokiChat(input: AokiChatInput): Promise<string> {
+  await requireUser();
   const messages: Anthropic.MessageParam[] = [];
 
   // 段階1-C: 読書ビューで今開いているページ画像 (改行連結を分割)

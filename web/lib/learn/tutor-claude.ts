@@ -1,6 +1,7 @@
 "use server";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -61,6 +62,7 @@ function getClient(): Anthropic {
 export async function tutorClaudeRespondToPlanRequest(
   userInput: string,
 ): Promise<string> {
+  await requireUser();
   const res = await getClient().messages.create({
     model: "claude-opus-4-8",
     max_tokens: 512,
@@ -106,6 +108,7 @@ export async function tutorClaudeRespondToScene(args: {
   /** mock の発話文 (= fallback、Claude に「これを温かく言い換えて」と参照させる) */
   fallbackText: string;
 }): Promise<string> {
+  await requireUser();
   const userMessage = `## 現在の場面
 シーン識別子: ${args.scene}
 

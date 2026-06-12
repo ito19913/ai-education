@@ -24,6 +24,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 
 let client: Anthropic | null = null;
 function getClient(): Anthropic {
@@ -99,6 +100,7 @@ export type RegroupTocInput = {
 export async function regroupTocIntoSegments(
   input: RegroupTocInput,
 ): Promise<RegroupedSegment[]> {
+  await requireUser();
   if (input.tocNodes.length === 0) return [];
 
   const nodeList = input.tocNodes
@@ -192,6 +194,7 @@ ${nodeList}
 export async function readPrintedPageNumbers(
   imagesPacked: string,
 ): Promise<Array<number | null>> {
+  await requireUser();
   const images = imagesPacked.split("\n").filter((s) => s.length > 0);
   if (images.length === 0) return [];
 
@@ -267,6 +270,7 @@ export type ScanVisionSegment = {
 export async function segmentScanByVision(
   input: ScanVisionInput,
 ): Promise<ScanVisionSegment[]> {
+  await requireUser();
   const images = input.imagesPacked.split("\n").filter((s) => s.length > 0);
   if (images.length === 0) return [];
   const endPdfPage = input.startPdfPage + images.length - 1;

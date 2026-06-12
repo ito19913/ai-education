@@ -13,6 +13,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 
 let client: Anthropic | null = null;
 function getClient(): Anthropic {
@@ -38,6 +39,7 @@ export type TemplateInput = {
 export async function suggestResumeTemplate(
   input: TemplateInput,
 ): Promise<string> {
+  await requireUser();
   const anthropic = getClient();
   const images = input.pageImagesPacked
     ? input.pageImagesPacked.split("\n").filter((s) => s.length > 0)

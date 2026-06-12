@@ -15,6 +15,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -93,6 +94,7 @@ export type MaterialReviewOutput = {
 export async function generateMaterialReviewViaClaude(
   input: MaterialReviewInput,
 ): Promise<MaterialReviewOutput> {
+  await requireUser();
   const userMessage = `次の教材についての評価コメント (体系図とは別の 2 レイヤ目、葵先生の見解) を生成してください。
 
 教材メタ情報:

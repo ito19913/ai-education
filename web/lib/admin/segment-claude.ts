@@ -20,6 +20,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ConceptSegment } from "@/lib/learn/types";
@@ -64,6 +65,7 @@ const SEGMENT_TEXT_MAX_CHARS = 160000;
 export async function segmentConceptsFromText(
   input: SegmentFromTextInput,
 ): Promise<ConceptSegment[]> {
+  await requireUser();
   const body = input.packedText.slice(0, SEGMENT_TEXT_MAX_CHARS).trim();
   if (body.length < 40) return [];
 

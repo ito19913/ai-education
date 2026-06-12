@@ -15,6 +15,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 
 let client: Anthropic | null = null;
 function getClient(): Anthropic {
@@ -66,6 +67,7 @@ export type OutlineDraftOutput = {
 export async function buildResumeOutlineViaClaude(
   input: OutlineDraftInput,
 ): Promise<OutlineDraftOutput> {
+  await requireUser();
   const anthropic = getClient();
 
   const system = `あなたは葵 (あおい) 先生、AI-Education の教科の先生 (ティーチング担当)。
@@ -166,6 +168,7 @@ export type PlacementOutput = {
 export async function suggestOutlinePlacement(
   input: PlacementInput,
 ): Promise<PlacementOutput> {
+  await requireUser();
   const anthropic = getClient();
   const res = await anthropic.messages.create({
     model: "claude-haiku-4-5",

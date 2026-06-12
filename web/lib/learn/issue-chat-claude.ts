@@ -10,6 +10,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -68,6 +69,7 @@ export type IssueChatClaudeInput = {
 export async function issueChatRespondViaClaude(
   input: IssueChatClaudeInput,
 ): Promise<string> {
+  await requireUser();
   const userMessage = `## 課題
 タイトル: ${input.issueTitle}
 ${input.issueDetail ? `詳細: ${input.issueDetail}` : ""}

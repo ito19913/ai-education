@@ -21,6 +21,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 import type { GuidedBlock } from "@/lib/learn/types";
 
 let client: Anthropic | null = null;
@@ -58,6 +59,7 @@ export type AssignmentPlanInput = {
 export async function buildAssignmentProblemPlan(
   input: AssignmentPlanInput,
 ): Promise<GuidedBlock[]> {
+  await requireUser();
   const images = input.imagesPacked.split("\n").filter((s) => s.length > 0);
   if (images.length === 0) return [];
   const pageMap = images
@@ -205,6 +207,7 @@ export type DetectAssignmentIssuesInput = {
 export async function detectAssignmentIssues(
   input: DetectAssignmentIssuesInput,
 ): Promise<DetectedAssignmentIssue[]> {
+  await requireUser();
   if (input.historyPacked.trim().length === 0) return [];
 
   const system = `あなたは葵 (あおい) 先生。中学生と宿題「${input.materialName}」(${input.subjectName}、${input.gradeLevel}) を 1 問ずつ答え合わせ・解説してきました。

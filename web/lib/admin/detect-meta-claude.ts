@@ -23,6 +23,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 
 const SYSTEM_PROMPT = `あなたは葵 (あおい) 先生、AI-Education プロジェクトの教科の先生 (= ティーチング担当)。
 教材 PDF の表紙・目次・奥付 (テキスト、またはスキャン PDF ではページ画像) を読み、その教材のメタ情報を判定します。
@@ -90,6 +91,7 @@ const EMPTY: DetectMetaOutput = {
 export async function detectMaterialMetaViaClaude(
   input: DetectMetaInput,
 ): Promise<DetectMetaOutput> {
+  await requireUser();
   const coverImages = input.coverImagesPacked
     ? input.coverImagesPacked.split("\n").filter((s) => s.length > 0)
     : [];

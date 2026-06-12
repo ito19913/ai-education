@@ -15,6 +15,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -83,6 +84,7 @@ export type SummarizeOutput = {
 export async function summarizeConceptForNote(
   input: SummarizeInput,
 ): Promise<SummarizeOutput> {
+  await requireUser();
   const images = input.pageImagesPacked
     ? input.pageImagesPacked.split("\n").filter((s) => s.length > 0)
     : [];
@@ -189,6 +191,7 @@ export type JudgeOutput = {
 export async function judgeExplanation(
   input: JudgeInput,
 ): Promise<JudgeOutput> {
+  await requireUser();
   const system = `あなたは葵 (あおい) 先生。子が「ある論点を自分の言葉で説明」したものを読み、
 「本当に理解しているか (= まとめノートに刻んでよいか)」を判定します。
 
@@ -279,6 +282,7 @@ export type ResumeReviewInput = {
 export async function reviewResume(
   input: ResumeReviewInput,
 ): Promise<ResumeReviewResult> {
+  await requireUser();
   const images = input.pageImagesPacked
     ? input.pageImagesPacked.split("\n").filter((s) => s.length > 0)
     : [];
@@ -412,6 +416,7 @@ export type TidyResumeInput = {
 };
 
 export async function tidyResumeBody(input: TidyResumeInput): Promise<string> {
+  await requireUser();
   const system = `あなたは葵 (あおい) 先生。子どもが書いた (または話した) レジュメ本文の
 **見た目だけ**を整えます。
 
@@ -479,6 +484,7 @@ export type ResumeHintInput = {
  * hintLevel が上がるほど少しずつ具体的にするが、答え (正しい要約そのもの) は言わない。
  */
 export async function getResumeHint(input: ResumeHintInput): Promise<string> {
+  await requireUser();
   const images = input.pageImagesPacked
     ? input.pageImagesPacked.split("\n").filter((s) => s.length > 0)
     : [];

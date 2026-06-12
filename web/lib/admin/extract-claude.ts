@@ -20,6 +20,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/supabase/require-user";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AiExtractedNode } from "@/lib/learn/types";
@@ -115,6 +116,7 @@ export type ExtractMaterialInput = {
 export async function extractKnowledgeNodesViaClaude(
   input: ExtractMaterialInput,
 ): Promise<Array<Omit<AiExtractedNode, "matchedNodeId">>> {
+  await requireUser();
   const hasTocText = !!(input.tocText && input.tocText.trim().length > 0);
   const tocImages = input.tocImagesPacked
     ? input.tocImagesPacked.split("\n").filter((s) => s.length > 0)
