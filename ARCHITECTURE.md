@@ -3586,10 +3586,16 @@ AI が続きから補える) ④導入 = **2 段階** (第 1 弾 葵 chat 系 �
 
 ### ★残ロードマップ (未対応、重要度順)
 
-**Phase 3 — 構造リファクタ (運用が落ち着いてから):**
-- 三大モノリス分割 (TutorWorkspace 2,775 / MaterialReadPane 2,238 / tutor-mock 3,285 行):
-  ドメインフック抽出 → RightPaneRouter の 35 props 解消 → モード分割
-- `lib/admin/` → `lib/ai/` 等のディレクトリ名現行化
+**Phase 3 — 構造リファクタ (着手済 2026-06-12 後段):**
+- ✅ `lib/admin/` 解体 → `lib/ai/` (AI 呼び出し系 11 ファイル) + `lib/pdf/`
+  (pdf-extract-text / session-pdf-store) に現行化 (`8808fc1`、git mv+import 置換のみ)
+- 三大モノリス分割 (TutorWorkspace / MaterialReadPane / tutor-mock):
+  **ドメインフック抽出を 1 ドメインずつ・1 コミットずつ** 進める方針。
+  - ✅ 課題 (Issue) ドメイン → `web/hooks/use-issues.ts` (`233af86`、state+DB 復元+
+    4 mutation を丸ごと移設・挙動同一)
+  - ⏳ 残りの候補 (独立性の高い順): 学習履歴 (logs/minutes) → daily picks →
+    プラン → 科目 → 教材 (最大・最後)。その後 RightPaneRouter の props 解消 →
+    MaterialReadPane のモード分割
 
 **レビューが挙げた維持すべき設計**: `as any` ゼロ + discriminated union 規律 / RLS 全テーブル同型 /
 「済みは導出、フラグは持たない」/ 子のデータを失わせない削除 / AI 出力を信用しないコード側
