@@ -106,13 +106,7 @@ import {
   softDeletePlan,
 } from "@/lib/plans/plans-repo";
 import { useLearningHistory } from "@/hooks/use-learning-history";
-import {
-  fetchDailyPicks,
-  insertDailyPick,
-  removeDailyPick,
-  markDailyPickCompleted,
-  clearDailyPickCompleted,
-} from "@/lib/today/daily-picks-repo";
+import { useDailyPicks } from "@/hooks/use-daily-picks";
 import { getPlanSegments } from "@/lib/plans/plan-progress";
 import { streamNdjsonText } from "@/lib/ai/stream-client";
 import type { TutorClaudeRequest } from "@/lib/learn/tutor-chat-shared";
@@ -138,7 +132,6 @@ import type {
   CalendarEvent,
   ChatMessage,
   ConceptSegment,
-  DailyPick,
   EventLabel,
   EventLabelColor,
   ExamPrep,
@@ -537,73 +530,17 @@ export function TutorWorkspace({
   }, []);
 
   // ----- 「その日決める枠」の pick (Phase B、2026-06-11 grill B-1〜B-8) -----
-  // real は DB から (完了→翌日の自動掃除も fetch 内)。mock は in-memory。
-  const [dayPicks, setDayPicks] = useState<DailyPick[]>([]);
-  const [dayPicksLoaded, setDayPicksLoaded] = useState(!isSupabaseConfigured());
-  useEffect(() => {
-    if (!isSupabaseConfigured()) return;
-    let cancelled = false;
-    fetchDailyPicks()
-      .then((rows) => {
-        if (!cancelled) setDayPicks(rows);
-      })
-      .catch((err) => console.error("[今日の枠] 一覧取得失敗:", err))
-      .finally(() => {
-        if (!cancelled) setDayPicksLoaded(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // pick の完了観測 (B-4/B-5): 完了フラグは導出が真実だが、「✓ を完了当日だけ見せて
-  // 翌日消す」ために観測時刻 (completedAt) をキャッシュする。learning_logs と同じく
-  // 実アクション (宿題トグル / レジュメ understood) へのフックで記録する。
-  const observeDayPickDone = useCallback(
-    (materialId: string, segmentId?: string) => {
-      const target = dayPicks.find(
-        (p) =>
-          p.materialId === materialId &&
-          (p.segmentId ?? undefined) === (segmentId ?? undefined) &&
-          !p.completedAt,
-      );
-      if (!target) return;
-      setDayPicks((prev) =>
-        prev.map((p) =>
-          p.id === target.id
-            ? { ...p, completedAt: new Date().toISOString() }
-            : p,
-        ),
-      );
-      if (isSupabaseConfigured() && !target.id.startsWith("pick-local-")) {
-        void markDailyPickCompleted(target.id).catch((err) =>
-          console.error("[今日の枠] 完了記録失敗:", err),
-        );
-      }
-    },
-    [dayPicks],
-  );
-
-  // 宿題の「やった」を「まだ」に戻した時の取り消し (翌日に消えてしまわないように)
-  const observeDayPickUndone = useCallback(
-    (materialId: string) => {
-      const target = dayPicks.find(
-        (p) => p.materialId === materialId && !p.segmentId && p.completedAt,
-      );
-      if (!target) return;
-      setDayPicks((prev) =>
-        prev.map((p) =>
-          p.id === target.id ? { ...p, completedAt: undefined } : p,
-        ),
-      );
-      if (isSupabaseConfigured() && !target.id.startsWith("pick-local-")) {
-        void clearDailyPickCompleted(target.id).catch((err) =>
-          console.error("[今日の枠] 完了取消失敗:", err),
-        );
-      }
-    },
-    [dayPicks],
-  );
+  // Phase 3 モノリス分割 (2026-06-12): daily picks ドメインは useDailyPicks に抽出。
+  const {
+    dayPicks,
+    dayPicksLoaded,
+    dayPickedKeys,
+    addDayPick,
+    handleRemoveDayPick,
+    observeDayPickDone,
+    observeDayPickUndone,
+    removePicksForMaterial,
+  } = useDailyPicks();
 
   /** 「プランに組み込む」。countFrom 指定は 2 周目 (最初からやり直す) 用。 */
   const handleCreatePlan = useCallback(
@@ -1044,18 +981,7 @@ export function TutorWorkspace({
           }
         }
       }
-      const orphanPicks = dayPicks.filter((p) => p.materialId === id);
-      if (orphanPicks.length > 0) {
-        setDayPicks((prev) => prev.filter((p) => p.materialId !== id));
-        if (isSupabaseConfigured()) {
-          for (const p of orphanPicks) {
-            if (p.id.startsWith("pick-local-")) continue;
-            void removeDailyPick(p.id).catch((err) =>
-              console.error("[教材] 関連 pick の削除失敗:", err),
-            );
-          }
-        }
-      }
+      removePicksForMaterial(id);
       const reply: TutorMessage = {
         id: `t-mat-del-${Date.now()}`,
         role: "tutor",
@@ -1069,7 +995,7 @@ export function TutorWorkspace({
       setTutorMessages((prev) => [...prev, reply]);
       navigate("materials");
     },
-    [materials, plans, dayPicks, navigate],
+    [materials, plans, removePicksForMaterial, navigate],
   );
 
   // ----- 宿題・テスト (kind="assignment"、2026-06-09) -----
@@ -1914,17 +1840,6 @@ export function TutorWorkspace({
   // 通さない (intercept でゆいの state も進めない)。選んだ pick はダッシュボード
   // 「今日のタスク」下段「きょう決めたこと」に出る。
 
-  // 既に今日の枠に入っている対象のキー (宿題 = materialId、まとまり = mat:seg)
-  const dayPickedKeys = useMemo(
-    () =>
-      new Set(
-        dayPicks.map((p) =>
-          p.segmentId ? `${p.materialId}:${p.segmentId}` : p.materialId,
-        ),
-      ),
-    [dayPicks],
-  );
-
   const computeDayCandidates = useCallback(() => {
     const subjectLabelOf = (id: string) =>
       subjects.find((s) => s.id === id)?.name ?? "—";
@@ -1971,42 +1886,6 @@ export function TutorWorkspace({
       }));
     return { assignments, books };
   }, [materials, plans, subjects, dayPickedKeys]);
-
-  /** pick を追加 (real は DB、失敗/mock は in-memory)。 */
-  const addDayPick = useCallback(
-    async (materialId: string, segmentId?: string) => {
-      if (isSupabaseConfigured()) {
-        try {
-          const ownerId = await getCurrentUserId();
-          const created = await insertDailyPick(materialId, segmentId, ownerId);
-          setDayPicks((prev) => [...prev, created]);
-          return;
-        } catch (err) {
-          console.error("[今日の枠] 追加失敗、in-memory にフォールバック:", err);
-        }
-      }
-      setDayPicks((prev) => [
-        ...prev,
-        {
-          id: `pick-local-${Date.now()}`,
-          materialId,
-          segmentId,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-    },
-    [],
-  );
-
-  /** pick を外す (「やめとく」、B-5)。 */
-  const handleRemoveDayPick = useCallback((id: string) => {
-    setDayPicks((prev) => prev.filter((p) => p.id !== id));
-    if (isSupabaseConfigured() && !id.startsWith("pick-local-")) {
-      void removeDailyPick(id).catch((err) =>
-        console.error("[今日の枠] 削除失敗:", err),
-      );
-    }
-  }, []);
 
   /** 儀式の入口発話 (候補ピッカーカード付き)。Claude flag on なら text を言い換え。 */
   // ----- ゆい chat ストリーミング (レビュー Phase 2-⑤ 第 2 弾、2026-06-12) -----
