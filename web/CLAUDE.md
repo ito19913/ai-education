@@ -1,15 +1,12 @@
-# workspace-ui-kit
+# AI-Education (web)
 
-採用管理ドメインの **4ペイン Next.js 16 × shadcn/ui ワークスペース雛形**。
-受講生向けの動かし方・業種変更手順は README を参照。
+AI 教育アプリ (教材 PDF ビューア + AI 先生チャット + まとまり/プラン管理 + レジュメ)。
+プロジェクトの SSoT は親ディレクトリの `PHILOSOPHY.md` (憲法) → `ARCHITECTURE.md` (設計) →
+`SESSION_HANDOFF.md` (セッション引継ぎ起点)。実装の前に必ず読む。
 
-## 視覚 SSoT
-
-画面の SSoT（Single Source of Truth = 情報の正本）は `components/workspace/Workspace.tsx`。
-**ADR と実装で矛盾したら ADR-003 が正、実装は段階的に追従する**。
-（ADR-0015 仕様への追従は別タスクで進める。詳細は ADR-003 §13 R1 参照）
-
-- [ADR 一覧](openspec/decision/) — ペイン責務・デザインシステム・shadcn idiom 等の決定記録
+> 注: この雛形の出自は workspace-ui-kit (採用管理サンプル)。サンプル UI
+> (`components/workspace/` ほか) は 2026-06-12 に削除済み。以下のコード生成ルールと
+> スタックは現役なので引き続き守ること。
 
 ## 同梱スキル
 
