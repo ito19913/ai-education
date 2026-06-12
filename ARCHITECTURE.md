@@ -3530,15 +3530,32 @@ Issue はこれまで in-memory のみ (MOCK_ISSUES + セッション中の追�
   「Allow new users to sign up」を**無効化** (REST の /auth/v1/settings で `disable_signup:false`
   を確認済 = 現在は第三者がサインアップ可能) ②Anthropic Console で spend limit 設定。
 
+### ✅ Phase 2 対応済 (`ccf2aa7` / `319df0b` / `09c64d3` / `70b3f29`、2026-06-12 後段)
+
+- **lib/ai 集約 + Vercel 地雷解消** (`ccf2aa7`): `lib/ai/client.ts` 新設 (lazy singleton +
+  `MODEL_OPUS`/`MODEL_HAIKU` 定数) で 13 ファイルの重複クライアントとモデル ID 26 箇所を
+  集約。PHILOSOPHY.md / TUTOR-ROLE.md のランタイム読み込み (`process.cwd()/..`) は全廃 —
+  `scripts/sync-ai-docs.mjs` が predev/prebuild で `lib/ai/docs.generated.ts` に焼き込み
+  (生成物はコミット、スクリプトを通さないチェックアウトでもビルド可)。
+- **PDF メモリ 3 点** (`319df0b`): ①登録フローの並行 3 回ロード (サムネ/テキスト抽出/
+  スキャン区切り) を `runPdfBackgroundWork` に統合 = 1 回ロード共有・直列 (186MB 本で
+  ピーク ~560MB→~190MB) ②session-pdf-store を LRU 化 (バイト予算 400MB+件数 8、
+  Storage 復元 File はメモリ常駐 Blob のため必須) ③サムネレールは画面外に出た canvas の
+  バッファを解放 (`releasePageCanvas` 新設、style.height 固定でレイアウト不変)。
+  読書ビューのオンデマンド区切りも表示中 doc を再利用 (二重ロード排除+LRU evict 耐性)。
+- **aoki-chat prompt cache** (`09c64d3`): 履歴末尾に cache breakpoint 追加 (system のみ
+  だと毎ターン履歴全体を再処理。画像 breakpoint は翌ターン履歴がテキスト化されるため
+  再利用されない)。breakpoint = system+履歴末尾+画像 = 3/4。`logAiUsage` (lib/ai/client)
+  で cache_read/cache_write を可視化。
+- **Opus→Haiku は安全な 2 箇所のみ** (`70b3f29`): メタ検知 (子に見えない+人間が確認可) と
+  「整える」(言い換え禁止の機械的整形+子が見て直せる)。**説明ゲート判定 (関所の合否) と
+  mock 発話言い換えは Opus 維持** (子の体験に直結。変更は定数 1 行なのでいつでも見直せる)。
+
 ### ★残ロードマップ (未対応、重要度順)
 
-**Phase 2 — 運用品質:**
-- `lib/ai/client.ts` 集約 (クライアント 13 重複 / モデル ID 27 箇所 / **`process.cwd()/..` の
-  PHILOSOPHY 読み込みは Vercel デプロイで全 AI 機能が死ぬ地雷** → ビルド時コピー等で解消)
-- 登録時 PDF 多重ロード直列化 / session-pdf-store LRU / サムネ canvas 解放 (186MB 本のメモリ)
-- aoki-chat の prompt cache 設計 (履歴 breakpoint) + `res.usage` ログでキャッシュヒット可視化
-- Opus→Haiku 見直し 4 箇所 (メタ検知 / 整える / 説明ゲート判定 / mock 言い換え)
-- チャット系ストリーミング化 (Server Action → Route Handler + SSE)
+**Phase 2 残り:**
+- チャット系ストリーミング化 (Server Action → Route Handler + SSE) — **要 grill**
+  (対象 chat の範囲 / 認証 / エラー UX / 体感速度がどこまで問題かの実機確認から)
 
 **Phase 3 — 構造リファクタ (運用が落ち着いてから):**
 - 三大モノリス分割 (TutorWorkspace 2,775 / MaterialReadPane 2,238 / tutor-mock 3,285 行):
