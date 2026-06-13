@@ -7,11 +7,19 @@ import path from "node:path";
 //   2. モノレポに将来取り込まれた場合でも本ディレクトリが基準になる
 const projectRoot = path.resolve(__dirname);
 
+// ★Vercel では root を固定しない★
+// Vercel は Root Directory=web を明示しており、ここで turbopack.root /
+// outputFileTracingRoot を web に固定すると、ビルド後の Vercel 側 manifest 生成が
+// `.next` をリポジトリルート (/vercel/path0/.next) で探して ENOENT になる
+// (routes-manifest-deterministic.json)。Vercel ではデフォルトに任せ、root 固定は
+// ローカル (親 lockfile 誤認識の防止) のみ適用する。
+const rootPinning: Pick<NextConfig, "turbopack" | "outputFileTracingRoot"> =
+  process.env.VERCEL
+    ? {}
+    : { turbopack: { root: projectRoot }, outputFileTracingRoot: projectRoot };
+
 const nextConfig: NextConfig = {
-  turbopack: {
-    root: projectRoot,
-  },
-  outputFileTracingRoot: projectRoot,
+  ...rootPinning,
   /**
    * まとまり生成のサーバー側ジョブ化 (2026-06-13)。
    * Cron ワーカー (app/api/cron/segment) が Node 上で pdfjs-dist (legacy build) +
