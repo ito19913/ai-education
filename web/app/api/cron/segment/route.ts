@@ -25,7 +25,10 @@ import {
   type ScanVisionSegment,
 } from "@/lib/ai/segment-scan-core";
 
-export const maxDuration = 120;
+// Hobby プランの関数上限は 60 秒 (Pro は 300 秒)。cron は毎分発火し、ジョブは
+// 再開可能なので 1 tick で終わらなくても次 tick が継ぐ (巨大スキャン本でも数 tick で完走)。
+// Pro 化したら 300 まで上げて 1 tick で進む量を増やせる。
+export const maxDuration = 60;
 
 // scan: 1 vision 呼び出しに渡す連続ページ数 (serverless のメモリ/時間に配慮し browser の 24 より小さめ)。
 const VISION_CHUNK_PAGES = 16;
@@ -33,8 +36,8 @@ const VISION_LONG_EDGE = 1000;
 const VISION_QUALITY = 0.6;
 // 巨大本の暴走防止 (超過分は打ち切り)。
 const MAX_VISION_TOTAL_PAGES = 400;
-// 1 tick で使う処理時間の上限 (関数 120s のうち余裕を残す)。これを超えたら次 tick に継ぐ。
-const TICK_BUDGET_MS = 90_000;
+// 1 tick で使う処理時間の上限 (関数 60s のうち余裕を残す)。これを超えたら次 tick に継ぐ。
+const TICK_BUDGET_MS = 45_000;
 
 // デフォルト科目 (ハードコード 5 教科) の id→名 (プロンプトの文脈用、最小依存で複製)。
 const DEFAULT_SUBJECT_NAMES: Record<string, string> = {

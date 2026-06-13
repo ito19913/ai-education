@@ -15,7 +15,8 @@ import {
   type TutorClaudeRequest,
 } from "@/lib/learn/tutor-chat-shared";
 
-export const maxDuration = 120;
+// Hobby プランの関数上限は 60 秒 (Pro は 300 秒)。ストリーミング 1 ターンには十分。
+export const maxDuration = 60;
 
 export async function POST(req: Request): Promise<Response> {
   try {

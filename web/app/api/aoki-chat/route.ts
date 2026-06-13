@@ -18,9 +18,9 @@ import {
   type AokiChatInput,
 } from "@/lib/ai/aoki-chat-shared";
 
-// Vercel: ストリーミング中も関数が生きている必要がある。長い解説 + Opus の
-// 生成時間を見込んで余裕を持たせる (ローカル dev では無視される)。
-export const maxDuration = 120;
+// Vercel: ストリーミング中も関数が生きている必要がある。
+// Hobby プランの関数上限は 60 秒 (Pro は 300 秒)。長い解説 + Opus でも 1 ターンには十分。
+export const maxDuration = 60;
 
 export async function POST(req: Request): Promise<Response> {
   try {
