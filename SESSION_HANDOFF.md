@@ -1,6 +1,15 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: **2026-06-13 (origin/main=`a1fc6cf`、tsc / lint 0 件 / build / test クリア)**。
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: **2026-06-13 (origin/main=`7ae22aa`、tsc / lint 0 件 / build / test クリア)**。
+
+**★2026-06-13 さらに後段: Vercel 本番デプロイ完了＝公開マルチユーザー化の第一歩 (memory: `deploy_ai_education_production.md` が SSoT)★**
+用途が「娘さん専用」→ **親戚＋ExceLike 事務所スタッフ 20〜30 名のマルチユーザー製品**に拡大する判断 (grill 確定) → ローカルのみだった AI-Education を Vercel に初デプロイ。
+- **本番 URL = `https://ai-education-6cqr.vercel.app`** (Vercel プロジェクト `ai-education-6cqr`、Hobby、`ito19913/ai-education` の main 自動デプロイ)。重複作成した 8i48/beige は削除済み・**6cqr のみ残す (絶対消さない)**。
+- **本番ログイン確認済** (ito19 が `/tutor` 着地・ゆい応答・教材表示を実機確認)。公開サインアップ OFF・新ユーザーは admin が Supabase Add user。
+- **デプロイ地雷 4 つを修正** (本セッション 3 commit): ①maxDuration を Hobby 上限 60 に (`92aeaf4`、4 route) ②`next.config` の root 固定を Vercel では無効化 (`7ae22aa`、ENOENT 解消) ③`philosophy/page.tsx` のルート fs 読みを焼き込み定数化+`sync-ai-docs` 硬化 (`ef81185`)。④は Vercel 設定 (Framework=Next.js / Root=web / include-outside-root OFF)。詳細は memory `deploy_ai_education_production.md`。
+- **★ロールアウト残 (grill 確定順): ②まとまり生成ジョブ有効化 (当初の目的・下記の有効化チェックリスト。ただし今は本番 URL があるので cron 宛先 = `https://ai-education-6cqr.vercel.app/api/cron/segment`) → ③共有教材機能 (admin が事務所テキストを配るハイブリッド・個人教材と両立、要 migration) → ④スタッフ段階 Add user (コスト監視・月 $1,000 上限)。未決=大人スタッフ向けペルソナ/トーン (公開前に grill 予定)★**
+
+**← 以下は本セッション前半 (まとまり生成ジョブ化):**
 
 **★2026-06-13 後半: まとまり生成のサーバー側ジョブ化を grill→plan→実装 (フラグ制御で安全に併存)★**
 ブラウザ pdf.js 依存だったまとまり生成を、Supabase pg_cron が毎分 Vercel の Route Handler を叩くバックグラウンドジョブに移す (タブ非依存・再開可能)。grill 6 問確定 → plan 承認 → 実装:
