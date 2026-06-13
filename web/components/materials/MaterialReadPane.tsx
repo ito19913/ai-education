@@ -257,6 +257,12 @@ export function MaterialReadPane({
     material.conceptSegments && material.conceptSegments.length > 0
       ? material.conceptSegments
       : (localSegments ?? undefined);
+  // 「準備中」(2026-06-13): ブラウザのその場生成 (segmenting) か、サーバージョブが
+  // queued/processing の間。単元一覧の代わりに「準備中」を見せる根拠。
+  const preparing =
+    segmenting ||
+    material.segmentStatus === "queued" ||
+    material.segmentStatus === "processing";
 
   // 今表示中ページが属する まとまり (M7: 範囲提示・範囲要約の基準)。
   const currentSegment = useMemo(
@@ -1694,7 +1700,7 @@ export function MaterialReadPane({
               </Button>
             )}
             {/* 区切りは裏で生成中。画面は塞がず、出来たら「まとまりを選ぶ」が出る。 */}
-            {segmenting && contentSegments.length === 0 && (
+            {preparing && contentSegments.length === 0 && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Loader2 className="size-3 animate-spin" />
                 単元一覧を準備中…
@@ -1898,7 +1904,7 @@ export function MaterialReadPane({
                       </span>{" "}
                       を押すと、わたしが問題ごとに解説するよ。
                     </>
-                  ) : segmenting ? (
+                  ) : preparing ? (
                     <>
                       今、本を読んで単元一覧を準備中だよ（少し待ってね）。
                       <br />

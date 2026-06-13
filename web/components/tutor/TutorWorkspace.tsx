@@ -184,6 +184,8 @@ export function TutorWorkspace({
     handleDeleteAssignment,
     setAssignmentStatus,
     handleMaterialAdded: addMaterialWithUiHooks,
+    refetchMaterials,
+    resegmentMaterial,
   } = useMaterials(subjects);
 
   // まとめノート N9①: ノートエントリ。real は DB fetch、mock は in-memory。
@@ -470,6 +472,19 @@ export function TutorWorkspace({
     searchParams.get("view") === "material-read"
       ? searchParams.get("id")
       : null;
+  // まとまり生成ジョブ化 (2026-06-13): 教材まわりの view に入るたび教材一覧を取り直し、
+  // サーバージョブが更新した segment_status / concept_segments を反映する (遷移時 fetch、
+  // Realtime 不使用)。view 変化の 1 回だけ発火 (refetchMaterials は安定参照)。
+  useEffect(() => {
+    if (
+      view === "materials" ||
+      view === "material-detail" ||
+      view === "material-read"
+    ) {
+      void refetchMaterials();
+    }
+  }, [view, selectedMaterialId, refetchMaterials]);
+
   // 段階1-C: 読書ビューの初期ページ (体系図ノードから ?page=N で飛んできた時)
   const readInitialPage = (() => {
     const raw = searchParams.get("page");
@@ -1892,6 +1907,7 @@ export function TutorWorkspace({
               onAdded: handleMaterialAdded,
               onUpdated: handleMaterialUpdated,
               onDeleted: handleMaterialDeleted,
+              onResegment: resegmentMaterial,
             }}
             assignmentsApi={{
               onSubmit: handleSubmitAssignment,

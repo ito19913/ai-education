@@ -45,6 +45,7 @@ type MaterialRow = {
   assignment_type: string | null;
   due_date: string | null;
   assignment_status: string | null;
+  segment_status: string | null;
   deleted_at: string | null;
 };
 
@@ -79,6 +80,9 @@ function rowToMaterial(row: MaterialRow): Material {
         : undefined,
     pdfPath: row.pdf_path ?? undefined,
     pdfSize: row.pdf_size ?? undefined,
+    segmentStatus: (row.segment_status ?? undefined) as
+      | Material["segmentStatus"]
+      | undefined,
     deletedAt: row.deleted_at ?? undefined,
   };
 }
@@ -168,6 +172,19 @@ export async function updateMaterialSegments(
   const { error } = await supabase
     .from("materials")
     .update({ concept_segments: segments })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** まとまり生成のサーバー側ジョブ状態を更新 (enqueue / 区切り直す時、2026-06-13)。 */
+export async function updateMaterialSegmentStatus(
+  id: string,
+  status: NonNullable<Material["segmentStatus"]>,
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("materials")
+    .update({ segment_status: status })
     .eq("id", id);
   if (error) throw error;
 }

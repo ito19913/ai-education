@@ -32,6 +32,7 @@ import {
   insertMaterial,
   updateMaterialPdfPath,
   updateMaterialSegments,
+  updateMaterialSegmentStatus,
   updateMaterialMeta,
   updateMaterialCoverThumb,
   softDeleteMaterial,
@@ -41,6 +42,8 @@ import {
   getCurrentUserId,
   type NewAssignmentInput,
 } from "@/lib/materials/materials-repo";
+import { isSegmentJobsEnabled } from "@/lib/materials/is-segment-jobs-enabled";
+import { enqueueSegmentationJob } from "@/lib/materials/segmentation-jobs-repo";
 import {
   extractFullPageTextsFromDoc,
   loadPdfDocument,
@@ -107,6 +110,22 @@ export function useMaterials(subjects: Subject[]) {
     : materialsLoaded
       ? "ready"
       : "loading";
+
+  /**
+   * 教材一覧を取り直す (2026-06-13、まとまり生成ジョブ化)。
+   * 画面遷移 (本棚に戻る / 読書ビューを開く) のたびに呼び、サーバージョブが更新した
+   * segment_status / concept_segments を反映する (Realtime は使わず遷移時 fetch、grill 確定)。
+   * loaded フラグは触らない (ちらつき防止、成功時だけ差し替え)。
+   */
+  const refetchMaterials = useCallback(async () => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      const rows = await fetchMaterials();
+      setMaterials(rows);
+    } catch (err) {
+      console.error("[教材] 再取得失敗:", err);
+    }
+  }, []);
 
   // ----- 教材編集 (C46 F、ito19 さん意見): メタ情報 patch を materials state に反映 -----
   const handleMaterialUpdated = useCallback(
@@ -183,6 +202,32 @@ export function useMaterials(subjects: Subject[]) {
         }
       }
       return deleted;
+    },
+    [materials],
+  );
+
+  /**
+   * 「区切り直す」(2026-06-13、まとまり生成ジョブ化): ready/failed 含む全状態で再キュー。
+   * ★古い concept_segments はそのまま残す★ (再区切り中も使えるまま、完走時にワーカーが
+   * 原子差し替え)。状態だけ queued にして本棚バッジを「準備中」にする。
+   */
+  const resegmentMaterial = useCallback(
+    async (materialId: string) => {
+      if (!isSegmentJobsEnabled() || !isSupabaseConfigured()) return;
+      const target = materials.find((m) => m.id === materialId);
+      if (!target?.pdfPath) return; // PDF が無いと区切れない
+      try {
+        const ownerId = await getCurrentUserId();
+        await enqueueSegmentationJob(materialId, ownerId);
+        await updateMaterialSegmentStatus(materialId, "queued");
+        setMaterials((prev) =>
+          prev.map((m) =>
+            m.id === materialId ? { ...m, segmentStatus: "queued" } : m,
+          ),
+        );
+      } catch (err) {
+        console.error("[まとまり] 区切り直し失敗:", err);
+      }
     },
     [materials],
   );
@@ -333,6 +378,8 @@ export function useMaterials(subjects: Subject[]) {
       // Phase 2 メモリ対策 (2026-06-12): 旧実装は 表紙サムネ / テキスト抽出 / スキャン区切り が
       // それぞれ loadPdfDocument して同じ PDF を並行 3 回ロードしていた (186MB 自炊本で
       // ピーク ~560MB)。1 回だけロードして共有し、軽い順 (サムネ→区切り) に直列実行する。
+      // フラグ ON かつ real モードのみサーバージョブで生成する (mock はワーカーが無い)。
+      const useJobs = isSegmentJobsEnabled() && isSupabaseConfigured();
       const runPdfBackgroundWork = (m: Material, persist: boolean) => {
         if (!file) return;
         const subjectName =
@@ -367,6 +414,8 @@ export function useMaterials(subjects: Subject[]) {
             }
 
             // 2) まとまり区切り (M1-M10 / C-8)
+            // フラグ ON 時はサーバージョブが区切るので、ブラウザでは生成しない (表紙サムネだけ)。
+            if (useJobs) return;
             try {
               const { hasTextLayer, packedText } =
                 await extractFullPageTextsFromDoc(loadedPdf.doc);
@@ -466,10 +515,29 @@ export function useMaterials(subjects: Subject[]) {
                       : m,
                   ),
                 );
+                // フラグ ON: PDF が Storage に乗ったのでサーバージョブを enqueue
+                // (ワーカーが Storage から落として区切る)。状態は「準備中」に。
+                if (useJobs) {
+                  try {
+                    await enqueueSegmentationJob(saved.id, ownerId);
+                    await updateMaterialSegmentStatus(saved.id, "queued");
+                    setMaterials((prev) =>
+                      prev.map((m) =>
+                        m.id === saved.id
+                          ? { ...m, segmentStatus: "queued" }
+                          : m,
+                      ),
+                    );
+                  } catch (err) {
+                    console.error("[まとまり] ジョブ登録失敗:", err);
+                  }
+                }
                 ui.pushTutorMessage({
                   id: `t-mat-up-${Date.now()}`,
                   role: "tutor",
-                  text: `「${saved.name}」の PDF も保存できたよ📚\nこれで次に開いた時も、リロードしても一緒に読めるよ。`,
+                  text: useJobs
+                    ? `「${saved.name}」の PDF を保存したよ📚\n今、葵先生がまとまり (一単元) に区切ってるからちょっと待っててね。本棚で「準備中」が消えたら一緒に読めるよ。`
+                    : `「${saved.name}」の PDF も保存できたよ📚\nこれで次に開いた時も、リロードしても一緒に読めるよ。`,
                   createdAt: new Date().toISOString(),
                 });
               })
@@ -506,5 +574,7 @@ export function useMaterials(subjects: Subject[]) {
     handleDeleteAssignment,
     setAssignmentStatus,
     handleMaterialAdded,
+    refetchMaterials,
+    resegmentMaterial,
   };
 }

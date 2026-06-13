@@ -844,6 +844,12 @@ export type Material = {
    * materials.guided_plans (JSONB) に永続化。無ければオンデマンド生成にフォールバック。
    */
   guidedPlans?: Record<string, GuidedBlock[]>;
+  /**
+   * まとまり生成のサーバー側ジョブ状態 (2026-06-13)。
+   * 'ready' = 生成済み (既定) / 'queued'・'processing' = 準備中 / 'failed' = 区切れなかった。
+   * 本棚バッジ・読書ビュー「準備中」・教材詳細「区切り直す」の出し分けに使う。
+   */
+  segmentStatus?: "queued" | "processing" | "ready" | "failed";
 };
 
 /**

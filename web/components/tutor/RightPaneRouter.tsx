@@ -83,6 +83,8 @@ export type MaterialsPaneApi = {
   onUpdated: (id: string, patch: Partial<Material>) => void;
   /** 教材削除 (C46 F): 削除 + ゆい発話 + 一覧に戻す */
   onDeleted: (id: string) => void;
+  /** 「区切り直す」(2026-06-13): まとまり生成ジョブを再キュー (全状態可、古い単元は残す) */
+  onResegment: (id: string) => void;
 };
 
 /** 宿題・テスト束 (2026-06-09、教材ペイン + ダッシュボード用)。 */
@@ -382,6 +384,7 @@ export function RightPaneRouter({
         onCreatePlan={plansApi.onCreate}
         onMaterialUpdated={materialsApi.onUpdated}
         onMaterialDeleted={materialsApi.onDeleted}
+        onResegment={materialsApi.onResegment}
       />
     );
   }

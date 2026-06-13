@@ -28,8 +28,11 @@ import {
   ChevronLeft,
   Compass,
   ListChecks,
+  Loader2,
   Pencil,
+  RotateCw,
 } from "lucide-react";
+import { isSegmentJobsEnabled } from "@/lib/materials/is-segment-jobs-enabled";
 import { PlanAddDialog } from "@/components/plans/PlanAddDialog";
 import {
   computePlanProgress,
@@ -70,6 +73,8 @@ type Props = {
   onMaterialUpdated: (id: string, patch: Partial<Material>) => void;
   /** C46 F (ito19 さん意見): MaterialEditDialog の onDelete 経由で呼ばれる */
   onMaterialDeleted: (id: string) => void;
+  /** 「区切り直す」(2026-06-13): まとまり生成ジョブを再キュー (全状態可、古い単元は残す) */
+  onResegment: (id: string) => void;
 };
 
 export function MaterialDetailView({
@@ -82,8 +87,10 @@ export function MaterialDetailView({
   onCreatePlan,
   onMaterialUpdated,
   onMaterialDeleted,
+  onResegment,
 }: Props) {
   const router = useRouter();
+  const segmentJobsEnabled = isSegmentJobsEnabled();
   // C46 F: 教材編集・削除 dialog の open state
   const [editOpen, setEditOpen] = useState(false);
   // 新プラン: 「プランに組み込む」ダイアログ
@@ -431,16 +438,52 @@ export function MaterialDetailView({
       */}
       <Card className="overflow-hidden">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <BookText className="size-4 text-primary" />
-            <span>まとまり ({contentSegments.length} 個)</span>
-          </CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <BookText className="size-4 text-primary" />
+              <span>まとまり ({contentSegments.length} 個)</span>
+              {(material.segmentStatus === "queued" ||
+                material.segmentStatus === "processing") && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                  <Loader2 className="size-3 animate-spin" />
+                  準備中
+                </span>
+              )}
+              {material.segmentStatus === "failed" && (
+                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700">
+                  区切れなかった
+                </span>
+              )}
+            </CardTitle>
+            {/* 区切り直す: ジョブ ON + PDF あり時のみ (全状態で再キュー、古い単元は残す) */}
+            {segmentJobsEnabled && material.pdfPath && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onResegment(material.id)}
+                disabled={
+                  material.segmentStatus === "queued" ||
+                  material.segmentStatus === "processing"
+                }
+                className="h-7 shrink-0 gap-1 px-2 text-xs"
+                title="まとまりをもう一度作り直す"
+              >
+                <RotateCw className="size-3.5" />
+                <span>区切り直す</span>
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {contentSegments.length === 0 ? (
             <div className="flex flex-col gap-3">
               <p className="text-sm text-muted-foreground">
-                まだ「まとまり」が作られていません。教材を登録するとバックグラウンドで本文を読んで単元に区切ります。「一緒に読む」を開くと、その場でも作れます。
+                {material.segmentStatus === "queued" ||
+                material.segmentStatus === "processing"
+                  ? "葵先生がまとまり (一単元) に区切っているところだよ。少し待ってから開いてね。"
+                  : material.segmentStatus === "failed"
+                    ? "うまく区切れませんでした。「区切り直す」でもう一度試せます。「一緒に読む」で手めくり読書はできます。"
+                    : "まだ「まとまり」が作られていません。教材を登録するとバックグラウンドで本文を読んで単元に区切ります。「一緒に読む」を開くと、その場でも作れます。"}
               </p>
               <div>
                 <Button

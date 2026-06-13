@@ -342,18 +342,33 @@ export function MaterialsListPane({
                           className="group flex flex-col gap-2 rounded-lg border border-border bg-card p-2 text-left transition-colors hover:border-primary hover:bg-primary/5"
                           title={m.name}
                         >
-                          {m.coverThumb ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={m.coverThumb}
-                              alt=""
-                              className="aspect-[3/4] w-full rounded-md border border-border bg-muted object-cover shadow-sm"
-                            />
-                          ) : (
-                            <div className="flex aspect-[3/4] w-full items-center justify-center rounded-md border border-border bg-muted shadow-sm">
-                              <Book className="size-8 text-muted-foreground/50" />
-                            </div>
-                          )}
+                          <div className="relative">
+                            {m.coverThumb ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={m.coverThumb}
+                                alt=""
+                                className="aspect-[3/4] w-full rounded-md border border-border bg-muted object-cover shadow-sm"
+                              />
+                            ) : (
+                              <div className="flex aspect-[3/4] w-full items-center justify-center rounded-md border border-border bg-muted shadow-sm">
+                                <Book className="size-8 text-muted-foreground/50" />
+                              </div>
+                            )}
+                            {/* まとまり生成の状態 (2026-06-13): 準備中 / 区切れなかった を表紙に重ねる */}
+                            {(m.segmentStatus === "queued" ||
+                              m.segmentStatus === "processing") && (
+                              <span className="absolute left-1 top-1 inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-1.5 py-0.5 text-[9px] font-medium text-white shadow">
+                                <Loader2 className="size-2.5 animate-spin" />
+                                準備中
+                              </span>
+                            )}
+                            {m.segmentStatus === "failed" && (
+                              <span className="absolute left-1 top-1 rounded-full bg-rose-500/90 px-1.5 py-0.5 text-[9px] font-medium text-white shadow">
+                                区切れなかった
+                              </span>
+                            )}
+                          </div>
                           <div className="flex flex-1 flex-col gap-1">
                             <div className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
                               {m.name}
