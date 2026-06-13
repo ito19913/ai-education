@@ -8,6 +8,7 @@ AI-Education プロジェクトの **セッション間引継ぎドキュメン�
 - **本番ログイン確認済** (ito19 が `/tutor` 着地・ゆい応答・教材表示を実機確認)。公開サインアップ OFF・新ユーザーは admin が Supabase Add user。
 - **デプロイ地雷 4 つを修正** (本セッション 3 commit): ①maxDuration を Hobby 上限 60 に (`92aeaf4`、4 route) ②`next.config` の root 固定を Vercel では無効化 (`7ae22aa`、ENOENT 解消) ③`philosophy/page.tsx` のルート fs 読みを焼き込み定数化+`sync-ai-docs` 硬化 (`ef81185`)。④は Vercel 設定 (Framework=Next.js / Root=web / include-outside-root OFF)。詳細は memory `deploy_ai_education_production.md`。
 - **★ロールアウト残 (grill 確定順): ②まとまり生成ジョブ有効化 (当初の目的・下記の有効化チェックリスト。ただし今は本番 URL があるので cron 宛先 = `https://ai-education-6cqr.vercel.app/api/cron/segment`) → ③共有教材機能 (admin が事務所テキストを配るハイブリッド・個人教材と両立、要 migration) → ④スタッフ段階 Add user (コスト監視・月 $1,000 上限)。未決=大人スタッフ向けペルソナ/トーン (公開前に grill 予定)★**
+- **★③共有教材機能は grill 確定済み・実装の引き継ぎ資料 = `SHARED-MATERIALS-HANDOFF.md`（自己完結。materials 表に `is_shared` 列＋RLS で「読む=自分+共有/公開=admin だけ」、構造は共有・learner の青枠は保存しない一時操作、PDF も Storage RLS で守る。未実装）★**
 
 **← 以下は本セッション前半 (まとまり生成ジョブ化):**
 
