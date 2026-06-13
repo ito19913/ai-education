@@ -3613,7 +3613,22 @@ AI が続きから補える) ④導入 = **2 段階** (第 1 弾 葵 chat 系 �
     **呼び出し時コールバック (MaterialAddedUiHooks) で注入** (tutorMessages/navigate が
     フック呼び出しより後に宣言されていても循環しない)。
     これで TutorWorkspace 2,289→1,768 行 (フック抽出 6 ドメイン累計 −900 行強)
-  - ⏳ 残り: RightPaneRouter の props 解消 → MaterialReadPane のモード分割
+  - ✅ RightPaneRouter の props 解消 (`dfddb0b`、2026-06-13): flat な 62 props を
+    既存 calendar: CalendarApi と同じ「ドメイン束」パターンで issuesApi / materialsApi /
+    assignmentsApi / plansApi / resumesApi / dayApi の 6 束に集約 (62→19 props)。
+    中身のハンドラ・データは同一、束内の名前だけ短縮 (onResolveIssue→issuesApi.onResolve 等)
+  - ✅ MaterialReadPane 分割 第 1〜2 弾 (2026-06-13、2,071→1,828 行):
+    `cbd458f` EditableHighlight.tsx (青枠+Bbox 型) + material-read-shared.ts
+    (vision 上限 3 定数+isFrontMatterName/sampleRangePages/parseStartPage+
+    セッションキャッシュ 3 つ) を分離 /
+    `d8ab11a` PDF ビューア中核→`web/hooks/use-pdf-viewer.ts` (ロード [L1→Storage 復元]・
+    ページ・見開き・ズーム・フィット描画・リサイズ追従・ページ移動。レジュメモードの
+    単一ページ強制は forceSingle 引数化。**setPage がフック由来になり stable setter と
+    みなされなくなるため、利用側 useCallback の deps へ追加が必要** [挙動不変])
+  - ⏳ 残り: MaterialReadPane のモード分割 本丸 (ガイド読書 / 宿題 / レジュメゲート /
+    葵 chat)。**packPages・history・page state を全モードが共有する密結合**なので、
+    フック間のインターフェース設計 (何を共有層に残すか) を決めてから着手する。
+    1 モードずつ・実機回帰を挟みながらが安全
 
 **レビューが挙げた維持すべき設計**: `as any` ゼロ + discriminated union 規律 / RLS 全テーブル同型 /
 「済みは導出、フラグは持たない」/ 子のデータを失わせない削除 / AI 出力を信用しないコード側

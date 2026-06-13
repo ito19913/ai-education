@@ -1,13 +1,15 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: **2026-06-12 続きセッション (origin/main=`c37cb9f`、tsc / lint 0 件 / build / test クリア)**。
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: **2026-06-13 (origin/main=`d8ab11a`+docs、tsc / lint 0 件 / build / test クリア)**。
 
-**★2026-06-12 続き: Phase 3 ドメインフック抽出 三連を完遂★** — プラン→科目→教材の順で TutorWorkspace から抽出 (1 ドメイン 1 コミット・挙動同一・毎回 tsc/lint/build/test 検証):
+**★2026-06-12〜13: Phase 3 構造リファクタを大きく前進 (フック抽出 三連 + RightPaneRouter props 解消 + 読書ビュー分割 第 1〜2 弾)★** — すべて 1 単位 1 コミット・挙動同一・毎回 tsc/lint/build(/test) 検証:
 - `99be1a4` プラン → `use-plans.ts` (連鎖掃除 removePlansForMaterial は掃除件数を返す)
 - `0c94946` 科目 → `use-subjects.ts` (ゆい発話+navigate はワークスペース側ラッパーに残す)
 - `c37cb9f` 教材 (最大) → `use-materials.ts` (登録フロー runPdfBackgroundWork ごと移設。発話・遷移は**呼び出し時コールバック MaterialAddedUiHooks で注入** = フック宣言順の制約を回避)
+- `dfddb0b` **RightPaneRouter props 解消** = 62 flat props → ドメイン束 6 つ (issuesApi / materialsApi / assignmentsApi / plansApi / resumesApi / dayApi、calendar: CalendarApi と同パターン) で 19 props に
+- `cbd458f` / `d8ab11a` **MaterialReadPane 分割 第 1〜2 弾** (2,071→1,828 行) = EditableHighlight + 共有ヘルパー (material-read-shared.ts) 分離 / PDF ビューア中核 → `web/hooks/use-pdf-viewer.ts` (レジュメモードの単一ページ強制は forceSingle 引数化)
 
-TutorWorkspace は 2,289→1,768 行。**これで Phase 3 のフック抽出は計 6 ドメイン完了、残り = RightPaneRouter の props 解消 → MaterialReadPane のモード分割** (詳細 ARCHITECTURE「Phase 3 — 構造リファクタ」)。**★実機確認待ちは前セッションの 6 件 + 本セッション分 (教材登録/編集/削除・宿題登録/トグル・科目追加・プラン操作の回帰) = リファクタ範囲が広いので、次の実機はダッシュボード〜教材〜プランをひと通り触るのが安全★**。
+TutorWorkspace は 2,289→1,768 行 (フック抽出 計 6 ドメイン)。**残り = MaterialReadPane モード分割の本丸 (ガイド読書 / 宿題 / レジュメゲート / 葵 chat)。packPages・history・page state を全モードが共有する密結合なので、共有層のインターフェース設計を決めてから 1 モードずつ・実機回帰を挟みながら進める** (詳細 ARCHITECTURE「Phase 3 — 構造リファクタ」)。**★実機確認待ち = 前々セッションの 6 件 + リファクタ回帰 (教材登録/編集/削除・宿題登録/トグル・科目追加・プラン操作 + **読書ビュー一式** [開く/めくり/見開き/ズーム/まとまり選択/ガイド読書/青枠ドラッグ/レジュメ]) = 次の実機はダッシュボード〜教材〜読書ビューをひと通り触るのが安全★**。
 
  **← 以下は前セッション完了時の Header:**
 
