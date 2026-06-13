@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: **2026-06-13 (origin/main=`dc8c61f`+docs、tsc / lint 0 件 / build / test クリア)**。
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: **2026-06-13 (origin/main=`a1fc6cf`、tsc / lint 0 件 / build / test クリア)**。
 
 **★2026-06-13 後半: まとまり生成のサーバー側ジョブ化を grill→plan→実装 (フラグ制御で安全に併存)★**
 ブラウザ pdf.js 依存だったまとまり生成を、Supabase pg_cron が毎分 Vercel の Route Handler を叩くバックグラウンドジョブに移す (タブ非依存・再開可能)。grill 6 問確定 → plan 承認 → 実装:
