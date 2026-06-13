@@ -8,6 +8,7 @@
 
 import type Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, MODEL_OPUS, MODEL_HAIKU } from "@/lib/ai/client";
+import type { ConceptSegment } from "@/lib/learn/types";
 
 /** JSON 配列を salvage パース (出力途中切れを救う)。失敗で []。 */
 export function salvageJsonArray<T>(text: string): T[] {
@@ -207,6 +208,41 @@ export type ScanVisionSegment = {
   endPdfPage: number;
   printPageHint?: string;
 };
+
+/**
+ * 全チャンクの ScanVisionSegment を 1 本にまとめて ConceptSegment[] にする。
+ * 並べ替え → 隣接同名マージ → 重なり解消 (scan-segment-builder の buildViaVision 末尾と等価)。
+ * ★チャンク跨ぎで誤マージしないよう、tick ごとではなく完走時に全件まとめて呼ぶこと★。
+ */
+export function mergeScanVisionSegments(
+  all: ScanVisionSegment[],
+): ConceptSegment[] {
+  const sorted = [...all].sort((a, b) => a.startPdfPage - b.startPdfPage);
+  const merged: ScanVisionSegment[] = [];
+  for (const s of sorted) {
+    const last = merged[merged.length - 1];
+    if (
+      last &&
+      s.conceptName === last.conceptName &&
+      s.startPdfPage <= last.endPdfPage + 1
+    ) {
+      last.endPdfPage = Math.max(last.endPdfPage, s.endPdfPage);
+    } else if (last && s.startPdfPage <= last.endPdfPage) {
+      const ns = last.endPdfPage + 1;
+      if (ns <= s.endPdfPage) merged.push({ ...s, startPdfPage: ns });
+    } else {
+      merged.push({ ...s });
+    }
+  }
+  return merged.map((s, i) => ({
+    id: `seg-${i + 1}`,
+    conceptName: s.conceptName,
+    startPdfPage: s.startPdfPage,
+    endPdfPage: s.endPdfPage,
+    source: "scan-vision" as const,
+    printPageHint: s.printPageHint,
+  }));
+}
 
 export async function segmentScanByVisionCore(
   input: ScanVisionInput,
