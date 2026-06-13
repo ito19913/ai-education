@@ -1866,61 +1866,71 @@ export function TutorWorkspace({
         <ResizablePanel defaultSize={60} minSize={30}>
           <RightPaneRouter
             view={view}
-            selectedIssue={selectedIssue}
             selectedSubjectId={selectedSubjectId}
             selectedMaterialId={selectedMaterialId}
-            issues={issues}
             nodes={nodes}
-            chatMessages={chatMessages}
             scheduleToday={scheduleToday}
             subjects={subjects}
             learningLogs={learningLogs}
             studyMinutes={studyMinutes}
-            onResolveIssue={handleResolveIssue}
-            onReopenIssue={handleReopenIssue}
-            onAppendChatMessages={handleAppendChatMessages}
-            onSelectIssue={(id) => navigate("issue", { issueId: id })}
             onBack={() => navigate("default")}
-            onMaterialAdded={handleMaterialAdded}
-            onMaterialUpdated={handleMaterialUpdated}
-            onMaterialDeleted={handleMaterialDeleted}
             onSubjectAdded={handleSubjectAdded}
-            materials={materials}
-            materialsLoadState={materialsLoadState}
-            noteEntries={noteEntries}
-            resumes={resumes}
-            onNoteUpdated={handleNoteUpdated}
-            onNoteDeleted={handleNoteDeleted}
-            onOpenNoteSource={(materialId, page) =>
-              navigate("material-read", { materialId, page })
-            }
             onNavigate={navigate}
             calendar={calendarApi}
-            plans={plans}
-            dayPicks={dayPicks}
-            onRemoveDayPick={handleRemoveDayPick}
-            onStartDayRitual={handleStartDayRitual}
-            onAddAssignmentQuick={() => setDayAssignmentDialog("plain")}
-            onCreatePlan={handleCreatePlan}
-            onExtendPlan={handleExtendPlan}
-            onCompletePlan={handleCompletePlan}
-            onRestartPlan={handleRestartPlan}
-            onTogglePlanSkip={handleTogglePlanSkip}
-            onDeletePlan={handleDeletePlan}
-            onSubmitAssignment={handleSubmitAssignment}
-            onDeleteAssignment={handleDeleteAssignment}
-            onToggleAssignmentStatus={handleToggleAssignmentStatus}
-            onStudyAssignment={(materialId) =>
-              navigate("material-read", { materialId })
-            }
-            onAddResume={handleAddResume}
-            onRenameResume={handleRenameResume}
-            onSetDefaultResume={handleSetDefaultResume}
-            onDeleteResume={handleDeleteResume}
-            onMoveEntryToResume={handleMoveEntryToResume}
-            onMoveEntryToSubject={handleMoveEntryToSubject}
-            onCopyResume={handleCopyResume}
-            onGenerateOutline={handleGenerateOutline}
+            issuesApi={{
+              issues,
+              selectedIssue,
+              chatMessages,
+              onResolve: handleResolveIssue,
+              onReopen: handleReopenIssue,
+              onAppendChatMessages: handleAppendChatMessages,
+              onSelect: (id) => navigate("issue", { issueId: id }),
+            }}
+            materialsApi={{
+              materials,
+              loadState: materialsLoadState,
+              onAdded: handleMaterialAdded,
+              onUpdated: handleMaterialUpdated,
+              onDeleted: handleMaterialDeleted,
+            }}
+            assignmentsApi={{
+              onSubmit: handleSubmitAssignment,
+              onDelete: handleDeleteAssignment,
+              onToggleStatus: handleToggleAssignmentStatus,
+              onStudy: (materialId) =>
+                navigate("material-read", { materialId }),
+              onAddQuick: () => setDayAssignmentDialog("plain"),
+            }}
+            plansApi={{
+              plans,
+              onCreate: handleCreatePlan,
+              onExtend: handleExtendPlan,
+              onComplete: handleCompletePlan,
+              onRestart: handleRestartPlan,
+              onToggleSkip: handleTogglePlanSkip,
+              onDelete: handleDeletePlan,
+            }}
+            resumesApi={{
+              noteEntries,
+              resumes,
+              onNoteUpdated: handleNoteUpdated,
+              onNoteDeleted: handleNoteDeleted,
+              onOpenSource: (materialId, page) =>
+                navigate("material-read", { materialId, page }),
+              onAddResume: handleAddResume,
+              onRenameResume: handleRenameResume,
+              onSetDefaultResume: handleSetDefaultResume,
+              onDeleteResume: handleDeleteResume,
+              onMoveEntryToResume: handleMoveEntryToResume,
+              onMoveEntryToSubject: handleMoveEntryToSubject,
+              onCopyResume: handleCopyResume,
+              onGenerateOutline: handleGenerateOutline,
+            }}
+            dayApi={{
+              dayPicks,
+              onRemove: handleRemoveDayPick,
+              onStartRitual: handleStartDayRitual,
+            }}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

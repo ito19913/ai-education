@@ -3,11 +3,16 @@
 /**
  * RightPaneRouter - /tutor 右ペインの内容を ?view= に応じて切り替える（Phase 3）。
  *
- * - default: 空のプレースホルダ
+ * - default: ダッシュボード (2026-06-09)
  * - issues: IssueListView コア（embedded=true）
  * - issue: IssueChat
- * - today-tasks: TodayTaskDashboard コア（embedded=true、C22 で schedule からリネーム）
- * - history: HistoryView コア（embedded=true）
+ * - history: LearningHistoryView
+ * - materials / material-detail / material-new: 教材まわり
+ * - plans / notes / subjects / ...: 各ドメインペイン
+ *
+ * Props 整理 (Phase 3 モノリス分割、2026-06-13): 62 個の flat props を
+ * 既存の calendar: CalendarApi と同じ「ドメインごとの束」に集約。
+ * 中身のハンドラ・データは移設前と同一 (名前だけ束内で短縮)。
  */
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft, MessageCircle } from "lucide-react";
@@ -21,6 +26,7 @@ import type {
   IssueChatMessage,
   KnowledgeNode,
   LearningLog,
+  Material,
   NoteEntry,
   StudyMinutesBucket,
   Resume,
@@ -49,110 +55,72 @@ import { ReflectionListView } from "@/components/reflections/ReflectionListView"
 import { WeeklyMonthlyReportView } from "@/components/reports/WeeklyMonthlyReportView";
 import { PlansView } from "@/components/plans/PlansView";
 import { NotesHomeView } from "@/components/notes/NotesHomeView";
-// MOCK_MATERIALS は TutorWorkspace 経由で props として渡される (C46: 編集・削除のため state 管理)
-import type { Material } from "@/lib/learn/types";
 
-type Props = {
-  view: RightPaneView;
-  selectedIssue: Issue | null;
-  /** URL ?subjectId= で指定された subject ID（subject-history 用）*/
-  selectedSubjectId: string | null;
-  /** URL ?id= で指定された material ID（material-detail 用、C32 2026-05-25 grill 1）*/
-  selectedMaterialId: string | null;
+/** 課題 (Issue) 束: 一覧 + 課題 chat。 */
+export type IssuesPaneApi = {
   issues: Issue[];
-  nodes: KnowledgeNode[];
+  /** URL ?id= で選択中の課題（issue view 用）*/
+  selectedIssue: Issue | null;
   chatMessages: ChatMessage[];
-  scheduleToday: ScheduleItem[];
-  subjects: Subject[];
-  /** 学習履歴 (出来事ログ + 学習時間、2026-06-10。旧 sessions モックを置換) */
-  learningLogs: LearningLog[];
-  studyMinutes: StudyMinutesBucket[];
-  onResolveIssue: (id: string) => void;
-  onReopenIssue: (id: string) => void;
+  onResolve: (id: string) => void;
+  onReopen: (id: string) => void;
   onAppendChatMessages: (issueId: string, msgs: IssueChatMessage[]) => void;
-  onSelectIssue: (id: string) => void;
-  onBack: () => void;
-  /**
-   * 教材追加完了時のコールバック（material-new view 用）。
-   * TutorWorkspace 側でゆいの完了発話を追加 + 右ペインを閉じる。
-   */
-  onMaterialAdded: (material: Material, approvedNodeCount: number) => void;
-  /**
-   * 教材編集 (C46 F、ito19 さん意見): メタ情報 patch を materials state に反映
-   * (MaterialEditDialog の onSave)
-   */
-  onMaterialUpdated: (id: string, patch: Partial<Material>) => void;
-  /**
-   * 教材削除 (C46 F、ito19 さん意見): in-memory 削除 + ゆい発話 + 一覧に戻す
-   * (MaterialEditDialog の onDelete)
-   */
-  onMaterialDeleted: (id: string) => void;
-  /**
-   * 科目追加完了時のコールバック（subjects view 用、C30 2026-05-25 grill 2 S6）。
-   * TutorWorkspace 側で MOCK_SUBJECTS / subjects state に push + ゆいの完了発話 + 右ペイン閉じる。
-   */
-  onSubjectAdded: (input: NewSubjectInput) => void;
-  /**
-   * 全教材リスト (state ベース、C46 F)。MaterialsListPane / MaterialDetailView で参照
-   */
+  onSelect: (id: string) => void;
+};
+
+/** 教材 (本) 束: 一覧 / 詳細 / 登録ウィザード。 */
+export type MaterialsPaneApi = {
+  /** 全教材リスト (state ベース、C46 F) */
   materials: Material[];
   /**
    * 教材データの表示状態 (2026-06-12 レビュー指摘: fetch 失敗を空と区別する)。
    * loading = 初期取得中 / error = 取得失敗 / ready = 取得済み (空なら本当に 0 件)。
    */
-  materialsLoadState: "loading" | "error" | "ready";
-  /** まとめノート N9①: ノートエントリ一覧 (NotesHomeView 用) */
+  loadState: "loading" | "error" | "ready";
+  /** 教材追加完了 (material-new view)。ゆい発話 + 詳細遷移は TutorWorkspace 側 */
+  onAdded: (material: Material, approvedNodeCount: number) => void;
+  /** 教材編集 (C46 F): メタ情報 patch を materials state に反映 */
+  onUpdated: (id: string, patch: Partial<Material>) => void;
+  /** 教材削除 (C46 F): 削除 + ゆい発話 + 一覧に戻す */
+  onDeleted: (id: string) => void;
+};
+
+/** 宿題・テスト束 (2026-06-09、教材ペイン + ダッシュボード用)。 */
+export type AssignmentsPaneApi = {
+  /** 追加 or 編集 (id があれば編集)。PDF があれば一緒にアップ/差し替え */
+  onSubmit: (input: NewAssignmentInput, pdfFile?: File, id?: string) => void;
+  onDelete: (id: string) => void;
+  onToggleStatus: (id: string, status: AssignmentStatus) => void;
+  /** 「AI と解く」→ 読書ビューで PDF を開いて葵と解く */
+  onStudy: (materialId: string) => void;
+  /** ダッシュボード宿題カードの「＋追加」→ その場登録ダイアログ (Phase B 拡張) */
+  onAddQuick: () => void;
+};
+
+/** 新プラン束 (ザックリ・まとまりキュー型、2026-06-10)。 */
+export type PlansPaneApi = {
+  plans: StudyPlan[];
+  onCreate: (material: Material, endsAt: string, countFrom?: string) => void;
+  onExtend: (planId: string, endsAt: string) => void;
+  onComplete: (planId: string) => void;
+  onRestart: (plan: StudyPlan, endsAt: string) => void;
+  onToggleSkip: (planId: string, segmentId: string) => void;
+  onDelete: (planId: string) => void;
+};
+
+/** レジュメ束: ピース (note_entries) + 冊 (resumes、R10) + アウトライン (R11)。 */
+export type ResumesPaneApi = {
   noteEntries: NoteEntry[];
-  /** R10 Phase 2: レジュメ冊一覧 (NotesHomeView の冊タブ用) */
   resumes: Resume[];
-  /** ノート自分メモ / ステータス更新 */
+  /** ピースの自分メモ / ステータス更新 */
   onNoteUpdated: (
     id: string,
     patch: { userNote?: string; status?: "understood" | "open" },
   ) => void;
-  /** ノートエントリ削除 (論理削除) */
+  /** ピース削除 (論理削除) */
   onNoteDeleted: (id: string) => void;
-  /** ノートの出典「読む」→ 読書ビューの該当ページへ */
-  onOpenNoteSource: (materialId: string, page: number) => void;
-  /** ダッシュボードの各カード/セクション → 該当ビューへ (2026-06-09)。navigate を渡す */
-  onNavigate: (
-    view: RightPaneView,
-    params?: {
-      issueId?: string;
-      materialId?: string;
-      tab?: string;
-      page?: number;
-      unit?: boolean;
-    },
-  ) => void;
-  /** ダッシュボードの予定パネル (ラベル + 手動イベント + 操作、2026-06-09) */
-  calendar: CalendarApi;
-  /** 新プラン (ザックリ・まとまりキュー型、2026-06-10) */
-  plans: StudyPlan[];
-  /** Phase B (2026-06-11): 「その日決める枠」の pick (ダッシュボード下段用) */
-  dayPicks: DailyPick[];
-  /** pick を外す (「やめとく」) */
-  onRemoveDayPick: (id: string) => void;
-  /** 「＋ゆいと決める」→ 左の chat に儀式カードを出す */
-  onStartDayRitual: () => void;
-  /** 宿題・テストカードの「＋追加」→ その場登録ダイアログ (登録のみ、Phase B 拡張) */
-  onAddAssignmentQuick: () => void;
-  onCreatePlan: (material: Material, endsAt: string, countFrom?: string) => void;
-  onExtendPlan: (planId: string, endsAt: string) => void;
-  onCompletePlan: (planId: string) => void;
-  onRestartPlan: (plan: StudyPlan, endsAt: string) => void;
-  onTogglePlanSkip: (planId: string, segmentId: string) => void;
-  onDeletePlan: (planId: string) => void;
-  /** 宿題・テストの 追加/編集 / 削除 / 状態切替 / 学習する (2026-06-09、教材ペイン用) */
-  onSubmitAssignment: (
-    input: NewAssignmentInput,
-    pdfFile?: File,
-    id?: string,
-  ) => void;
-  onDeleteAssignment: (id: string) => void;
-  onToggleAssignmentStatus: (id: string, status: AssignmentStatus) => void;
-  /** 宿題・テストの「学習する」→ 読書ビューでPDFを開いて葵と解く */
-  onStudyAssignment: (materialId: string) => void;
+  /** 出典「読む」→ 読書ビューの該当ページへ */
+  onOpenSource: (materialId: string, page: number) => void;
   /** R10 Phase 2: 冊を追加 (同科目)。作成した Resume を返す (新冊への移動/選択用) */
   onAddResume: (subjectId: string, name: string) => Promise<Resume | null>;
   /** R10 Phase 2: 冊名のリネーム */
@@ -175,59 +143,73 @@ type Props = {
   onGenerateOutline: (resume: Resume, instruction?: string) => Promise<void>;
 };
 
+/** 「きょう決めたこと」束 (Phase B、2026-06-11、ダッシュボード下段用)。 */
+export type DayPicksPaneApi = {
+  dayPicks: DailyPick[];
+  /** pick を外す (「やめとく」) */
+  onRemove: (id: string) => void;
+  /** 「＋ゆいと決める」→ 左の chat に儀式カードを出す */
+  onStartRitual: () => void;
+};
+
+type Props = {
+  view: RightPaneView;
+  /** URL ?subjectId= で指定された subject ID（subject-history / notes 用）*/
+  selectedSubjectId: string | null;
+  /** URL ?id= で指定された material ID（material-detail 用、C32 2026-05-25 grill 1）*/
+  selectedMaterialId: string | null;
+  nodes: KnowledgeNode[];
+  scheduleToday: ScheduleItem[];
+  subjects: Subject[];
+  /** 学習履歴 (出来事ログ + 学習時間、2026-06-10。旧 sessions モックを置換) */
+  learningLogs: LearningLog[];
+  studyMinutes: StudyMinutesBucket[];
+  onBack: () => void;
+  /**
+   * 科目追加完了時のコールバック（subjects view 用、C30 2026-05-25 grill 2 S6）。
+   * TutorWorkspace 側で subjects state に push + ゆいの完了発話 + 右ペイン閉じる。
+   */
+  onSubjectAdded: (input: NewSubjectInput) => void;
+  /** ダッシュボードの各カード/セクション → 該当ビューへ (2026-06-09)。navigate を渡す */
+  onNavigate: (
+    view: RightPaneView,
+    params?: {
+      issueId?: string;
+      materialId?: string;
+      tab?: string;
+      page?: number;
+      unit?: boolean;
+    },
+  ) => void;
+  /** ダッシュボードの予定パネル (ラベル + 手動イベント + 操作、2026-06-09) */
+  calendar: CalendarApi;
+  issuesApi: IssuesPaneApi;
+  materialsApi: MaterialsPaneApi;
+  assignmentsApi: AssignmentsPaneApi;
+  plansApi: PlansPaneApi;
+  resumesApi: ResumesPaneApi;
+  dayApi: DayPicksPaneApi;
+};
+
 export function RightPaneRouter({
   view,
-  selectedIssue,
   selectedSubjectId,
   selectedMaterialId,
-  issues,
   nodes,
-  chatMessages,
   scheduleToday,
   subjects,
   learningLogs,
   studyMinutes,
-  onResolveIssue,
-  onReopenIssue,
-  onAppendChatMessages,
-  onSelectIssue,
   onBack,
-  onMaterialAdded,
-  onMaterialUpdated,
-  onMaterialDeleted,
   onSubjectAdded,
-  materials,
-  materialsLoadState,
-  noteEntries,
-  resumes,
-  onNoteUpdated,
-  onNoteDeleted,
-  onOpenNoteSource,
   onNavigate,
   calendar,
-  plans,
-  dayPicks,
-  onRemoveDayPick,
-  onStartDayRitual,
-  onAddAssignmentQuick,
-  onCreatePlan,
-  onExtendPlan,
-  onCompletePlan,
-  onRestartPlan,
-  onTogglePlanSkip,
-  onDeletePlan,
-  onSubmitAssignment,
-  onDeleteAssignment,
-  onToggleAssignmentStatus,
-  onStudyAssignment,
-  onAddResume,
-  onRenameResume,
-  onSetDefaultResume,
-  onDeleteResume,
-  onMoveEntryToResume,
-  onMoveEntryToSubject,
-  onCopyResume,
-  onGenerateOutline,
+  issuesApi,
+  materialsApi,
+  assignmentsApi,
+  plansApi,
+  resumesApi,
+  dayApi,
 }: Props) {
   // 2026-06-09: トップ (default) と 旧「今日のタスク」(today-tasks、ボタン廃止後も
   // 既存リンク互換のため alias) はダッシュボードを表示する。
@@ -235,18 +217,18 @@ export function RightPaneRouter({
     return (
       <DashboardPane
         calendar={calendar}
-        issues={issues}
+        issues={issuesApi.issues}
         nodes={nodes}
-        materials={materials}
-        materialsLoadState={materialsLoadState}
+        materials={materialsApi.materials}
+        materialsLoadState={materialsApi.loadState}
         subjects={subjects}
-        noteEntries={noteEntries}
-        plans={plans}
-        dayPicks={dayPicks}
-        onRemoveDayPick={onRemoveDayPick}
-        onStartDayRitual={onStartDayRitual}
-        onAddAssignmentQuick={onAddAssignmentQuick}
-        onToggleAssignmentStatus={onToggleAssignmentStatus}
+        noteEntries={resumesApi.noteEntries}
+        plans={plansApi.plans}
+        dayPicks={dayApi.dayPicks}
+        onRemoveDayPick={dayApi.onRemove}
+        onStartDayRitual={dayApi.onStartRitual}
+        onAddAssignmentQuick={assignmentsApi.onAddQuick}
+        onToggleAssignmentStatus={assignmentsApi.onToggleStatus}
         onNavigate={onNavigate}
       />
     );
@@ -255,17 +237,18 @@ export function RightPaneRouter({
   if (view === "issues") {
     return (
       <IssueListView
-        issues={issues}
+        issues={issuesApi.issues}
         nodes={nodes}
-        onResolve={onResolveIssue}
-        onReopen={onReopenIssue}
+        onResolve={issuesApi.onResolve}
+        onReopen={issuesApi.onReopen}
         embedded
-        onSelectIssue={onSelectIssue}
+        onSelectIssue={issuesApi.onSelect}
       />
     );
   }
 
   if (view === "issue") {
+    const selectedIssue = issuesApi.selectedIssue;
     if (!selectedIssue) {
       return (
         <NotFoundPane
@@ -278,11 +261,11 @@ export function RightPaneRouter({
       <IssueChat
         issue={selectedIssue}
         nodes={nodes}
-        chatMessages={chatMessages}
-        onResolve={() => onResolveIssue(selectedIssue.id)}
-        onReopen={() => onReopenIssue(selectedIssue.id)}
+        chatMessages={issuesApi.chatMessages}
+        onResolve={() => issuesApi.onResolve(selectedIssue.id)}
+        onReopen={() => issuesApi.onReopen(selectedIssue.id)}
         onAppendMessages={(msgs) =>
-          onAppendChatMessages(selectedIssue.id, msgs)
+          issuesApi.onAppendChatMessages(selectedIssue.id, msgs)
         }
         onBack={onBack}
       />
@@ -323,18 +306,18 @@ export function RightPaneRouter({
     // 2026-06-10: 新プラン (ザックリ・まとまりキュー型)。旧 PlanEngineDashboard を置換。
     return (
       <PlansView
-        plans={plans}
-        materials={materials}
+        plans={plansApi.plans}
+        materials={materialsApi.materials}
         subjects={subjects}
-        noteEntries={noteEntries}
+        noteEntries={resumesApi.noteEntries}
         onStudy={(materialId, page) =>
           onNavigate("material-read", { materialId, page, unit: true })
         }
-        onExtend={onExtendPlan}
-        onComplete={onCompletePlan}
-        onRestart={onRestartPlan}
-        onToggleSkip={onTogglePlanSkip}
-        onDelete={onDeletePlan}
+        onExtend={plansApi.onExtend}
+        onComplete={plansApi.onComplete}
+        onRestart={plansApi.onRestart}
+        onToggleSkip={plansApi.onToggleSkip}
+        onDelete={plansApi.onDelete}
         onOpenMaterials={() => onNavigate("materials")}
       />
     );
@@ -346,7 +329,7 @@ export function RightPaneRouter({
         subjects={subjects}
         existingNodes={nodes}
         embedded
-        onComplete={onMaterialAdded}
+        onComplete={materialsApi.onAdded}
       />
     );
   }
@@ -357,13 +340,13 @@ export function RightPaneRouter({
     // C46: materials を props 経由 (state 管理) に変更、編集・削除が即座に反映される
     return (
       <MaterialsListPane
-        materials={materials}
-        materialsLoadState={materialsLoadState}
+        materials={materialsApi.materials}
+        materialsLoadState={materialsApi.loadState}
         subjects={subjects}
-        onSubmitAssignment={onSubmitAssignment}
-        onDeleteAssignment={onDeleteAssignment}
-        onToggleAssignmentStatus={onToggleAssignmentStatus}
-        onStudyAssignment={onStudyAssignment}
+        onSubmitAssignment={assignmentsApi.onSubmit}
+        onDeleteAssignment={assignmentsApi.onDelete}
+        onToggleAssignmentStatus={assignmentsApi.onToggleStatus}
+        onStudyAssignment={assignmentsApi.onStudy}
       />
     );
   }
@@ -377,7 +360,7 @@ export function RightPaneRouter({
     // C32 2026-05-25 grill 1 確定 5/11/12: 教材詳細ページ
     // C46 F: materials を props 経由 (state) で受ける + 編集・削除 callback 渡し
     const material = selectedMaterialId
-      ? materials.find((m) => m.id === selectedMaterialId)
+      ? materialsApi.materials.find((m) => m.id === selectedMaterialId)
       : undefined;
     if (!material) {
       return (
@@ -393,12 +376,12 @@ export function RightPaneRouter({
         material={material}
         subject={subject}
         nodes={nodes}
-        issues={issues}
-        plans={plans}
-        noteEntries={noteEntries}
-        onCreatePlan={onCreatePlan}
-        onMaterialUpdated={onMaterialUpdated}
-        onMaterialDeleted={onMaterialDeleted}
+        issues={issuesApi.issues}
+        plans={plansApi.plans}
+        noteEntries={resumesApi.noteEntries}
+        onCreatePlan={plansApi.onCreate}
+        onMaterialUpdated={materialsApi.onUpdated}
+        onMaterialDeleted={materialsApi.onDeleted}
       />
     );
   }
@@ -407,7 +390,7 @@ export function RightPaneRouter({
     return (
       <TutorArchiveView
         nodes={nodes}
-        issues={issues}
+        issues={issuesApi.issues}
         scheduleItems={scheduleToday}
       />
     );
@@ -427,8 +410,8 @@ export function RightPaneRouter({
         subjectId={selectedSubjectId}
         subjects={subjects}
         nodes={nodes}
-        chatMessages={chatMessages}
-        issues={issues}
+        chatMessages={issuesApi.chatMessages}
+        issues={issuesApi.issues}
       />
     );
   }
@@ -436,22 +419,22 @@ export function RightPaneRouter({
   if (view === "notes") {
     return (
       <NotesHomeView
-        entries={noteEntries}
-        materials={materials}
+        entries={resumesApi.noteEntries}
+        materials={materialsApi.materials}
         subjects={subjects}
-        resumes={resumes}
+        resumes={resumesApi.resumes}
         initialSubjectId={selectedSubjectId ?? undefined}
-        onOpenSource={onOpenNoteSource}
-        onUpdateEntry={onNoteUpdated}
-        onDeleteEntry={onNoteDeleted}
-        onAddResume={onAddResume}
-        onRenameResume={onRenameResume}
-        onSetDefaultResume={onSetDefaultResume}
-        onDeleteResume={onDeleteResume}
-        onMoveEntryToResume={onMoveEntryToResume}
-        onMoveEntryToSubject={onMoveEntryToSubject}
-        onCopyResume={onCopyResume}
-        onGenerateOutline={onGenerateOutline}
+        onOpenSource={resumesApi.onOpenSource}
+        onUpdateEntry={resumesApi.onNoteUpdated}
+        onDeleteEntry={resumesApi.onNoteDeleted}
+        onAddResume={resumesApi.onAddResume}
+        onRenameResume={resumesApi.onRenameResume}
+        onSetDefaultResume={resumesApi.onSetDefaultResume}
+        onDeleteResume={resumesApi.onDeleteResume}
+        onMoveEntryToResume={resumesApi.onMoveEntryToResume}
+        onMoveEntryToSubject={resumesApi.onMoveEntryToSubject}
+        onCopyResume={resumesApi.onCopyResume}
+        onGenerateOutline={resumesApi.onGenerateOutline}
       />
     );
   }
