@@ -1,20 +1,18 @@
 /**
  * /philosophy — AI-Education の憲法 (PHILOSOPHY.md) を表示する画面。
  *
- * Server Component で PHILOSOPHY.md をビルド時に読み込む。
- * 哲学を更新したら、ファイル編集 → ページ再生成（dev は HMR）で反映される。
+ * PHILOSOPHY.md はビルド時に scripts/sync-ai-docs.mjs が docs.generated.ts へ
+ * 焼き込んだ定数 (PHILOSOPHY_MD) を使う。リポジトリルートのファイルを
+ * ランタイム/ビルド時に fs で読むと Vercel (Root Directory = web) で
+ * サーバーレス関数に含まれず死ぬため、焼き込み済み定数を参照する。
  */
-import { promises as fs } from "fs";
-import path from "path";
+import { PHILOSOPHY_MD } from "@/lib/ai/docs.generated";
 import { PhilosophyView } from "@/components/philosophy/PhilosophyView";
 
 export const metadata = {
   title: "AI-Education の憲法",
 };
 
-export default async function PhilosophyPage() {
-  // web/ ディレクトリの一つ上に PHILOSOPHY.md がある
-  const filePath = path.join(process.cwd(), "..", "PHILOSOPHY.md");
-  const content = await fs.readFile(filePath, "utf-8");
-  return <PhilosophyView content={content} />;
+export default function PhilosophyPage() {
+  return <PhilosophyView content={PHILOSOPHY_MD} />;
 }
