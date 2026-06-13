@@ -12,6 +12,28 @@ const nextConfig: NextConfig = {
     root: projectRoot,
   },
   outputFileTracingRoot: projectRoot,
+  /**
+   * まとまり生成のサーバー側ジョブ化 (2026-06-13)。
+   * Cron ワーカー (app/api/cron/segment) が Node 上で pdfjs-dist (legacy build) +
+   * @napi-rs/canvas でテキスト抽出・ページ描画する。これらはネイティブ依存 + 動的
+   * require/fs 読みのため Next のバンドルに乗らない → 外部化する。
+   */
+  serverExternalPackages: ["@napi-rs/canvas", "pdfjs-dist"],
+  /**
+   * pdf.js の worker / データファイル (cmaps/standard_fonts/iccs/wasm) と
+   * @napi-rs/canvas の linux ネイティブバイナリを Cron Route の serverless 関数へ
+   * 明示同梱する (動的 require/fs.readFile はトレースされないため欠落するのを防ぐ)。
+   */
+  outputFileTracingIncludes: {
+    "/api/cron/segment": [
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      "./node_modules/pdfjs-dist/cmaps/**",
+      "./node_modules/pdfjs-dist/standard_fonts/**",
+      "./node_modules/pdfjs-dist/iccs/**",
+      "./node_modules/pdfjs-dist/wasm/**",
+      "./node_modules/@napi-rs/canvas-linux-x64-gnu/**",
+    ],
+  },
   experimental: {
     /**
      * 教材登録のスキャン PDF 対応 (段階1-A、C85)。
