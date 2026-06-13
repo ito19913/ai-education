@@ -3636,6 +3636,63 @@ AI が続きから補える) ④導入 = **2 段階** (第 1 弾 葵 chat 系 �
 
 ---
 
+## まとまり生成のサーバー側ジョブ化 (2026-06-13、grill 確定 → 実装)
+
+**動機**: まとまり (ConceptSegment) 生成はブラウザの pdf.js + canvas 依存で、スキャン本
+(自炊・数百ページ) は vision 連打で数分かかる。その間タブを閉じると止まり 186MB の本を
+やり直す苦痛 → サーバー側バックグラウンドジョブに移しタブ非依存・再開可能にする。
+
+**grill 確定 (1 問ずつ)**: ①全教材を一律サーバー化 ②ドライバ = Supabase pg_cron が毎分
+Vercel Route Handler を叩く (Vercel プラン非依存) ③ブラウザ生成 2 本は撤去し真実の源 1 本
+④進捗は materials.segment_status + 遷移時 fetch (Realtime 不使用)・ゆい発話は best-effort
+⑤失敗は attempts リトライ→手動リトライ+読書は手めくり可 ⑥「区切り直す」は全状態可・
+再区切り中も古い単元は使えるまま完走時に原子差し替え。
+
+**Phase 0 spike (GO)**: ★pdf.js v6 は **legacy build** (`pdfjs-dist/legacy/build/pdf.mjs`) で
+Node レンダリング公式サポート、`@napi-rs/canvas` は pdfjs-dist の optional dep として導入済★。
+pdfium-wasm / sharp は不要。`scripts/spike-pdf-node.mjs` でローカル確認済 (テキスト抽出+
+ページ→JPEG+赤バッジ)。Node レシピ = legacy import / workerSrc は file:// URL /
+データ URL は前方スラッシュ+末尾 / / createCanvas→`page.render({canvas,viewport})`→
+`toBuffer("image/jpeg")`。**唯一の残リスク = Vercel linux serverless でのネイティブバイナリ
+同梱** (next.config の serverExternalPackages + outputFileTracingIncludes で対処、デプロイで確認)。
+
+**実装 (全コミット push 済、フラグ既定 OFF で挙動不変)**:
+- 土台 (`1fb15c8`): `lib/pdf/pdf-node.ts` (loadPdfDocumentNode/packFullPageTextsNode/
+  renderPageToJpegBase64Node) / `lib/supabase/service-role.ts` (server-only、owner_id は
+  job 行から押印) / `lib/ai/segment-core.ts`・`segment-scan-core.ts` (requireUser を抜いた
+  純関数、既存 segment-claude/segment-scan-claude は薄皮化) / next.config 同梱設定。
+- schema + ワーカー (`869f031`): migration 4 本 (segment_status 列 / segmentation_jobs
+  [cursor・partial_segments で再開・走行中ユニーク部分 index で二重キュー防止・RLS は
+  insert のみ client] / claim+complete RPC [SKIP LOCKED+lease / 完走時 materials 原子差し替え+
+  job 削除、service_role のみ] / pg_cron+pg_net で毎分 /api/cron/segment、URL・secret は
+  DB 設定から読む)。`app/api/cron/segment/route.ts` = CRON_SECRET 照合→claim→digital は
+  1 tick 完走 / scan は時間予算内で複数チャンク進め partial に貯め全ページで mergeScanVisionSegments
+  一括マージ完走。失敗は attempts<5 でリトライ (lease 満了で再 claim)、上限で failed。
+- enqueue + UI (`dc8c61f`、**`NEXT_PUBLIC_USE_SEGMENT_JOBS` フラグ制御**): ON 時は登録の
+  PDF アップ完了で enqueue+queued (ブラウザ区切りはスキップ・表紙サムネは残す) /
+  resegmentMaterial (区切り直す) / refetchMaterials (教材系 view 遷移で取り直し) / 本棚・
+  教材詳細・読書ビューに 準備中/区切れなかった/区切り直す UI。
+
+**★有効化のユーザー側作業 (これを終えるまでフラグ OFF で従来どおり動く)★**:
+1. Vercel 環境変数: `SUPABASE_SERVICE_ROLE_KEY` (Supabase の service_role キー) +
+   `CRON_SECRET` (任意の長い乱数) + `NEXT_PUBLIC_USE_SEGMENT_JOBS=true`。
+2. Supabase: Database → Extensions で `pg_cron` / `pg_net` を有効化。
+3. Supabase SQL Editor で DB 設定を投入 (秘密は git に載せないため):
+   `alter database postgres set app.cron_secret = '<CRON_SECRET と同値>';`
+   `alter database postgres set app.cron_target_url = 'https://<本番ドメイン>/api/cron/segment';`
+4. migration 4 本を本番適用 (`.sql` から直接コピー、20260613000000→000300 の順)。
+5. デプロイ。**まず手動ジョブ 1 件で worker の linux 動作を E2E 確認** (SQL:
+   `insert into segmentation_jobs (material_id, owner_id) select id, owner_id from materials where pdf_path is not null limit 1;`)
+   → 1〜数分で該当教材の segment_status が ready + concept_segments が入れば GO。
+   → その後フラグ ON で本番運用。NG (linux バイナリ欠落等) ならフラグ OFF のまま調査。
+
+**★残: Phase 4 のブラウザ生成コード撤去★** = worker の linux 実機確認が取れてから、
+`runPdfBackgroundWork` の区切り部分 / `MaterialReadPane` のオンデマンド effect /
+`scan-segment-builder.ts` / `material-read-shared.ts` のキャッシュを削除しフラグも撤去
+(真実の源 1 本に)。それまでは OFF=ブラウザ / ON=サーバー の二択で安全に併存。
+
+---
+
 ## 設計の核（一行で）
 
 > ログインしたら **ゆい先生（純粋コーチ）** の **司令室（左ペイン chat + 右ペイン動的展開）** に着く。**朝の振り返り** で昨日 / 学校 / 気分 / 疑問 / 今日の計画を語り、**「何が分からないか分からない」を言語化する「掘り起こし」** で課題を発見、**葵先生（科目）への申し送りドキュメント (TutorHandoff)** を介して **IssueChat（課題ごとの個別 chat）** に展開、対話で潰す。**長期 + 週次ゴールのコーチング契約** が学習リズムを支え、**日次 / 週次 / 月次の振り返り** が自走に近づける。**「教えない、引き出す。環境（時間・場・儀式）は決めてあげる、対話の中身はコーチング」**。

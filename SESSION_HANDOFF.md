@@ -1,6 +1,17 @@
 # SESSION_HANDOFF.md
 
-AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: **2026-06-13 (origin/main=`d8ab11a`+docs、tsc / lint 0 件 / build / test クリア)**。
+AI-Education プロジェクトの **セッション間引継ぎドキュメント**。次セッションの最初に必ず読む。最終更新: **2026-06-13 (origin/main=`dc8c61f`+docs、tsc / lint 0 件 / build / test クリア)**。
+
+**★2026-06-13 後半: まとまり生成のサーバー側ジョブ化を grill→plan→実装 (フラグ制御で安全に併存)★**
+ブラウザ pdf.js 依存だったまとまり生成を、Supabase pg_cron が毎分 Vercel の Route Handler を叩くバックグラウンドジョブに移す (タブ非依存・再開可能)。grill 6 問確定 → plan 承認 → 実装:
+- **Phase 0 spike = GO** (`1fb15c8`): pdf.js v6 は **legacy build** で Node レンダリング公式サポート、`@napi-rs/canvas` は導入済 → pdfium/sharp 不要。`scripts/spike-pdf-node.mjs` でローカル確認 (テキスト+ページ→JPEG+赤バッジ)。残リスクは Vercel linux 同梱のみ。
+- **土台** (`1fb15c8`): `lib/pdf/pdf-node.ts` / `lib/supabase/service-role.ts` / `lib/ai/segment-core.ts`・`segment-scan-core.ts` (requireUser を抜いた純関数、既存は薄皮化) / next.config 同梱設定。
+- **schema + ワーカー** (`869f031`): migration 4 本 (segment_status / segmentation_jobs [再開可能・二重キュー防止] / claim+complete RPC [SKIP LOCKED+lease・完走時原子差し替え] / pg_cron) + `app/api/cron/segment/route.ts` (digital=1tick / scan=チャンク継続→完走時一括マージ・失敗リトライ)。
+- **enqueue + UI** (`dc8c61f`、**`NEXT_PUBLIC_USE_SEGMENT_JOBS` フラグ・既定 OFF で挙動不変**): 登録時 enqueue / 区切り直す / 遷移時 refetch / 本棚・詳細・読書ビューに 準備中・区切れなかった・区切り直す UI。
+
+**★次にやること = ito19 さんの有効化作業 → worker の linux 実機確認 → フラグ ON → Phase 4 (ブラウザ生成コード撤去)★** (詳細チェックリストは ARCHITECTURE「## まとまり生成のサーバー側ジョブ化」末尾)。要約: ①Vercel 環境変数 3 つ (`SUPABASE_SERVICE_ROLE_KEY`/`CRON_SECRET`/`NEXT_PUBLIC_USE_SEGMENT_JOBS=true`) ②Supabase で `pg_cron`/`pg_net` 有効化 ③DB 設定 `app.cron_secret`・`app.cron_target_url` 投入 ④migration 4 本適用 ⑤デプロイ→**手動ジョブ 1 件で worker の linux 動作 E2E 確認**→GO ならフラグ ON。**フラグ OFF の間は従来のブラウザ生成のまま安全に動く**。
+
+ **← 以下は本セッション前半 (Phase 3 構造リファクタ):**
 
 **★2026-06-12〜13: Phase 3 構造リファクタを大きく前進 (フック抽出 三連 + RightPaneRouter props 解消 + 読書ビュー分割 第 1〜2 弾)★** — すべて 1 単位 1 コミット・挙動同一・毎回 tsc/lint/build(/test) 検証:
 - `99be1a4` プラン → `use-plans.ts` (連鎖掃除 removePlansForMaterial は掃除件数を返す)
