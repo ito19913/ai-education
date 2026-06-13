@@ -15,10 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent,
-} from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -65,6 +62,21 @@ import type {
 import { streamAokiChat } from "@/lib/ai/aoki-chat-stream";
 import { ResumePane } from "@/components/notes/ResumePane";
 import { PageThumbnailRail } from "@/components/materials/PageThumbnailRail";
+import {
+  EditableHighlight,
+  type Bbox,
+} from "@/components/materials/EditableHighlight";
+import {
+  MAX_SEGMENT_VISION_PAGES,
+  GUIDED_MAX_PAGES,
+  ASSIGNMENT_MAX_PAGES,
+  isFrontMatterName,
+  sessionSegmentCache,
+  attemptedSegmentation,
+  sessionGuidedPlanCache,
+  sampleRangePages,
+  parseStartPage,
+} from "@/components/materials/material-read-shared";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -148,199 +160,6 @@ type Props = {
     plans: Record<string, GuidedBlock[]>,
   ) => void;
 };
-
-// まとまり全体を vision で渡す時の最大ページ数 (payload / 速度の上限、M8)。
-// これを超える単元は均等サンプリングして代表ページだけ渡す。
-const MAX_SEGMENT_VISION_PAGES = 12;
-
-/**
- * 「学習内容でない区切り」(表紙・前付け・目次・使い方・奥付・索引など) かを名前で判定。
- * 区切り生成プロンプト (segment-claude) でも出さないようにしているが、古いデータや
- * 取りこぼし対策として、学習開始時はこれをスキップして最初の本物の単元へ進む。
- */
-function isFrontMatterName(name: string): boolean {
-  return /表紙|扉|前付|まえがき|はじめに|序文|目次|もくじ|使い方|凡例|奥付|索引|さくいん|著者|広告|後付|あとがき/.test(
-    name,
-  );
-}
-
-/**
- * 区切り (ConceptSegment[]) のセッション内キャッシュ (materialId → segments)。
- * migration 未適用で DB 保存できない / 既存教材で未生成 の時、開くたびに葵が
- * その場で区切り直す (M4 のオンデマンド版)。同セッションでは 1 回だけ走る。
- */
-const sessionSegmentCache = new Map<string, ConceptSegment[]>();
-
-/**
- * オンデマンド区切りを「一度試した」教材 ID (成否問わず)。
- * スキャン本など区切りが 0 件で終わる教材を、再レンダのたびに延々と再生成し続ける
- * 無限ループを防ぐ (= 1 教材 1 回だけ試す)。成功時は sessionSegmentCache に入る。
- */
-const attemptedSegmentation = new Set<string>();
-
-/**
- * ガイド読書のブロックプラン (GuidedBlock[]) のセッション内キャッシュ (segment.id → blocks)。
- * 同じまとまりを開き直しても葵の vision 解析を 1 回で済ませる (G-A)。
- */
-const sessionGuidedPlanCache = new Map<string, GuidedBlock[]>();
-
-// ガイド読書のブロックプラン生成で vision に渡すまとまりページの上限 (大きすぎるまとまり対策)。
-const GUIDED_MAX_PAGES = 16;
-
-// 宿題「AI と解く」: 問題ブロック検出で vision に渡すページ上限 (宿題は数ページが普通)。
-const ASSIGNMENT_MAX_PAGES = 12;
-
-/** 範囲 [start,end] のページを最大 max 枚に均等サンプリングして返す。 */
-function sampleRangePages(pages: number[], max: number): number[] {
-  if (pages.length <= max) return pages;
-  const out: number[] = [];
-  const stepF = (pages.length - 1) / (max - 1);
-  for (let i = 0; i < max; i++) out.push(pages[Math.round(i * stepF)]);
-  return [...new Set(out)];
-}
-
-/** "p.24-37" / "p.24-" などから開始ページ番号を取り出す。取れなければ null。 */
-function parseStartPage(pageRange?: string): number | null {
-  if (!pageRange) return null;
-  const m = pageRange.match(/p\.?\s*(\d+)/i);
-  return m ? Number.parseInt(m[1], 10) : null;
-}
-
-type Bbox = { x: number; y: number; w: number; h: number };
-
-/**
- * ガイド読書の青枠ハイライト (手動調整つき)。
- * 枠本体をドラッグで移動、四隅のハンドルで拡大・縮小。座標は親 (ページ div) に対する
- * 正規化 (0-1)。AI 推定 bbox がズレた時、子がその場で直接ドラッグして直せる (ito19 要望)。
- */
-function EditableHighlight({
-  bbox,
-  onChange,
-  onCommit,
-  onDragStart,
-}: {
-  bbox: Bbox;
-  onChange: (b: Bbox) => void;
-  /**
-   * ドラッグ終了 (指を離した) 時に 1 回。指を離した画面座標を渡す (見開きで反対ページへ
-   * またいだ時に、ドロップ先ページ/ブロックを親が特定するため)。DB 永続化もここ。
-   */
-  onCommit?: (dropClientX: number, dropClientY: number) => void;
-  /** ドラッグ開始時に元 bbox を通知 (別ブロックへ動かした時の選択し直し判定用)。 */
-  onDragStart?: (original: Bbox) => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const drag = useRef<{
-    mode: string;
-    px: number;
-    py: number;
-    start: Bbox;
-    rw: number;
-    rh: number;
-    lastX: number;
-    lastY: number;
-  } | null>(null);
-
-  // 押した対象の data-handle 属性で「移動 (move)」か「四隅リサイズ (nw/ne/sw/se)」かを判定。
-  // ※ ハンドラはレンダーごとに生成せず直接割り当てる (factory-in-render を避け、ref 警告を回避)。
-  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const box = ref.current;
-    const parent = box?.parentElement;
-    if (!box || !parent) return;
-    const mode = (e.target as HTMLElement).dataset.handle ?? "move";
-    const rect = parent.getBoundingClientRect();
-    drag.current = {
-      mode,
-      px: e.clientX,
-      py: e.clientY,
-      start: { ...bbox },
-      rw: rect.width || 1,
-      rh: rect.height || 1,
-      lastX: e.clientX,
-      lastY: e.clientY,
-    };
-    onDragStart?.({ ...bbox });
-    box.setPointerCapture(e.pointerId);
-  };
-
-  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    if (!d) return;
-    e.preventDefault();
-    d.lastX = e.clientX;
-    d.lastY = e.clientY;
-    const dx = (e.clientX - d.px) / d.rw;
-    const dy = (e.clientY - d.py) / d.rh;
-    let { x, y, w, h } = d.start;
-    if (d.mode === "move") {
-      x += dx;
-      y += dy;
-    } else {
-      if (d.mode.includes("e")) w += dx;
-      if (d.mode.includes("s")) h += dy;
-      if (d.mode.includes("w")) {
-        x += dx;
-        w -= dx;
-      }
-      if (d.mode.includes("n")) {
-        y += dy;
-        h -= dy;
-      }
-    }
-    w = Math.max(0.04, Math.min(1, w));
-    h = Math.max(0.04, Math.min(1, h));
-    x = Math.max(0, Math.min(1 - w, x));
-    y = Math.max(0, Math.min(1 - h, y));
-    onChange({ x, y, w, h });
-  };
-
-  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    if (!d) return;
-    drag.current = null;
-    ref.current?.releasePointerCapture?.(e.pointerId);
-    // pointercancel 等で座標が無い場合は最後に拾った move 座標を使う。
-    const dropX = Number.isFinite(e.clientX) ? e.clientX : d.lastX;
-    const dropY = Number.isFinite(e.clientY) ? e.clientY : d.lastY;
-    onCommit?.(dropX, dropY);
-  };
-
-  const handlePos: Record<string, string> = {
-    nw: "left-0 top-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize",
-    ne: "right-0 top-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize",
-    sw: "left-0 bottom-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize",
-    se: "right-0 bottom-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize",
-  };
-
-  return (
-    <div
-      ref={ref}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      onClick={(e) => e.stopPropagation()}
-      title="枠をドラッグで移動 / 角をつまんでサイズ変更"
-      className="absolute cursor-move touch-none rounded-sm border-2 border-sky-500/80 bg-sky-300/20 shadow-[0_0_0_3px_rgba(56,189,248,0.18)]"
-      style={{
-        left: `${bbox.x * 100}%`,
-        top: `${bbox.y * 100}%`,
-        width: `${bbox.w * 100}%`,
-        height: `${bbox.h * 100}%`,
-      }}
-    >
-      {(["nw", "ne", "sw", "se"] as const).map((c) => (
-        <div
-          key={c}
-          data-handle={c}
-          className={`absolute size-3 rounded-full border border-white bg-sky-600 shadow ${handlePos[c]}`}
-        />
-      ))}
-    </div>
-  );
-}
 
 export function MaterialReadPane({
   material,
